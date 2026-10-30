@@ -211,7 +211,7 @@ jobs:
           terraform validate
 
       - name: Trivy config scan (Terraform + Dockerfile misconfiguration)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
@@ -294,7 +294,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - name: Trivy - chặn pipeline nếu có lỗ hổng CRITICAL đã có bản vá
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.meta.outputs.image }}:${{ github.sha }}
           format: table
@@ -306,7 +306,7 @@ jobs:
 
       - name: Trivy - xuất báo cáo SARIF (HIGH + CRITICAL) cho tab Security
         if: always()
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.meta.outputs.image }}:${{ github.sha }}
           format: sarif

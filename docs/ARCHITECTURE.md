@@ -25,7 +25,7 @@ flowchart TB
                     subgraph FNET["frontend-net"]
                         nginx["Nginx 1.28<br/>TLS · Rate limit · Gzip · Cache"]
                         certbot["Certbot<br/>auto-renew"]
-                        fe["Next.js 14<br/>:3000 (standalone)"]
+                        fe["Next.js 15<br/>:3000 (standalone)"]
                         be["NestJS API<br/>:8080 /api/health /api/metrics"]
                     end
                     subgraph BNET["backend-net (internal: true - không ra Internet)"]
@@ -203,7 +203,7 @@ home-shopping-app/
 │   ├── Dockerfile                     # multi-stage, non-root, HEALTHCHECK
 │   ├── .dockerignore
 │   ├── nest-cli.json  package.json  package-lock.json  tsconfig*.json
-├── frontend/                          # Next.js 14 App Router (port 3000, output standalone)
+├── frontend/                          # Next.js 15 App Router (port 3000, output standalone)
 │   ├── public/robots.txt
 │   ├── src/
 │   │   ├── app/                       # /, /products/[slug], /cart, /login, /orders, /orders/[id], /admin, /healthz

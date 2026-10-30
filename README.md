@@ -4,7 +4,7 @@ Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn pro
 
 | Thành phần | Công nghệ |
 |---|---|
-| Frontend | Next.js 14 (App Router, standalone), port 3000 |
+| Frontend | Next.js 15 (App Router, standalone), port 3000 |
 | Backend | NestJS 10 + Prisma 5, port 8080, `/api/health`, `/api/metrics` |
 | Data | PostgreSQL 16 (orders, products, users) · Redis 7 (cart, session, hot-product cache) |
 | Edge | Nginx 1.28: Let's Encrypt TLS, HTTP→HTTPS, rate limiting, gzip, static cache |

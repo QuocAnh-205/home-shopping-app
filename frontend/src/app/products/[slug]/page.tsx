@@ -11,7 +11,7 @@ import { formatPrice, type Product } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 // cache(): generateMetadata và page dùng chung 1 lần gọi API trong cùng request
@@ -25,12 +25,12 @@ const load = cache(async (slug: string): Promise<Product> => {
 });
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const product = await load(params.slug);
+  const product = await load((await params).slug);
   return { title: product.name, description: product.description.slice(0, 160) };
 }
 
 export default async function ProductPage({ params }: Props) {
-  const product = await load(params.slug);
+  const product = await load((await params).slug);
 
   return (
     <>

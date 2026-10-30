@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { use, useCallback, useEffect, useState } from 'react';
 import { RequireAuth } from '@/components/RequireAuth';
 import { StatusBadge } from '@/components/StatusBadge';
 import { apiFetch } from '@/lib/client-api';
@@ -136,12 +136,13 @@ function OrderDetail({ id }: { id: string }) {
   );
 }
 
-export default function OrderPage({ params }: { params: { id: string } }) {
-  if (!UUID_RE.test(params.id)) return <p className="alert">Mã đơn hàng không hợp lệ</p>;
+export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  if (!UUID_RE.test(id)) return <p className="alert">Mã đơn hàng không hợp lệ</p>;
   return (
     <section>
       <RequireAuth>
-        <OrderDetail id={params.id} />
+        <OrderDetail id={id} />
       </RequireAuth>
     </section>
   );

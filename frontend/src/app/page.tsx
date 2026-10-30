@@ -7,10 +7,11 @@ import { SORT_OPTIONS, categoryIcon, type SortValue } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 
 interface Props {
-  searchParams: { page?: string; category?: string; q?: string; sort?: string };
+  searchParams: Promise<{ page?: string; category?: string; q?: string; sort?: string }>;
 }
 
-export default async function HomePage({ searchParams }: Props) {
+export default async function HomePage(props: Props) {
+  const searchParams = await props.searchParams;
   const page = Math.min(1000, Math.max(1, Number.parseInt(searchParams.page ?? '1', 10) || 1));
   const q = (searchParams.q ?? '').trim().slice(0, 100) || undefined;
   const sort: SortValue = SORT_OPTIONS.some((o) => o.value === searchParams.sort) ? (searchParams.sort as SortValue) : 'newest';
