@@ -1,0 +1,5 @@
+# Bắt buộc LF cho script/config chạy trên Linux (tránh lỗi "bad interpreter: /bin/bash^M" khi code trên Windows)
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.jpg binary

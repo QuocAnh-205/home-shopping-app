@@ -1,0 +1,34 @@
+# Dependencies & build
+node_modules/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+monitoring/alertmanager/alertmanager.yml
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfvars
+!terraform/*.tfvars.example
+terraform/crash.log
+terraform/.terraform.lock.hcl.bak
+*.tfplan
+
+# Runtime
+backups/
+.deploy/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

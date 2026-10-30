@@ -1,0 +1,14 @@
+# ============================================================
+# Ngoại lệ Trivy có chủ đích — mỗi dòng phải kèm lý do (được review trong PR)
+# ============================================================
+
+# AVD-AWS-0104: egress 0.0.0.0/0.
+# Đã siết chỉ còn TCP 80/443. Đích đến (Docker Hub, apt mirror, S3, Let's Encrypt, Discord/Telegram)
+# dùng CDN/IP động nên không thể liệt kê CIDR cố định. Kiểm soát bù: không có port egress nào khác.
+AVD-AWS-0104
+
+# AVD-AWS-0132: S3 mã hóa SSE-S3 (AES-256, khóa do AWS quản lý) thay vì KMS CMK.
+# Bucket đã: chặn public 100%, bắt buộc TLS, versioning, IAM least-privilege theo prefix,
+# EC2 không có quyền xóa backup. CMK tăng chi phí (KMS key + request) và độ phức tạp IAM
+# không tương xứng với dữ liệu của đồ án; có thể nâng cấp bằng aws_kms_key khi cần tuân thủ.
+AVD-AWS-0132

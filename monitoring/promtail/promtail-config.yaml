@@ -1,0 +1,94 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
+
+scrape_configs:
+  # Gom log stdout/stderr của mọi container thuộc project "homeshop" qua Docker API
+  - job_name: homeshop-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+        filters:
+          - name: label
+            values: ["com.docker.compose.project=homeshop"]
+    relabel_configs:
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: service
+      - source_labels: ["__meta_docker_container_log_stream"]
+        target_label: stream
+      - target_label: env
+        replacement: production
+
+    pipeline_stages:
+      # ---------- Nginx: access log JSON ----------
+      - match:
+          selector: '{service="nginx"}'
+          stages:
+            - json:
+                expressions:
+                  status: status
+                  method: method
+                  uri: uri
+                  request_id: request_id
+                  request_time: request_time
+                  upstream_status: upstream_status
+            # Chỉ đưa field ít giá trị vào label (tránh bùng nổ cardinality); còn lại lọc bằng LogQL | json
+            - template:
+                source: status_class
+                template: '{{ if .status }}{{ printf "%.1s" .status }}xx{{ end }}'
+            - labels:
+                method:
+                status_class:
+            - template:
+                source: flow
+                template: '{{ if hasPrefix "/api/orders" .uri }}checkout{{ else if hasPrefix "/api/cart" .uri }}cart{{ else if hasPrefix "/api/auth" .uri }}auth{{ end }}'
+            - labels:
+                flow:
+            - structured_metadata:
+                request_id:
+
+      # ---------- Backend NestJS: pino JSON ----------
+      - match:
+          selector: '{service="backend"}'
+          stages:
+            - json:
+                expressions:
+                  level: level
+                  event: event
+                  context: context
+                  request_id: req.id
+                  order_id: orderId
+                  time: time
+            - labels:
+                level:
+                event:
+                context:
+            - structured_metadata:
+                request_id:
+                order_id:
+            - timestamp:
+                source: time
+                format: UnixMs
+                action_on_failure: skip
+
+      # Giới hạn dòng log quá dài (stacktrace khổng lồ) để Loki không bị nghẽn
+      - limit:
+          rate: 500
+          burst: 1000
+          drop: true

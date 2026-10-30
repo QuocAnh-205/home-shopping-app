@@ -1,0 +1,251 @@
+# ============================================================
+# Home Shopping App - Production stack (EC2 t3.medium: 2 vCPU / 4 GB RAM + 4 GB swap)
+# Chạy: docker compose -f docker-compose.prod.yml --env-file .env up -d
+# ============================================================
+name: homeshop
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"   # mỗi file log tối đa 10 MB
+    max-file: "3"     # giữ tối đa 3 file → mỗi container ≤ 30 MB log
+    tag: "{{.Name}}"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  # ---------------- Edge: Reverse proxy + TLS ----------------
+  nginx:
+    image: nginx:1.28.0-alpine
+    container_name: homeshop-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - certbot-www:/var/www/certbot:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - nginx-cache:/var/cache/nginx
+    # Reload mỗi 6h để nhận certificate mới mà certbot đã gia hạn
+    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec nginx -g 'daemon off;'"]
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - frontend-net
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+    logging: *default-logging
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    container_name: homeshop-certbot
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+    volumes:
+      - certbot-www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    networks:
+      - frontend-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    logging: *default-logging
+
+  # ---------------- Application tier ----------------
+  frontend:
+    image: ${DOCKERHUB_USERNAME:?DOCKERHUB_USERNAME is required}/home-shopping-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      INTERNAL_API_URL: http://backend:8080
+    networks:
+      - frontend-net
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+      - /app/.next/cache:uid=1001,gid=1001,size=128m
+    <<: *hardening
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+        reservations:
+          memory: 128M
+    logging: *default-logging
+
+  backend:
+    image: ${DOCKERHUB_USERNAME:?DOCKERHUB_USERNAME is required}/home-shopping-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=10&pool_timeout=10
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      S3_BUCKET: ${S3_BUCKET}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      APP_VERSION: ${IMAGE_TAG:-latest}
+      # Tài liệu API /api/docs: mặc định tắt ở production (giảm bề mặt tấn công), bật khi demo
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+    # Backend là service DUY NHẤT nằm ở cả 2 mạng: nhận request từ Nginx và gọi DB/Redis
+    networks:
+      - frontend-net
+      - backend-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+      - /home/nestjs:uid=1001,gid=1001,size=64m
+    <<: *hardening
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 256M
+    logging: *default-logging
+
+  # ---------------- Data tier (KHÔNG publish port ra host) ----------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: homeshop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=100
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - password_encryption=scram-sha-256
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 256mb
+    networks:
+      - backend-net
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          memory: 256M
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: homeshop-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    # AOF everysec: giỏ hàng không mất khi restart; volatile-lru: chỉ evict key có TTL (cache/cart), không đụng key vĩnh viễn
+    command:
+      - /bin/sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --appendfsync everysec --maxmemory 256mb --maxmemory-policy volatile-lru --rename-command FLUSHALL "" --rename-command FLUSHDB "" --rename-command DEBUG ""
+    volumes:
+      - redisdata:/data
+    networks:
+      - backend-net
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+    logging: *default-logging
+
+networks:
+  # Mạng public-facing: Nginx ↔ Frontend ↔ Backend (có egress Internet để backend gọi S3)
+  frontend-net:
+    name: homeshop-frontend-net
+    driver: bridge
+  # Mạng dữ liệu: internal=true → không có route ra Internet, không container nào ngoài mạng này chạm được DB/Redis
+  backend-net:
+    name: homeshop-backend-net
+    driver: bridge
+    internal: true
+
+volumes:
+  pgdata:
+    name: homeshop-pgdata
+  redisdata:
+    name: homeshop-redisdata
+  letsencrypt:
+    name: homeshop-letsencrypt
+  certbot-www:
+    name: homeshop-certbot-www
+  nginx-cache:
+    name: homeshop-nginx-cache

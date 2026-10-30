@@ -1,0 +1,12 @@
+# Trivy config scan (misconfiguration) cho Terraform + Dockerfile
+scan:
+  skip-dirs:
+    - "**/node_modules"
+    - "frontend/.next"
+    - "backend/dist"
+misconfiguration:
+  scanners:
+    - terraform
+    - dockerfile
+# Các ngoại lệ có chủ đích được ghi lý do trong .trivyignore
+ignorefile: .trivyignore

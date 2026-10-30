@@ -1,0 +1,548 @@
+# ============================================================
+# Home Shopping App - Production CI/CD (DevSecOps)
+# 1. Security/Quality ‖ Integration Test ‖ IaC Scan → 2. Build, Scan & Push → 3. Deploy + Auto-Rollback → 4. Notification
+# ============================================================
+name: Production CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Không cho 2 lần deploy production chạy chồng nhau; không hủy lần đang deploy dở
+concurrency:
+  group: production-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+  BACKEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/home-shopping-backend
+  FRONTEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/home-shopping-frontend
+  APP_DIR: /opt/homeshop
+
+jobs:
+  # ----------------------------------------------------------
+  # JOB 1a: Security & Code Quality (SAST, secret scan, unit test)
+  # ----------------------------------------------------------
+  security-quality:
+    name: "1a · Security & Code Quality"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Checkout (full history cho Gitleaks & Sonar blame)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks - quét lộ secret trong toàn bộ lịch sử commit
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
+          GITLEAKS_ENABLE_SUMMARY: "true"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend - install, Prisma generate, type check, unit test + coverage
+        working-directory: backend
+        run: |
+          npm ci --no-audit --no-fund
+          npx prisma generate
+          npm run typecheck
+          npm run test:cov -- --ci
+
+      - name: Frontend - install, ESLint, type check
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run typecheck
+
+      - name: Dependency audit (chặn lỗ hổng critical ở production dependencies)
+        run: |
+          (cd backend && npm audit --omit=dev --audit-level=critical)
+          (cd frontend && npm audit --omit=dev --audit-level=critical)
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage/
+          retention-days: 7
+
+      - name: SonarCloud Scan (SAST) + chờ Quality Gate
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+      - name: SonarCloud chưa cấu hình
+        if: env.SONAR_TOKEN == ''
+        run: echo "::warning::Bỏ qua SonarCloud vì chưa có secret SONAR_TOKEN"
+
+  # ----------------------------------------------------------
+  # JOB 1b: Integration test trên PostgreSQL + Redis thật
+  # ----------------------------------------------------------
+  integration-test:
+    name: "1b · Integration Test (Postgres + Redis)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: homeshop
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: homeshop_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U homeshop -d homeshop_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://homeshop:ci-password@localhost:5432/homeshop_ci?schema=public
+      SHADOW_DATABASE_URL: postgresql://homeshop:ci-password@localhost:5432/homeshop_shadow
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-secret-ci-only-secret-0123456789
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install & generate Prisma client
+        working-directory: backend
+        run: |
+          npm ci --no-audit --no-fund
+          npx prisma generate
+
+      - name: Apply migrations (giống hệt bước migrate khi deploy production)
+        working-directory: backend
+        run: npx prisma migrate deploy
+
+      - name: Kiểm tra schema drift (schema.prisma phải khớp 100% với migrations)
+        working-directory: backend
+        run: |
+          PGPASSWORD=ci-password psql -h localhost -U homeshop -d homeshop_ci -c 'CREATE DATABASE homeshop_shadow'
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --exit-code
+
+      - name: Seed idempotent (chạy 2 lần không lỗi)
+        working-directory: backend
+        run: |
+          node prisma/seed.js
+          node prisma/seed.js
+
+      - name: E2E test (đặt hàng đồng thời, idempotency, RBAC, revoke token, lockout)
+        working-directory: backend
+        run: npm run test:e2e -- --ci
+
+  # ----------------------------------------------------------
+  # JOB 1c: IaC & config scan (Terraform, Dockerfile, Shell, Prometheus, Compose)
+  # ----------------------------------------------------------
+  iac-scan:
+    name: "1c · IaC & Config Scan"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hadolint - lint Dockerfile backend
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: backend/Dockerfile
+          config: .hadolint.yaml
+
+      - name: Hadolint - lint Dockerfile frontend
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: frontend/Dockerfile
+          config: .hadolint.yaml
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform fmt & validate
+        working-directory: terraform
+        run: |
+          terraform fmt -check -recursive -diff
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Trivy config scan (Terraform + Dockerfile misconfiguration)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          trivy-config: trivy.yaml
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+
+      - name: ShellCheck scripts
+        run: shellcheck -x scripts/*.sh
+
+      - name: Prometheus rules & config
+        run: |
+          docker run --rm -v "$PWD/monitoring/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v2.54.1 check rules /p/alert.rules.yml
+          docker run --rm -v "$PWD/monitoring/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v2.54.1 check config --syntax-only /p/prometheus.yml
+
+      - name: Docker Compose config validate
+        run: |
+          cp .env.example .env.ci
+          sed -i -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=x/' -e 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=x/' \
+                 -e 's/^JWT_SECRET=.*/JWT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/' \
+                 -e 's/^GRAFANA_ADMIN_PASSWORD=.*/GRAFANA_ADMIN_PASSWORD=x/' .env.ci
+          echo "DOCKERHUB_USERNAME=ci" >> .env.ci
+          docker compose -f docker-compose.local.yml config -q
+          docker compose -f docker-compose.prod.yml --env-file .env.ci config -q
+          docker compose -f monitoring/docker-compose.monitoring.yml --env-file .env.ci config -q
+
+  # ----------------------------------------------------------
+  # JOB 2: Build, Trivy Scan & Push (matrix FE/BE chạy song song)
+  # ----------------------------------------------------------
+  build-scan-push:
+    name: "2 · Build, Scan & Push (${{ matrix.service }})"
+    needs: [security-quality, integration-test, iac-scan]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: true
+      matrix:
+        service: [backend, frontend]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image name
+        id: meta
+        run: |
+          if [ "${{ matrix.service }}" = "backend" ]; then
+            echo "image=${BACKEND_IMAGE}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=${FRONTEND_IMAGE}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build image (load vào runner để scan trước khi push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Trivy - chặn pipeline nếu có lỗ hổng CRITICAL đã có bản vá
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
+          scanners: vuln,secret
+
+      - name: Trivy - xuất báo cáo SARIF (HIGH + CRITICAL) cho tab Security
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          exit-code: "0"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          skip-setup-trivy: true
+
+      - name: Upload SARIF
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+
+      - name: Push image (tag commit SHA + latest)
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          docker tag "$IMAGE:${GITHUB_SHA}" "$IMAGE:latest"
+          for tag in "${GITHUB_SHA}" latest; do
+            for attempt in 1 2 3; do
+              docker push "$IMAGE:$tag" && break
+              echo "Push $IMAGE:$tag failed (attempt $attempt), retrying..."; sleep $((attempt * 5))
+              [ "$attempt" = 3 ] && exit 1
+            done
+          done
+          echo "### 🐳 ${{ matrix.service }}: \`$IMAGE:${GITHUB_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ----------------------------------------------------------
+  # JOB 3: Zero-Downtime Deploy + Auto-Rollback trên EC2
+  # ----------------------------------------------------------
+  deploy:
+    name: "3 · Deploy to EC2 (zero-downtime + auto-rollback)"
+    needs: build-scan-push
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
+    permissions:
+      contents: read
+      id-token: write # OIDC → AWS, không lưu AWS access key trong GitHub
+    outputs:
+      status: ${{ steps.deploy.outputs.status }}
+      previous_tag: ${{ steps.deploy.outputs.previous_tag }}
+    env:
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      SG_ID: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-deploy-${{ github.run_id }}
+
+      - name: Mở tạm port 22 cho IP của runner (Least Privilege)
+        id: sg
+        run: |
+          RUNNER_IP="$(curl -fsS --retry 3 https://checkip.amazonaws.com | tr -d '[:space:]')"
+          echo "::add-mask::$RUNNER_IP"
+          echo "runner_ip=$RUNNER_IP" >> "$GITHUB_OUTPUT"
+          aws ec2 authorize-security-group-ingress \
+            --group-id "$SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description=gha-run-${GITHUB_RUN_ID}}]"
+
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            for _ in 1 2 3 4 5; do ssh-keyscan -T 10 -H "$EC2_HOST" > ~/.ssh/known_hosts 2>/dev/null && [ -s ~/.ssh/known_hosts ] && break; sleep 5; done
+          fi
+          cat > ~/.ssh/config <<EOF
+          Host prod
+            HostName ${EC2_HOST}
+            User ubuntu
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+            ConnectTimeout 15
+          EOF
+
+      - name: Đồng bộ file cấu hình lên EC2
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          rsync -az --delete-after --exclude 'alertmanager/alertmanager.yml' \
+            docker-compose.prod.yml nginx monitoring scripts prod:"$APP_DIR/"
+          ssh prod "chmod +x $APP_DIR/scripts/*.sh"
+          # .env được ghi qua stdin với umask 077 → không xuất hiện trong process list / log
+          printf '%s\nDOCKERHUB_USERNAME=%s\n' "$PROD_ENV_FILE" "$DOCKERHUB_USERNAME" | ssh prod "umask 077 && cat > $APP_DIR/.env"
+          printf '%s' "$DOCKERHUB_TOKEN" | ssh prod "docker login -u '$DOCKERHUB_USERNAME' --password-stdin >/dev/null"
+
+      - name: Deploy (migrate → rolling update → health check 30s → rollback nếu lỗi)
+        id: deploy
+        run: |
+          set +e
+          ssh prod "bash $APP_DIR/scripts/deploy.sh ${GITHUB_SHA}"
+          code=$?
+          set -e
+          PREV="$(ssh prod "cat $APP_DIR/.deploy/previous_tag 2>/dev/null || true")"
+          echo "previous_tag=${PREV}" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "status=success" >> "$GITHUB_OUTPUT" ;;
+            2) echo "status=rolled_back" >> "$GITHUB_OUTPUT"
+               echo "::error::Health check failed → đã rollback về ${PREV}"; exit 1 ;;
+            *) echo "status=failed" >> "$GITHUB_OUTPUT"
+               echo "::error::Deploy failed (exit $code)"; exit 1 ;;
+          esac
+
+      - name: Smoke test qua Internet
+        if: success()
+        run: |
+          for _ in 1 2 3 4 5; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${{ vars.APP_URL }}/api/health")"
+            [ "$code" = "200" ] && echo "Public health OK" && exit 0
+            sleep 5
+          done
+          echo "::warning::Public endpoint trả về $code (kiểm tra DNS/TLS)"
+
+      - name: Đóng port 22 của runner
+        if: always() && steps.sg.outputs.runner_ip != ''
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "$SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.sg.outputs.runner_ip }}/32}]" || true
+          rm -f ~/.ssh/deploy_key
+
+  # ----------------------------------------------------------
+  # JOB 4: Notification → Discord + Telegram
+  # ----------------------------------------------------------
+  notify:
+    name: "4 · Notification"
+    needs: [security-quality, integration-test, iac-scan, build-scan-push, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Tổng hợp & gửi thông báo
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          R_SECURITY: ${{ needs.security-quality.result }}
+          R_ITEST: ${{ needs.integration-test.result }}
+          R_IAC: ${{ needs.iac-scan.result }}
+          R_BUILD: ${{ needs.build-scan-push.result }}
+          R_DEPLOY: ${{ needs.deploy.result }}
+          DEPLOY_STATUS: ${{ needs.deploy.outputs.status }}
+          PREV_TAG: ${{ needs.deploy.outputs.previous_tag }}
+          # Truyền qua env thay vì nội suy ${{ }} trong script → chống script injection từ commit message
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title || 'manual run' }}
+          AUTHOR: ${{ github.event.head_commit.author.name || github.actor }}
+          EVENT: ${{ github.event_name }}
+          APP_URL: ${{ vars.APP_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA::7}"
+          WHEN="$(TZ=Asia/Ho_Chi_Minh date '+%H:%M:%S %d/%m/%Y (GMT+7)')"
+          MSG_FIRST_LINE="$(printf '%s' "$COMMIT_MSG" | head -n1 | cut -c1-120)"
+
+          if [ "$DEPLOY_STATUS" = "success" ]; then
+            STATUS="✅ DEPLOY THÀNH CÔNG"; COLOR=3066993
+          elif [ "$DEPLOY_STATUS" = "rolled_back" ]; then
+            STATUS="⚠️ ĐÃ ROLLBACK về ${PREV_TAG::7}"; COLOR=15105570
+          elif [ "$R_SECURITY" = "failure" ]; then
+            STATUS="❌ FAILED tại Security & Code Quality"; COLOR=15158332
+          elif [ "$R_ITEST" = "failure" ]; then
+            STATUS="❌ FAILED tại Integration Test"; COLOR=15158332
+          elif [ "$R_IAC" = "failure" ]; then
+            STATUS="❌ FAILED tại IaC & Config Scan"; COLOR=15158332
+          elif [ "$R_BUILD" = "failure" ]; then
+            STATUS="❌ FAILED tại Build/Trivy Scan"; COLOR=15158332
+          elif [ "$R_DEPLOY" = "failure" ]; then
+            STATUS="❌ DEPLOY FAILED"; COLOR=15158332
+          elif [ "$EVENT" = "pull_request" ] && [ "$R_SECURITY" = "success" ] && [ "$R_ITEST" = "success" ] && [ "$R_IAC" = "success" ]; then
+            STATUS="🔍 PR CHECK PASSED"; COLOR=3447003
+          else
+            STATUS="⏹️ CANCELLED / SKIPPED"; COLOR=9807270
+          fi
+
+          if [ -n "${DISCORD_WEBHOOK_URL:-}" ]; then
+            jq -n \
+              --arg title "$STATUS" --argjson color "$COLOR" \
+              --arg repo "$GITHUB_REPOSITORY" --arg branch "$GITHUB_REF_NAME" \
+              --arg author "$AUTHOR" --arg sha "$SHORT_SHA" --arg msg "$MSG_FIRST_LINE" \
+              --arg when "$WHEN" --arg run "$RUN_URL" --arg app "${APP_URL:-n/a}" \
+              --arg jobs "Security: $R_SECURITY · Test: $R_ITEST · IaC: $R_IAC · Build: $R_BUILD · Deploy: $R_DEPLOY" \
+              '{username: "Home Shopping CI/CD",
+                embeds: [{title: $title, url: $run, color: $color,
+                  fields: [
+                    {name: "Repository", value: $repo, inline: true},
+                    {name: "Branch", value: $branch, inline: true},
+                    {name: "Người commit", value: $author, inline: true},
+                    {name: "Commit", value: ("`" + $sha + "` " + $msg)},
+                    {name: "Jobs", value: $jobs},
+                    {name: "Thời gian", value: $when, inline: true},
+                    {name: "App", value: $app, inline: true}
+                  ]}]}' \
+            | curl -fsS --retry 3 -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK_URL" \
+            || echo "::warning::Gửi Discord thất bại"
+          fi
+
+          if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+            esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+            TEXT="<b>$(esc "$STATUS")</b>
+          📦 <b>Repo:</b> $(esc "$GITHUB_REPOSITORY") (<code>$(esc "$GITHUB_REF_NAME")</code>)
+          👤 <b>Người commit:</b> $(esc "$AUTHOR")
+          🔖 <b>Commit:</b> <code>$SHORT_SHA</code> $(esc "$MSG_FIRST_LINE")
+          🧪 Security: $R_SECURITY · Test: $R_ITEST · IaC: $R_IAC · Build: $R_BUILD · Deploy: $R_DEPLOY
+          🕒 $WHEN
+          🔗 <a href=\"$RUN_URL\">Xem pipeline</a>"
+            curl -fsS --retry 3 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=${TEXT}" \
+              --data-urlencode "parse_mode=HTML" \
+              --data-urlencode "disable_web_page_preview=true" >/dev/null \
+            || echo "::warning::Gửi Telegram thất bại"
+          fi
+
+          echo "## $STATUS" >> "$GITHUB_STEP_SUMMARY"

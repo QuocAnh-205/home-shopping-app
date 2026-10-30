@@ -1,0 +1,33 @@
+type Env = Record<string, string | undefined>;
+
+const REQUIRED = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET'] as const;
+const DURATION_RE = /^\d+[smhd]$/;
+
+export function validateEnv(config: Env): Env {
+  const errors: string[] = [];
+
+  const missing = REQUIRED.filter((key) => !config[key] || config[key]!.trim() === '');
+  if (missing.length > 0) errors.push(`Missing required environment variables: ${missing.join(', ')}`);
+
+  if ((config.JWT_SECRET ?? '').length < 32) errors.push('JWT_SECRET must be at least 32 characters long');
+
+  if (config.JWT_EXPIRES_IN && !DURATION_RE.test(config.JWT_EXPIRES_IN)) {
+    errors.push(`JWT_EXPIRES_IN must look like 15m, 12h, 1d (got "${config.JWT_EXPIRES_IN}")`);
+  }
+
+  const port = Number(config.PORT ?? 8080);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) errors.push(`PORT is invalid: ${config.PORT}`);
+
+  if (config.DATABASE_URL && !/^postgres(ql)?:\/\//.test(config.DATABASE_URL)) {
+    errors.push('DATABASE_URL must be a postgresql:// connection string');
+  }
+  if (config.REDIS_URL && !/^rediss?:\/\//.test(config.REDIS_URL)) errors.push('REDIS_URL must be a redis:// URL');
+
+  // Cờ chỉ dành cho test e2e: cấm tuyệt đối ở production
+  if (config.NODE_ENV === 'production' && config.THROTTLE_DISABLED === 'true') {
+    errors.push('THROTTLE_DISABLED must not be enabled in production');
+  }
+
+  if (errors.length > 0) throw new Error(`Invalid environment configuration:\n - ${errors.join('\n - ')}`);
+  return config;
+}

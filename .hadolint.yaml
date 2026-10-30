@@ -1,0 +1,7 @@
+# Hadolint: lint Dockerfile theo best practice (chạy trong job "IaC & Config Scan")
+failure-threshold: warning
+ignored:
+  # Không pin version gói apk: base image node:20-alpine đã được pin, "apk upgrade" để nhận bản vá bảo mật mới nhất
+  - DL3018
+trustedRegistries:
+  - docker.io

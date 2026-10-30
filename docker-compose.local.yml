@@ -1,0 +1,93 @@
+# ============================================================
+# Môi trường demo local (build từ source, HTTP tại http://localhost)
+# Chạy:  docker compose -f docker-compose.local.yml up -d --build
+# Seed:  docker compose -f docker-compose.local.yml exec backend node prisma/seed.js
+# ============================================================
+name: homeshop-local
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  nginx:
+    image: nginx:1.28.0-alpine
+    ports:
+      # Đổi cổng nếu máy đã có dịch vụ khác chiếm cổng 80:  LOCAL_HTTP_PORT=8088 docker compose ... up
+      - "${LOCAL_HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx/local.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks: [frontend-net]
+    logging: *default-logging
+
+  frontend:
+    build: ./frontend
+    environment:
+      INTERNAL_API_URL: http://backend:8080
+    networks: [frontend-net]
+    logging: *default-logging
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://homeshop:localdevpassword@postgres:5432/homeshop?schema=public
+      REDIS_URL: redis://:localredispassword@redis:6379/0
+      JWT_SECRET: local-development-secret-at-least-32-chars
+      SEED_ADMIN_EMAIL: admin@homeshop.local
+      SEED_ADMIN_PASSWORD: Admin12345
+      SEED_CUSTOMER_EMAIL: khach@homeshop.local
+      SEED_CUSTOMER_PASSWORD: Khach12345
+      SWAGGER_ENABLED: "true"
+      LOG_LEVEL: info
+    # Local: tự migrate + seed (idempotent) khi khởi động; production chạy migration riêng trong pipeline
+    command: ["sh", "-c", "npx prisma migrate deploy && node prisma/seed.js && exec node dist/main.js"]
+    networks: [frontend-net, backend-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: homeshop
+      POSTGRES_PASSWORD: localdevpassword
+      POSTGRES_DB: homeshop
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [backend-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U homeshop -d homeshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "localredispassword", "--appendonly", "yes"]
+    networks: [backend-net]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a localredispassword --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+
+networks:
+  frontend-net: {}
+  backend-net:
+    internal: true
+
+volumes:
+  pgdata: {}

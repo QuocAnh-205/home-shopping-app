@@ -1,0 +1,35 @@
+# Tự động mở PR cập nhật dependency/bản vá bảo mật mỗi tuần (PR vẫn phải qua toàn bộ pipeline CI)
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule: { interval: weekly, day: monday, time: "02:00", timezone: Asia/Ho_Chi_Minh }
+    open-pull-requests-limit: 5
+    groups:
+      nestjs: { patterns: ["@nestjs/*"] }
+      prisma: { patterns: ["prisma", "@prisma/*"] }
+      aws-sdk: { patterns: ["@aws-sdk/*"] }
+    ignore:
+      # Major version cần review thủ công (breaking change)
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly, day: monday, time: "02:00", timezone: Asia/Ho_Chi_Minh }
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker
+    directories: [/backend, /frontend]
+    schedule: { interval: weekly }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+
+  - package-ecosystem: terraform
+    directory: /terraform
+    schedule: { interval: monthly }
