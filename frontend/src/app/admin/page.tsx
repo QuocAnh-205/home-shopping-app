@@ -23,7 +23,7 @@ export default function AdminPage() {
   return (
     <section>
       <h1 className="page-title">
-        <FontAwesomeIcon icon={faBoxOpen} /> Bảng điều khiển quản trị
+        <FontAwesomeIcon icon={faBoxOpen} /> Quản trị cửa hàng
       </h1>
       <RequireAuth role="ADMIN">
         <div className="tabs" role="tablist">
@@ -33,7 +33,7 @@ export default function AdminPage() {
             </button>
           ))}
         </div>
-        {tab === 'dashboard' && <Dashboard />}
+        {tab === 'dashboard' && <Dashboard onOpenOrders={() => setTab('orders')} />}
         {tab === 'orders' && <OrdersAdmin />}
         {tab === 'products' && <ProductsAdmin />}
         {tab === 'reviews' && <ReviewsAdmin />}

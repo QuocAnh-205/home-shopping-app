@@ -51,12 +51,7 @@ export function RegisterForm() {
   return (
     <>
       <h1>Tạo tài khoản</h1>
-      <p className="muted">Chỉ mất 30 giây – hoặc dùng tài khoản Google/Facebook có sẵn.</p>
-
-      <SocialButtons mode="register" next={target} />
-      <div className="divider-text">
-        <span>hoặc đăng ký bằng email</span>
-      </div>
+      <p className="muted">Chỉ mất 30 giây – hoặc dùng tài khoản Google/Facebook ở cuối trang.</p>
 
       <form className="form" onSubmit={submit}>
         <label className="field">
@@ -95,6 +90,10 @@ export function RegisterForm() {
           Đăng nhập
         </Link>
       </p>
+      <div className="divider-text">
+        <span>hoặc đăng ký nhanh với</span>
+      </div>
+      <SocialButtons mode="register" next={target} />
     </>
   );
 }

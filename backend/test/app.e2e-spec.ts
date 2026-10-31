@@ -183,8 +183,11 @@ describe('Home Shopping API (e2e)', () => {
     await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status: 'CANCELLED' }).expect(400);
 
     const stats = await http().get('/api/admin/stats').set(auth(adminToken)).expect(200);
-    expect(stats.body.revenueLast7Days).toHaveLength(7);
-    expect(Number(stats.body.revenue)).toBeGreaterThan(0);
+    expect(stats.body.revenueDaily).toHaveLength(30);
+    expect(Number(stats.body.kpis.revenueAll)).toBeGreaterThan(0);
+    expect(Number(stats.body.kpis.revenueToday)).toBeGreaterThan(0);
+    expect(stats.body.revenueByCategory.some((c: { slug: string }) => c.slug === `e2e-${run}`)).toBe(true);
+    expect(stats.body.recentOrders.length).toBeGreaterThan(0);
   });
 
   it('logout revokes the token immediately', async () => {

@@ -3,7 +3,7 @@
 # Chạy:  docker compose -f docker-compose.local.yml up -d --build
 #        (cổng 80 bận → LOCAL_HTTP_PORT=8088 docker compose -f docker-compose.local.yml up -d --build)
 # Web:   http://localhost[:LOCAL_HTTP_PORT]     Email (Mailpit): http://localhost:8025
-# Backend tự chạy migration + seed (131 sản phẩm, tài khoản demo, đánh giá mẫu) khi khởi động.
+# Backend tự chạy migration + seed (131 sản phẩm, tài khoản demo, đánh giá & đơn hàng mẫu) khi khởi động.
 # Đăng nhập Google/Facebook: export GOOGLE_CLIENT_ID/SECRET, FACEBOOK_APP_ID/SECRET trước khi chạy (xem README).
 # ============================================================
 name: homeshop-local
@@ -52,12 +52,8 @@ services:
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
       UPLOAD_DIR: /app/uploads
-      SEED_ADMIN_EMAIL: admin@homeshop.local
-      SEED_ADMIN_PASSWORD: Admin12345
-      SEED_CUSTOMER_EMAIL: khach@homeshop.local
-      SEED_CUSTOMER_PASSWORD: Khach12345
-      SEED_DEMO_CUSTOMERS: "true"
-      SEED_DEMO_REVIEWS: "true"
+      # Tài khoản demo + đánh giá mẫu + lịch sử đơn hàng mẫu. Sửa tài khoản tại backend/prisma/data/demo-accounts.js
+      SEED_DEMO_DATA: "true"
       SWAGGER_ENABLED: "true"
       LOG_LEVEL: info
     # Local: tự migrate + seed (idempotent) khi khởi động; production chạy migration riêng trong pipeline

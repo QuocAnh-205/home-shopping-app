@@ -135,14 +135,39 @@ export interface AuthResponse {
   user: UserProfile;
 }
 
-export interface DashboardStats {
+export interface DailyRevenue {
+  day: string;
   revenue: string;
+  orders: number;
+}
+
+export interface DashboardStats {
+  kpis: {
+    revenueAll: string;
+    revenueToday: string;
+    revenueYesterday: string;
+    revenue30d: string;
+    revenuePrev30d: string;
+    ordersToday: number;
+    ordersYesterday: number;
+    paidOrders30d: number;
+    paidOrdersPrev30d: number;
+    avgOrderValue30d: string;
+    unitsSold30d: number;
+    newCustomers30d: number;
+    newCustomersPrev30d: number;
+    customers: number;
+    products: number;
+    outOfStock: number;
+    pendingOrders: number;
+  };
   ordersByStatus: Record<OrderStatus, number>;
   totalOrders: number;
-  customers: number;
-  products: number;
-  revenueLast7Days: { day: string; revenue: string; orders: number }[];
-  topProducts: { productId: string; name: string; slug: string; quantity: number }[];
+  revenueDaily: DailyRevenue[];
+  revenueByCategory: { slug: string; name: string; revenue: string; units: number }[];
+  topProducts: { productId: string; name: string; slug: string; imageUrl: string | null; quantity: number; revenue: string }[];
+  recentOrders: { id: string; customer: string; totalAmount: string; status: OrderStatus; createdAt: string; itemCount: number }[];
+  reviews: { average: number; count: number; last30d: number; distribution: Record<'1' | '2' | '3' | '4' | '5', number> };
   lowStock: Product[];
   generatedAt: string;
 }

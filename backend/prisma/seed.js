@@ -5,15 +5,15 @@
  * Seed idempotent (chạy lại nhiều lần không tạo trùng).
  * - Danh mục + 131 sản phẩm từ prisma/data/catalog.js (ảnh tĩnh trong frontend/public/images, nguồn Unsplash).
  *   Sản phẩm đã có: cập nhật nội dung, giá, ảnh; GIỮ NGUYÊN tồn kho & số đã bán (dữ liệu vận hành thật).
- * - Tài khoản chỉ tạo khi có biến môi trường → production không có tài khoản mặc định:
- *     SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD          → 1 admin
- *     SEED_CUSTOMER_EMAIL / SEED_CUSTOMER_PASSWORD    → khách demo chính
- *     SEED_DEMO_CUSTOMERS=true                        → thêm 3 khách demo (cùng mật khẩu khách)
- *     SEED_DEMO_REVIEWS=true                          → đánh giá mẫu từ các khách demo (chỉ dùng cho môi trường demo)
+ * - SEED_DEMO_DATA=true (chỉ môi trường demo/local): tạo tài khoản trong prisma/data/demo-accounts.js
+ *   (SỬA TÀI KHOẢN DEMO Ở FILE ĐÓ), đánh giá mẫu và lịch sử đơn hàng 60 ngày cho dashboard quản trị.
+ * - Production: không bật SEED_DEMO_DATA → không có tài khoản mặc định. Có thể tạo 1 admin đầu tiên
+ *   bằng SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (chỉ tạo nếu chưa tồn tại, không ghi đè mật khẩu).
  */
 const { PrismaClient, Prisma, Role } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { categories, products } = require('./data/catalog');
+const { demoAccounts } = require('./data/demo-accounts');
 
 const prisma = new PrismaClient();
 
@@ -35,10 +35,13 @@ const CATEGORY_STORY = {
     'Mỗi món đồ trang trí được chọn lọc để dễ phối với nhiều phong cách: tối giản, Bắc Âu, Japandi hay vintage. Một điểm nhấn nhỏ nhưng đủ làm không gian sống trở nên có hồn.',
 };
 
-const DEMO_CUSTOMERS = [
-  { email: 'lan.nguyen@homeshop.local', fullName: 'Nguyễn Thị Lan' },
-  { email: 'minh.tran@homeshop.local', fullName: 'Trần Văn Minh' },
-  { email: 'huong.le@homeshop.local', fullName: 'Lê Thu Hương' },
+const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,72}$/;
+const ADDRESSES = [
+  '25 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+  '118 Trần Phú, P. Hải Châu 1, Q. Hải Châu, Đà Nẵng',
+  '42 Lý Thường Kiệt, P. Trần Hưng Đạo, Q. Hoàn Kiếm, Hà Nội',
+  '9 Hùng Vương, P. Lộc Thọ, TP. Nha Trang, Khánh Hòa',
+  '76 Nguyễn Văn Linh, P. Tân Phong, Quận 7, TP. Hồ Chí Minh',
 ];
 
 const REVIEW_TEXT = {
@@ -78,14 +81,66 @@ function toProductData(p, categoryId) {
   };
 }
 
-async function upsertUser(email, password, fullName, role) {
+/** Tài khoản demo: cập nhật họ tên / vai trò / mật khẩu theo demo-accounts.js mỗi lần seed */
+async function upsertDemoAccount({ email, fullName, password, role }) {
+  const normalized = String(email).trim().toLowerCase();
+  if (!PASSWORD_RE.test(password)) {
+    throw new Error(`demo-accounts.js: mật khẩu của ${normalized} cần ≥ 8 ký tự, có chữ hoa, chữ thường và chữ số`);
+  }
+  if (!['ADMIN', 'CUSTOMER'].includes(role)) throw new Error(`demo-accounts.js: role của ${normalized} phải là ADMIN hoặc CUSTOMER`);
+  const passwordHash = await bcrypt.hash(password, 12);
   const user = await prisma.user.upsert({
-    where: { email },
-    update: {},
-    create: { email, fullName, role, passwordHash: await bcrypt.hash(password, 12) },
+    where: { email: normalized },
+    update: { fullName, role, passwordHash },
+    create: { email: normalized, fullName, role, passwordHash },
   });
-  console.log(`  user ${email} (${role})`);
+  console.log(`  demo account ${normalized} (${role})`);
   return user;
+}
+
+/** Lịch sử ~140 đơn hàng trong 60 ngày (giá theo bảng giá hiện tại) để dashboard có số liệu thật để phân tích */
+async function seedOrders(customers) {
+  const catalog = await prisma.product.findMany({ select: { id: true, slug: true, price: true } });
+  catalog.sort((a, b) => a.slug.localeCompare(b.slug));
+  let created = 0;
+  for (let i = 0; i < 140; i++) {
+    const key = `seed-order-${String(i).padStart(3, '0')}`;
+    if (await prisma.order.findUnique({ where: { idempotencyKey: key }, select: { id: true } })) continue;
+    const h = hash(key);
+    // Mật độ đơn tăng dần về gần hiện tại; vài đơn luôn rơi vào hôm nay để KPI "hôm nay" có dữ liệu
+    const daysAgo = i < 4 ? 0 : Math.floor(Math.pow((h % 1000) / 1000, 1.4) * 60);
+    const createdAt = new Date(Date.now() - daysAgo * 86_400_000 - ((h >>> 8) % 36_000) * 1000);
+    const status =
+      daysAgo === 0 ? (h % 2 ? 'PENDING' : 'PAID')
+      : daysAgo <= 2 ? ['PENDING', 'PAID', 'SHIPPING'][h % 3]
+      : daysAgo <= 5 ? (h % 4 === 0 ? 'PAID' : 'SHIPPING')
+      : h % 12 === 0 ? 'CANCELLED' : 'COMPLETED';
+
+    const lines = new Map();
+    const count = 1 + (h % 3);
+    for (let k = 0; k < count; k++) {
+      const product = catalog[(h >>> (k * 5)) % catalog.length];
+      lines.set(product.id, { product, quantity: 1 + ((h >>> (k * 7)) % 2) });
+    }
+    const items = [...lines.values()].map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price }));
+    const total = items.reduce((sum, it) => sum.add(it.unitPrice.mul(it.quantity)), new Prisma.Decimal(0));
+
+    await prisma.order.create({
+      data: {
+        userId: customers[h % customers.length].id,
+        idempotencyKey: key,
+        status,
+        totalAmount: total,
+        shippingAddress: ADDRESSES[h % ADDRESSES.length],
+        phone: `09${String(10000000 + (h % 89999999)).slice(0, 8)}`,
+        createdAt,
+        updatedAt: createdAt,
+        items: { create: items },
+      },
+    });
+    created++;
+  }
+  console.log(`  ${created} demo orders (60 days history)`);
 }
 
 async function seedReviews(customers) {
@@ -164,20 +219,26 @@ async function main() {
   }
   console.log(`  ${categories.length} categories, ${products.length} products`);
 
-  if (process.env.SEED_ADMIN_EMAIL && process.env.SEED_ADMIN_PASSWORD) {
-    await upsertUser(process.env.SEED_ADMIN_EMAIL, process.env.SEED_ADMIN_PASSWORD, 'Quản trị viên', Role.ADMIN);
+  // Admin đầu tiên cho production: chỉ tạo khi chưa có, không bao giờ ghi đè mật khẩu
+  const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
+  if (adminEmail && process.env.SEED_ADMIN_PASSWORD) {
+    await prisma.user.upsert({
+      where: { email: adminEmail },
+      update: {},
+      create: { email: adminEmail, fullName: 'Quản trị viên', role: Role.ADMIN, passwordHash: await bcrypt.hash(process.env.SEED_ADMIN_PASSWORD, 12) },
+    });
+    console.log(`  admin ${adminEmail}`);
   }
 
-  const customers = [];
-  const customerPassword = process.env.SEED_CUSTOMER_PASSWORD;
-  if (process.env.SEED_CUSTOMER_EMAIL && customerPassword) {
-    customers.push(await upsertUser(process.env.SEED_CUSTOMER_EMAIL, customerPassword, 'Khách hàng Demo', Role.CUSTOMER));
-    if (process.env.SEED_DEMO_CUSTOMERS === 'true') {
-      for (const c of DEMO_CUSTOMERS) customers.push(await upsertUser(c.email, customerPassword, c.fullName, Role.CUSTOMER));
+  if (process.env.SEED_DEMO_DATA === 'true') {
+    const accounts = [];
+    for (const a of demoAccounts) accounts.push(await upsertDemoAccount(a));
+    const customers = accounts.filter((u) => u.role === Role.CUSTOMER);
+    if (customers.length > 0) {
+      await seedReviews(customers);
+      await seedOrders(customers);
     }
   }
-
-  if (process.env.SEED_DEMO_REVIEWS === 'true' && customers.length > 0) await seedReviews(customers);
 
   await clearProductCache();
   console.log('Seed completed');

@@ -38,11 +38,16 @@ Yêu cầu: Docker Desktop.
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-Backend tự chạy migration + seed: **131 sản phẩm, 7 danh mục, 5 tài khoản demo, ~225 đánh giá mẫu**. Mở http://localhost
+Backend tự chạy migration + seed: **131 sản phẩm, 7 danh mục, 5 tài khoản demo, ~225 đánh giá mẫu, 140 đơn hàng lịch sử 60 ngày** (để dashboard quản trị có số liệu). Mở http://localhost
 
 > Cổng 80 đã bị chiếm? Chạy `LOCAL_HTTP_PORT=8088 docker compose -f docker-compose.local.yml up -d --build` (PowerShell: `$env:LOCAL_HTTP_PORT=8088; docker compose ...`) rồi mở http://localhost:8088
 
 ### Tài khoản test (chỉ môi trường local – production không seed tài khoản)
+
+> **Sửa tài khoản demo tại một chỗ duy nhất:** [`backend/prisma/data/demo-accounts.js`](backend/prisma/data/demo-accounts.js)
+> (email, họ tên, mật khẩu, vai trò). Sau khi sửa: `docker compose -f docker-compose.local.yml up -d --build backend`.
+> Đổi email sẽ tạo tài khoản mới; muốn làm sạch DB local: `docker compose -f docker-compose.local.yml down -v` rồi `up` lại.
+> Cờ bật dữ liệu demo: `SEED_DEMO_DATA: "true"` trong [`docker-compose.local.yml`](docker-compose.local.yml).
 
 | Vai trò | Email | Mật khẩu | Dùng để kiểm tra |
 |---|---|---|---|
@@ -60,7 +65,7 @@ Kiểm tra: `/api/health` · Swagger: `/api/docs` · `/api/metrics` bị Nginx c
 
 ### Bật đăng nhập Google / Facebook
 
-Nút Google/Facebook tự hiện khi có khóa ứng dụng (không cấu hình → nút mờ kèm giải thích, các tính năng khác vẫn chạy).
+Nút **Đăng nhập/Đăng ký bằng Google, Facebook** luôn hiển thị ở cuối form đăng nhập & đăng ký; tài khoản mới được tạo tự động ở lần đăng nhập đầu tiên. Google/Facebook chỉ chấp nhận yêu cầu từ ứng dụng đã đăng ký → cần tạo **Client ID/Secret** một lần (chưa có thì bấm nút sẽ quay lại trang đăng nhập kèm thông báo hướng dẫn):
 
 1. **Google** – [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → *Create credentials* → *OAuth client ID* → *Web application*
    → *Authorized redirect URI*: `http://localhost:8088/api/auth/oauth/google/callback` (production: `https://<domain>/api/auth/oauth/google/callback`).

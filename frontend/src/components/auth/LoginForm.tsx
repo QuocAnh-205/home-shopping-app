@@ -79,11 +79,6 @@ export function LoginForm() {
         </p>
       )}
 
-      <SocialButtons mode="login" next={target} />
-      <div className="divider-text">
-        <span>hoặc đăng nhập bằng email</span>
-      </div>
-
       <form className="form" onSubmit={submit}>
         <label className="field">
           Email
@@ -115,6 +110,10 @@ export function LoginForm() {
           Đăng ký miễn phí
         </Link>
       </p>
+      <div className="divider-text">
+        <span>hoặc tiếp tục với</span>
+      </div>
+      <SocialButtons mode="login" next={target} />
     </>
   );
 }

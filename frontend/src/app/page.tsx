@@ -176,47 +176,6 @@ export default async function HomePage(props: Props) {
             </section>
           )}
 
-          {reviews.length > 0 && (
-            <section className="section">
-              <div className="section-head">
-                <div>
-                  <h2>
-                    <FontAwesomeIcon icon={faQuoteLeft} /> Khách hàng nói gì
-                  </h2>
-                  <p>Đánh giá mới nhất từ người mua</p>
-                </div>
-              </div>
-              <div className="testimonials">
-                {reviews.map((r) => (
-                  <Link key={r.id} href={`/products/${r.product.slug}#reviews`} className="testimonial">
-                    <Stars value={r.rating} />
-                    <p>“{r.comment}”</p>
-                    <footer>
-                      <span className="avatar" aria-hidden>
-                        {initials(r.user.fullName)}
-                      </span>
-                      <span>
-                        <strong>{r.user.fullName}</strong>
-                        <small className="muted">
-                          {formatDay(r.createdAt)}
-                          {r.verifiedPurchase && (
-                            <>
-                              {' · '}
-                              <FontAwesomeIcon icon={faCircleCheck} className="ok" /> Đã mua
-                            </>
-                          )}
-                        </small>
-                      </span>
-                      {r.product.imageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img className="testimonial-thumb" src={r.product.imageUrl} alt={r.product.name} width={56} height={56} loading="lazy" />
-                      )}
-                    </footer>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
         </>
       )}
 
@@ -309,6 +268,48 @@ export default async function HomePage(props: Props) {
           </nav>
         )}
       </section>
+
+      {landing && reviews.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <div>
+              <h2>
+                <FontAwesomeIcon icon={faQuoteLeft} /> Khách hàng nói gì
+              </h2>
+              <p>Đánh giá mới nhất từ người mua</p>
+            </div>
+          </div>
+          <div className="testimonials">
+            {reviews.map((r) => (
+              <Link key={r.id} href={`/products/${r.product.slug}#reviews`} className="testimonial">
+                <div className="testimonial-author">
+                  <span className="avatar" aria-hidden>
+                    {initials(r.user.fullName)}
+                  </span>
+                  <span>
+                    <strong>{r.user.fullName}</strong>
+                    <small className="muted">{formatDay(r.createdAt)}</small>
+                    {r.verifiedPurchase && (
+                      <small className="ok">
+                        <FontAwesomeIcon icon={faCircleCheck} /> Đã mua hàng
+                      </small>
+                    )}
+                  </span>
+                </div>
+                <div className="testimonial-body">
+                  <Stars value={r.rating} />
+                  <p>{r.comment}</p>
+                  <span className="testimonial-product muted small">Về sản phẩm: {r.product.name}</span>
+                </div>
+                {r.product.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="testimonial-thumb" src={r.product.imageUrl} alt={r.product.name} width={96} height={72} loading="lazy" />
+                )}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {landing && (
         <section className="section cta-band">
