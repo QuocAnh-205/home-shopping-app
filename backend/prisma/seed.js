@@ -7,7 +7,8 @@
  *   Sản phẩm đã có: cập nhật nội dung, giá, ảnh; GIỮ NGUYÊN tồn kho & số đã bán (dữ liệu vận hành thật).
  * - SEED_DEMO_DATA=true (chỉ môi trường demo/local): tạo tài khoản trong prisma/data/demo-accounts.js
  *   (SỬA TÀI KHOẢN DEMO Ở FILE ĐÓ), đánh giá mẫu (mọi sản phẩm 3–6 đánh giá, người đánh giá trong prisma/data/reviews.js) và lịch sử đơn hàng 60 ngày cho dashboard quản trị.
- * - Production: không bật SEED_DEMO_DATA → không có tài khoản mặc định. Có thể tạo 1 admin đầu tiên
+ * - Production: không bật SEED_DEMO_DATA → không có tài khoản mặc định. SEED_SAMPLE_REVIEWS=true chỉ thêm đánh giá mẫu
+ *   (người viết không có mật khẩu, không đăng nhập được). Có thể tạo 1 admin đầu tiên
  *   bằng SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (chỉ tạo nếu chưa tồn tại, không ghi đè mật khẩu).
  */
 const { PrismaClient, Prisma, Role } = require('@prisma/client');
@@ -240,6 +241,9 @@ async function main() {
       await seedReviews(customers);
       await seedOrders(customers);
     }
+  } else if (process.env.SEED_SAMPLE_REVIEWS === 'true') {
+    // Production demo: chỉ đánh giá mẫu từ người đánh giá KHÔNG đăng nhập được (không có tài khoản mật khẩu công khai)
+    await seedReviews([]);
   }
 
   await clearProductCache();

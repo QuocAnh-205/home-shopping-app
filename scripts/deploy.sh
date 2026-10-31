@@ -172,6 +172,11 @@ main() {
   IMAGE_TAG="$NEW_TAG" compose run --rm --no-deps -T backend npx prisma migrate deploy \
     || fail "Database migration failed - running version untouched"
 
+  # Seed idempotent: danh mục + sản phẩm (giữ nguyên tồn kho/đã bán), admin đầu tiên & đánh giá mẫu nếu được cấu hình
+  log "Running idempotent catalog seed"
+  IMAGE_TAG="$NEW_TAG" compose run --rm --no-deps -T backend node prisma/seed.js \
+    || fail "Catalog seed failed - running version untouched"
+
   # 4. Rolling update từng service
   for svc in "${APP_SERVICES[@]}"; do
     if ! rolling_update "$svc" "$NEW_TAG"; then

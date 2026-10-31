@@ -3,7 +3,8 @@
 # Cấp chứng chỉ Let's Encrypt lần đầu (giải bài toán "con gà - quả trứng":
 # Nginx cần cert để khởi động, certbot cần Nginx để xác thực HTTP-01).
 #   1) tạo cert self-signed tạm → 2) start Nginx → 3) xin cert thật qua webroot → 4) reload
-# Yêu cầu .env có DOMAIN và LETSENCRYPT_EMAIL; DNS A record đã trỏ về Elastic IP.
+# Yêu cầu .env có DOMAIN (DNS A record trỏ về Elastic IP, hoặc dùng <ip-gạch-ngang>.sslip.io).
+# LETSENCRYPT_EMAIL không bắt buộc: để trống thì đăng ký không kèm email (không nhận cảnh báo hết hạn).
 # ============================================================
 set -Eeuo pipefail
 
@@ -16,7 +17,6 @@ set -a
 set +a
 
 : "${DOMAIN:?DOMAIN is required in .env}"
-: "${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL is required in .env}"
 STAGING="${LETSENCRYPT_STAGING:-0}"
 CERT_NAME="homeshop"
 LIVE="/etc/letsencrypt/live/$CERT_NAME"
@@ -42,13 +42,18 @@ compose run --rm --no-deps --entrypoint sh certbot -c "
 
 STAGING_ARG=""
 [ "$STAGING" = "1" ] && STAGING_ARG="--staging"
+if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
+  EMAIL_ARGS=(--email "$LETSENCRYPT_EMAIL")
+else
+  EMAIL_ARGS=(--register-unsafely-without-email)
+fi
 
 echo "[tls] Requesting Let's Encrypt certificate for $DOMAIN"
 compose run --rm --no-deps --entrypoint certbot certbot certonly \
   --webroot -w /var/www/certbot \
   --cert-name "$CERT_NAME" \
   -d "$DOMAIN" \
-  --email "$LETSENCRYPT_EMAIL" \
+  "${EMAIL_ARGS[@]}" \
   --rsa-key-size 4096 \
   --agree-tos --no-eff-email --non-interactive \
   $STAGING_ARG

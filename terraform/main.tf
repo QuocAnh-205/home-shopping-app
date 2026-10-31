@@ -149,7 +149,7 @@ resource "aws_vpc_security_group_egress_rule" "web" {
   for_each = { http = 80, https = 443 }
 
   security_group_id = aws_security_group.web.id
-  description       = "Outbound ${upper(each.key)} (apt, Docker Hub, S3, Let's Encrypt, Discord/Telegram)"
+  description       = "Outbound ${upper(each.key)} - apt, Docker Hub, S3, Lets Encrypt, Discord, Telegram"
   ip_protocol       = "tcp"
   from_port         = each.value
   to_port           = each.value

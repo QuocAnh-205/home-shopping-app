@@ -127,6 +127,10 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      # Seed (deploy.sh chạy node prisma/seed.js): admin đầu tiên chỉ tạo nếu chưa có; đánh giá mẫu không tạo tài khoản đăng nhập được
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_SAMPLE_REVIEWS: ${SEED_SAMPLE_REVIEWS:-false}
     # Backend là service DUY NHẤT nằm ở cả 2 mạng: nhận request từ Nginx và gọi DB/Redis
     networks:
       - frontend-net
