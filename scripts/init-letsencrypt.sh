@@ -27,16 +27,33 @@ compose() {
   docker compose -p homeshop -f docker-compose.prod.yml "${env_files[@]}" "$@"
 }
 
+self_signed() {
+  compose run --rm --no-deps --entrypoint sh certbot -c "
+    mkdir -p $LIVE &&
+    openssl req -x509 -nodes -newkey rsa:2048 -days ${1:-1} \
+      -keyout $LIVE/privkey.pem -out $LIVE/fullchain.pem -subj '/CN=$DOMAIN' >/dev/null 2>&1"
+}
+
+wait_nginx_running() {
+  local _
+  for _ in $(seq 1 30); do
+    [ "$(docker inspect -f '{{.State.Running}}' homeshop-nginx 2>/dev/null)" = "true" ] \
+      && [ "$(docker inspect -f '{{.State.Restarting}}' homeshop-nginx 2>/dev/null)" = "false" ] && return 0
+    sleep 2
+  done
+  echo "[tls] nginx is not running"; docker logs --tail 20 homeshop-nginx || true
+  return 1
+}
+
 echo "[tls] Creating temporary self-signed certificate"
-compose run --rm --no-deps --entrypoint sh certbot -c "
-  mkdir -p $LIVE &&
-  openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
-    -keyout $LIVE/privkey.pem -out $LIVE/fullchain.pem -subj '/CN=localhost' >/dev/null 2>&1"
+self_signed 1
 
-echo "[tls] Starting nginx with temporary certificate"
-compose up -d --no-deps nginx
+echo "[tls] (Re)starting nginx with temporary certificate"
+# --force-recreate: nginx có thể đang kẹt vòng restart vì trước đó chưa có cert
+compose up -d --no-deps --force-recreate nginx
+wait_nginx_running
 
-echo "[tls] Removing temporary certificate"
+echo "[tls] Removing temporary certificate (nginx keeps it loaded in memory)"
 compose run --rm --no-deps --entrypoint sh certbot -c "
   rm -rf /etc/letsencrypt/live/$CERT_NAME /etc/letsencrypt/archive/$CERT_NAME /etc/letsencrypt/renewal/$CERT_NAME.conf"
 
@@ -49,14 +66,21 @@ else
 fi
 
 echo "[tls] Requesting Let's Encrypt certificate for $DOMAIN"
-compose run --rm --no-deps --entrypoint certbot certbot certonly \
+# shellcheck disable=SC2086  # STAGING_ARG rỗng hoặc 1 cờ
+if ! compose run --rm --no-deps --entrypoint certbot certbot certonly \
   --webroot -w /var/www/certbot \
   --cert-name "$CERT_NAME" \
   -d "$DOMAIN" \
   "${EMAIL_ARGS[@]}" \
   --rsa-key-size 4096 \
   --agree-tos --no-eff-email --non-interactive \
-  $STAGING_ARG
+  $STAGING_ARG; then
+  # Không để nginx chết vì thiếu cert: dùng cert tự ký 30 ngày, lần deploy sau sẽ thử lại
+  echo "[tls] Let's Encrypt FAILED → falling back to a self-signed certificate (browser will warn)"
+  self_signed 30
+  docker exec homeshop-nginx nginx -s reload
+  exit 1
+fi
 
 echo "[tls] Reloading nginx"
 docker exec homeshop-nginx nginx -s reload

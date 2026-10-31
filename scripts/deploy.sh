@@ -165,7 +165,7 @@ main() {
   #    SKIP_PULL=1: image đã được nạp sẵn bằng `docker load` (deploy thủ công lần đầu, chưa có registry)
   if [ "${SKIP_PULL:-0}" = "1" ]; then
     local img
-    for img in $(IMAGE_TAG="$NEW_TAG" compose config --images "${APP_SERVICES[@]}"); do
+    for img in $(IMAGE_TAG="$NEW_TAG" compose config --images "${APP_SERVICES[@]}" | grep "/home-shopping-"); do
       docker image inspect "$img" >/dev/null 2>&1 || fail "SKIP_PULL=1 but image $img is not loaded"
     done
     log "SKIP_PULL=1 → using preloaded images"
