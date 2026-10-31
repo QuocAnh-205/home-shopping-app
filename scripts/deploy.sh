@@ -2,7 +2,7 @@
 # ============================================================
 # Zero-downtime deploy + auto-rollback (chạy trên EC2, được GitHub Actions gọi qua SSH)
 #
-#   Usage: scripts/deploy.sh <image_tag>
+#   Usage: scripts/deploy.sh <image_tag>        (SKIP_PULL=1: dùng image đã docker load sẵn)
 #   Exit:  0 = deploy thành công
 #          2 = bản mới lỗi → đã rollback về bản trước
 #          1 = lỗi nghiêm trọng (migration fail / rollback fail / thiếu cấu hình)
@@ -161,8 +161,17 @@ main() {
     log "Tag $NEW_TAG is already running → re-deploying in place"
   fi
 
-  # 1. Pull image mới (nếu lỗi → dừng, hệ thống đang chạy không bị ảnh hưởng)
-  IMAGE_TAG="$NEW_TAG" compose pull --quiet "${APP_SERVICES[@]}" || fail "Cannot pull images for $NEW_TAG"
+  # 1. Pull image mới (nếu lỗi → dừng, hệ thống đang chạy không bị ảnh hưởng).
+  #    SKIP_PULL=1: image đã được nạp sẵn bằng `docker load` (deploy thủ công lần đầu, chưa có registry)
+  if [ "${SKIP_PULL:-0}" = "1" ]; then
+    local img
+    for img in $(IMAGE_TAG="$NEW_TAG" compose config --images "${APP_SERVICES[@]}"); do
+      docker image inspect "$img" >/dev/null 2>&1 || fail "SKIP_PULL=1 but image $img is not loaded"
+    done
+    log "SKIP_PULL=1 → using preloaded images"
+  else
+    IMAGE_TAG="$NEW_TAG" compose pull --quiet "${APP_SERVICES[@]}" || fail "Cannot pull images for $NEW_TAG"
+  fi
 
   # 2. Data tier: chỉ recreate khi cấu hình thay đổi
   compose up -d --wait postgres redis || fail "Database/Redis failed to start"
