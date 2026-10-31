@@ -133,8 +133,7 @@ export function Footer() {
         </div>
 
         <div className="footer-bottom">
-          <span>© {new Date().getFullYear()} Home Shopping App · Đồ án DevOps</span>
-          <span>Ảnh sản phẩm: Unsplash (Unsplash License)</span>
+          <span>© {new Date().getFullYear()} Home Shopping App bản quyền của Nguyễn Quốc Anh.</span>
         </div>
       </div>
     </footer>

@@ -20,7 +20,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { StorageService } from '../storage/storage.service';
 import { CreateProductDto, ListProductsQuery, UpdateProductDto, UpdateStockDto } from './products.dto';
-import { ProductPage, ProductView, ProductsService } from './products.service';
+import { ProductPage, ProductView, ProductsService, StoreSummary } from './products.service';
 
 @ApiTags('products')
 @Controller('products')
@@ -39,6 +39,11 @@ export class ProductsController {
   }
 
   /** Đang giảm giá sâu nhất */
+  @Get('summary')
+  summary(): Promise<StoreSummary> {
+    return this.products.summary();
+  }
+
   @Get('deals')
   deals(): Promise<ProductView[]> {
     return this.products.deals();

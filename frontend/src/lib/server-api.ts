@@ -1,5 +1,5 @@
 import 'server-only';
-import type { Category, LatestReview, Product, ProductPage, SortValue } from './types';
+import type { Category, LatestReview, Product, ProductPage, SortValue, StoreSummary } from './types';
 
 // SSR gọi thẳng backend qua mạng Docker nội bộ, không vòng ra Nginx/Internet
 const API_URL = process.env.INTERNAL_API_URL ?? 'http://backend:8080';
@@ -30,14 +30,18 @@ export interface ProductQuery {
   q?: string;
   sort?: SortValue;
   onSale?: boolean;
+  minPrice?: number;
+  maxPrice?: number;
 }
 
-export function getProducts({ page, limit = 12, category, q, sort, onSale }: ProductQuery): Promise<ProductPage> {
+export function getProducts({ page, limit = 12, category, q, sort, onSale, minPrice, maxPrice }: ProductQuery): Promise<ProductPage> {
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (category) qs.set('category', category);
   if (q) qs.set('q', q);
   if (sort) qs.set('sort', sort);
   if (onSale) qs.set('onSale', 'true');
+  if (minPrice !== undefined) qs.set('minPrice', String(minPrice));
+  if (maxPrice !== undefined) qs.set('maxPrice', String(maxPrice));
   return get<ProductPage>(`/products?${qs.toString()}`, 30);
 }
 
@@ -59,4 +63,8 @@ export function getCategories(): Promise<Category[]> {
 
 export function getLatestReviews(): Promise<LatestReview[]> {
   return get<LatestReview[]>('/reviews/latest', 60);
+}
+
+export function getStoreSummary(): Promise<StoreSummary> {
+  return get<StoreSummary>('/products/summary', 300);
 }

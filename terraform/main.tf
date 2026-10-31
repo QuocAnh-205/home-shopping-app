@@ -309,15 +309,16 @@ data "aws_iam_policy_document" "ec2_s3" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["products/*", "backups/*", "products/", "backups/"]
+      values   = ["products/*", "avatars/*", "backups/*", "products/", "avatars/", "backups/"]
     }
   }
 
   statement {
-    sid     = "ReadWriteProductImages"
+    sid     = "ReadWriteProductImagesAndAvatars"
     actions = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
     resources = [
       "${aws_s3_bucket.assets.arn}/products/*",
+      "${aws_s3_bucket.assets.arn}/avatars/*",
     ]
   }
 

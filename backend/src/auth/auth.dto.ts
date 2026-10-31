@@ -1,5 +1,6 @@
+import { Gender } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsISO8601, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 const normalizeEmail = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
 
@@ -72,4 +73,39 @@ export class ChangePasswordDto {
 export class OAuthExchangeDto {
   @Matches(/^[A-Za-z0-9_-]{32,64}$/, { message: 'code is invalid' })
   code: string;
+}
+
+const trimOrNull = ({ value }: { value: unknown }) => {
+  if (typeof value !== 'string') return value;
+  const v = value.trim();
+  return v === '' ? null : v;
+};
+
+/** Số điện thoại Việt Nam: 10–11 chữ số, bắt đầu bằng 0 (khớp CHECK constraint trong DB) */
+export const VN_PHONE_RE = /^0\d{9,10}$/;
+
+/** Cập nhật hồ sơ: trường không gửi = giữ nguyên; gửi null/chuỗi rỗng = xóa (trừ họ tên) */
+export class UpdateProfileDto {
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @MinLength(2)
+  @MaxLength(100)
+  @Matches(/^[^<>]*$/, { message: 'fullName must not contain HTML' })
+  fullName?: string;
+
+  @Transform(trimOrNull)
+  @ValidateIf((_o, v) => v !== null && v !== undefined)
+  @Matches(VN_PHONE_RE, { message: 'phone must be a valid Vietnamese phone number' })
+  phone?: string | null;
+
+  @ValidateIf((_o, v) => v !== null && v !== undefined)
+  @IsEnum(Gender)
+  gender?: Gender | null;
+
+  @Transform(trimOrNull)
+  @ValidateIf((_o, v) => v !== null && v !== undefined)
+  @IsISO8601({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateOfBirth must be YYYY-MM-DD' })
+  dateOfBirth?: string | null;
 }

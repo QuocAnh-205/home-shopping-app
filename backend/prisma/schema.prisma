@@ -21,6 +21,17 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum AddressType {
+  HOME
+  OFFICE
+}
+
 enum OAuthProvider {
   GOOGLE
   FACEBOOK
@@ -33,6 +44,10 @@ model User {
   passwordHash        String?              @map("password_hash")
   fullName            String               @map("full_name")
   avatarUrl           String?              @map("avatar_url")
+  /// Hồ sơ cá nhân (trang Tài khoản của tôi) – đều không bắt buộc
+  phone               String?              @db.VarChar(15)
+  gender              Gender?
+  dateOfBirth         DateTime?            @map("date_of_birth") @db.Date
   role                Role                 @default(CUSTOMER)
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
@@ -40,8 +55,29 @@ model User {
   reviews             Review[]
   oauthAccounts       OAuthAccount[]
   passwordResetTokens PasswordResetToken[]
+  addresses           Address[]
 
   @@map("users")
+}
+
+/// Sổ địa chỉ giao hàng. Mỗi người dùng có tối đa 1 địa chỉ mặc định (partial unique index trong migration).
+model Address {
+  id        String      @id @default(uuid()) @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName  String      @map("full_name") @db.VarChar(100)
+  phone     String      @db.VarChar(15)
+  province  String      @db.VarChar(100)
+  district  String      @db.VarChar(100)
+  ward      String      @db.VarChar(100)
+  street    String      @db.VarChar(255)
+  type      AddressType @default(HOME)
+  isDefault Boolean     @default(false) @map("is_default")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt])
+  @@map("addresses")
 }
 
 model OAuthAccount {

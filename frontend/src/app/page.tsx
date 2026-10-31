@@ -2,17 +2,24 @@ import {
   faArrowRight,
   faBolt,
   faBoxOpen,
+  faCartPlus,
   faChevronLeft,
   faChevronRight,
   faCircleCheck,
+  faCircleQuestion,
   faFire,
+  faHandHoldingDollar,
   faLayerGroup,
   faMagnifyingGlass,
+  faMedal,
   faPercent,
   faQuoteLeft,
+  faSeedling,
+  faStar,
   faStore,
   faTag,
   faTruckFast,
+  faWallet,
   faWandMagicSparkles,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
@@ -24,14 +31,69 @@ import { SortSelect } from '@/components/SortSelect';
 import { Stars } from '@/components/Stars';
 import { TrustBar } from '@/components/TrustBar';
 import { categoryIcon, categoryImage } from '@/lib/icons';
-import { getBestSellers, getCategories, getDeals, getLatestReviews, getProducts } from '@/lib/server-api';
-import { SORT_OPTIONS, formatDay, initials, type SortValue } from '@/lib/types';
+import { getBestSellers, getCategories, getDeals, getLatestReviews, getProducts, getStoreSummary } from '@/lib/server-api';
+import { PRICE_RANGES, SORT_OPTIONS, formatCompact, formatDay, initials, type SortValue } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 interface Props {
-  searchParams: Promise<{ page?: string; category?: string; q?: string; sort?: string; sale?: string }>;
+  searchParams: Promise<{ page?: string; category?: string; q?: string; sort?: string; sale?: string; price?: string }>;
 }
+
+/** Bộ sưu tập theo không gian: ảnh thật của sản phẩm tiêu biểu trong danh mục */
+const COLLECTIONS = [
+  {
+    category: 'nha-bep',
+    image: '/images/products/noi-gang-trang-men-do-24cm.webp',
+    eyebrow: 'Bộ sưu tập bếp',
+    title: 'Góc bếp ấm áp cho bữa cơm nhà',
+    text: 'Nồi gang, dao thớt, hũ gia vị – đủ đồ để nấu ngon mỗi ngày.',
+  },
+  {
+    category: 'phong-khach',
+    image: '/images/products/den-tha-chao-non-long-dong.webp',
+    eyebrow: 'Phòng khách',
+    title: 'Ánh sáng & nội thất tối giản',
+    text: 'Đèn thả, đôn, kệ treo tường giúp phòng khách có điểm nhấn.',
+  },
+  {
+    category: 'phong-ngu',
+    image: '/images/products/den-ban-gom-dua-chup-lanh.webp',
+    eyebrow: 'Phòng ngủ',
+    title: 'Giấc ngủ sâu, không gian dịu nhẹ',
+    text: 'Đèn ngủ, chăn len, tủ đầu giường cho buổi tối thư thái.',
+  },
+] as const;
+
+const STEPS = [
+  { icon: faMagnifyingGlass, title: 'Chọn sản phẩm', text: 'Tìm theo không gian, mức giá hoặc gõ tên món đồ bạn cần.' },
+  { icon: faCartPlus, title: 'Thêm vào giỏ', text: 'Giỏ hàng lưu theo tài khoản, mở trên máy nào cũng còn.' },
+  { icon: faWallet, title: 'Đặt hàng COD', text: 'Chọn địa chỉ từ sổ địa chỉ, thanh toán khi nhận hàng.' },
+  { icon: faStar, title: 'Nhận hàng & đánh giá', text: 'Theo dõi đơn trong "Đơn mua" và chia sẻ cảm nhận của bạn.' },
+] as const;
+
+const FAQ = [
+  {
+    q: 'Bao lâu thì tôi nhận được hàng?',
+    a: 'Đơn nội thành đặt trước 16h được giao trong ngày; các tỉnh thành khác từ 2–4 ngày làm việc. Bạn theo dõi trạng thái đơn trong mục Đơn mua.',
+  },
+  {
+    q: 'Tôi có được kiểm tra hàng trước khi thanh toán không?',
+    a: 'Có. Mọi đơn đều thanh toán khi nhận hàng (COD), bạn được mở hộp kiểm tra trước khi trả tiền.',
+  },
+  {
+    q: 'Chính sách đổi trả như thế nào?',
+    a: 'Đổi trả miễn phí trong 30 ngày nếu sản phẩm lỗi do nhà sản xuất hoặc giao sai mẫu. Đồ điện gia dụng được bảo hành chính hãng 12–24 tháng.',
+  },
+  {
+    q: 'Làm sao để hủy đơn đã đặt?',
+    a: 'Vào Đơn mua, chọn đơn rồi bấm Hủy đơn. Bạn tự hủy được khi đơn còn ở trạng thái Chờ xác nhận hoặc Đã thanh toán (chưa giao).',
+  },
+  {
+    q: 'Tôi quên mật khẩu thì phải làm sao?',
+    a: 'Bấm "Quên mật khẩu" ở trang đăng nhập và nhập email để nhận liên kết đặt lại (hiệu lực 30 phút). Bạn cũng có thể đăng nhập nhanh bằng Google hoặc Facebook.',
+  },
+] as const;
 
 export default async function HomePage(props: Props) {
   const searchParams = await props.searchParams;
@@ -39,25 +101,31 @@ export default async function HomePage(props: Props) {
   const q = (searchParams.q ?? '').trim().slice(0, 100) || undefined;
   const sort: SortValue = SORT_OPTIONS.some((o) => o.value === searchParams.sort) ? (searchParams.sort as SortValue) : 'newest';
   const onSale = searchParams.sale === '1';
+  const priceRange = PRICE_RANGES.find((r) => r.id === searchParams.price);
 
   const categories = await getCategories().catch(() => []);
   const category = categories.some((c) => c.slug === searchParams.category) ? searchParams.category : undefined;
-  const landing = !q && !category && !onSale && page === 1;
+  const landing = !q && !category && !onSale && !priceRange && page === 1;
 
-  const [deals, best, reviews, list] = await Promise.all([
+  const [deals, best, reviews, list, fresh, topRated, summary] = await Promise.all([
     landing ? getDeals().catch(() => []) : Promise.resolve([]),
     landing ? getBestSellers().catch(() => []) : Promise.resolve([]),
     landing ? getLatestReviews().catch(() => []) : Promise.resolve([]),
-    getProducts({ page, category, q, sort, onSale }).catch(() => null),
+    getProducts({ page, category, q, sort, onSale, minPrice: priceRange?.min, maxPrice: priceRange?.max }).catch(() => null),
+    landing ? getProducts({ page: 1, limit: 10, sort: 'newest' }).then((r) => r.items).catch(() => []) : Promise.resolve([]),
+    landing ? getProducts({ page: 1, limit: 10, sort: 'top_rated' }).then((r) => r.items).catch(() => []) : Promise.resolve([]),
+    landing ? getStoreSummary().catch(() => null) : Promise.resolve(null),
   ]);
 
-  const href = (params: { page?: number; category?: string | null; sale?: boolean }) => {
+  const href = (params: { page?: number; category?: string | null; sale?: boolean; price?: string | null }) => {
     const qs = new URLSearchParams();
     const c = params.category === null ? undefined : (params.category ?? category);
     const s = params.sale ?? onSale;
+    const pr = params.price === null ? undefined : (params.price ?? priceRange?.id);
     if (c) qs.set('category', c);
     if (q) qs.set('q', q);
     if (s) qs.set('sale', '1');
+    if (pr) qs.set('price', pr);
     if (sort !== 'newest') qs.set('sort', sort);
     if (params.page && params.page > 1) qs.set('page', String(params.page));
     const str = qs.toString();
@@ -77,7 +145,10 @@ export default async function HomePage(props: Props) {
                 <FontAwesomeIcon icon={faWandMagicSparkles} /> Bộ sưu tập 2026
               </span>
               <h1>Không gian sống đẹp bắt đầu từ những món đồ nhỏ</h1>
-              <p>Hơn 130 món đồ gia dụng, nội thất và thiết bị nhà bếp chính hãng — giao nhanh 2 giờ, đổi trả 30 ngày.</p>
+              <p>
+                {summary ? `${summary.products} món` : 'Hàng trăm món'} đồ gia dụng, nội thất và thiết bị nhà bếp chính hãng — giao nhanh 2 giờ,
+                đổi trả 30 ngày.
+              </p>
               <div className="row">
                 <Link href="#products" className="btn btn-lg">
                   Mua sắm ngay <FontAwesomeIcon icon={faArrowRight} />
@@ -96,7 +167,7 @@ export default async function HomePage(props: Props) {
             </Link>
             <Link href={href({ category: null, sale: true })} className="promo promo-b">
               <FontAwesomeIcon icon={faPercent} className="promo-icon" />
-              <h2>Hơn 60 sản phẩm đang giảm giá</h2>
+              <h2>{summary ? `${summary.onSale} sản phẩm đang giảm giá` : 'Hàng loạt sản phẩm đang giảm giá'}</h2>
               <span className="go">
                 Săn deal ngay <FontAwesomeIcon icon={faArrowRight} />
               </span>
@@ -134,6 +205,28 @@ export default async function HomePage(props: Props) {
             </section>
           )}
 
+          <section className="section">
+            <div className="section-head">
+              <div>
+                <h2>
+                  <FontAwesomeIcon icon={faHandHoldingDollar} /> Mua theo mức giá
+                </h2>
+                <p>Chọn nhanh trong ngân sách của bạn</p>
+              </div>
+            </div>
+            <div className="price-tiles">
+              {PRICE_RANGES.map((r, i) => (
+                <Link key={r.id} href={href({ price: r.id, category: null, sale: false })} className={`price-tile price-tile-${i + 1}`}>
+                  <small>{r.hint}</small>
+                  <strong>{r.label}</strong>
+                  <span className="go">
+                    Xem ngay <FontAwesomeIcon icon={faArrowRight} />
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+
           {deals.length > 0 && (
             <section className="section deals" id="deals">
               <div className="section-head">
@@ -154,6 +247,25 @@ export default async function HomePage(props: Props) {
               </div>
             </section>
           )}
+
+          <section className="section collections" aria-label="Bộ sưu tập">
+            {COLLECTIONS.map((c, i) => (
+              <Link
+                key={c.category}
+                href={href({ category: c.category, sale: false, price: null })}
+                className={i === 0 ? 'collection collection-lg' : 'collection'}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={c.image} alt="" width={1200} height={900} loading="lazy" />
+                <span className="eyebrow">{c.eyebrow}</span>
+                <h3>{c.title}</h3>
+                <p>{c.text}</p>
+                <span className="go">
+                  Khám phá bộ sưu tập <FontAwesomeIcon icon={faArrowRight} />
+                </span>
+              </Link>
+            ))}
+          </section>
 
           {best.length > 0 && (
             <section className="section">
@@ -176,6 +288,92 @@ export default async function HomePage(props: Props) {
             </section>
           )}
 
+          {summary && (
+            <section className="section stats-band" aria-label="Home Shopping qua những con số">
+              <div>
+                <strong>{summary.products}</strong>
+                <span>sản phẩm đang bán</span>
+              </div>
+              <div>
+                <strong>{formatCompact(summary.sold)}</strong>
+                <span>sản phẩm đã giao tới khách</span>
+              </div>
+              <div>
+                <strong>{formatCompact(summary.reviews)}</strong>
+                <span>đánh giá từ {summary.reviewers} khách hàng</span>
+              </div>
+              <div>
+                <strong>
+                  {summary.averageRating.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
+                  <small>/5</small>
+                </strong>
+                <span>điểm hài lòng trung bình</span>
+              </div>
+            </section>
+          )}
+
+          {fresh.length > 0 && (
+            <section className="section">
+              <div className="section-head">
+                <div>
+                  <h2>
+                    <FontAwesomeIcon icon={faSeedling} /> Hàng mới về
+                  </h2>
+                  <p>Những món vừa lên kệ tuần này</p>
+                </div>
+                <Link className="link" href="/?sort=newest#products">
+                  Xem tất cả <FontAwesomeIcon icon={faChevronRight} />
+                </Link>
+              </div>
+              <div className="scroller">
+                {fresh.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {topRated.length > 0 && (
+            <section className="section">
+              <div className="section-head">
+                <div>
+                  <h2>
+                    <FontAwesomeIcon icon={faMedal} /> Được đánh giá cao nhất
+                  </h2>
+                  <p>Khách hàng chấm điểm cao và mua lại nhiều lần</p>
+                </div>
+                <Link className="link" href="/?sort=top_rated#products">
+                  Xem tất cả <FontAwesomeIcon icon={faChevronRight} />
+                </Link>
+              </div>
+              <div className="scroller">
+                {topRated.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="section">
+            <div className="section-head">
+              <div>
+                <h2>
+                  <FontAwesomeIcon icon={faCircleCheck} /> Mua sắm dễ dàng trong 4 bước
+                </h2>
+                <p>Từ lúc chọn món đến khi nhận hàng tận tay</p>
+              </div>
+            </div>
+            <ol className="steps">
+              {STEPS.map((st, i) => (
+                <li key={st.title}>
+                  <span className="step-no">{String(i + 1).padStart(2, '0')}</span>
+                  <FontAwesomeIcon icon={st.icon} className="step-ico" />
+                  <strong>{st.title}</strong>
+                  <p>{st.text}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
         </>
       )}
 
@@ -185,6 +383,7 @@ export default async function HomePage(props: Props) {
             <h2>
               <FontAwesomeIcon icon={onSale ? faTag : activeCategory ? categoryIcon(activeCategory.slug) : faStore} />
               {onSale ? 'Sản phẩm đang giảm giá' : activeCategory ? activeCategory.name : 'Tất cả sản phẩm'}
+              {priceRange && <span className="muted"> · {priceRange.label}</span>}
             </h2>
             {list && <p>{list.total} sản phẩm</p>}
           </div>
@@ -194,6 +393,7 @@ export default async function HomePage(props: Props) {
           {category && <input type="hidden" name="category" value={category} />}
           {onSale && <input type="hidden" name="sale" value="1" />}
           {sort !== 'newest' && <input type="hidden" name="sort" value={sort} />}
+          {priceRange && <input type="hidden" name="price" value={priceRange.id} />}
           <input className="input" type="search" name="q" defaultValue={q} placeholder="Tìm kiếm sản phẩm gia dụng…" maxLength={100} aria-label="Tìm sản phẩm" />
           <button className="btn" type="submit">
             <FontAwesomeIcon icon={faMagnifyingGlass} /> Tìm
@@ -202,7 +402,11 @@ export default async function HomePage(props: Props) {
 
         <div className="toolbar">
           <div className="chips" role="list" aria-label="Danh mục">
-            <Link role="listitem" href={href({ category: null, sale: false })} className={!category && !onSale ? 'chip active' : 'chip'}>
+            <Link
+              role="listitem"
+              href={href({ category: null, sale: false, price: null })}
+              className={!category && !onSale && !priceRange ? 'chip active' : 'chip'}
+            >
               <FontAwesomeIcon icon={faStore} /> Tất cả
             </Link>
             <Link role="listitem" href={href({ sale: !onSale })} className={onSale ? 'chip chip-sale active' : 'chip chip-sale'}>
@@ -216,6 +420,18 @@ export default async function HomePage(props: Props) {
           </div>
           <SortSelect value={sort} />
         </div>
+
+        {priceRange && (
+          <p className="result-note">
+            <FontAwesomeIcon icon={faHandHoldingDollar} />
+            <span>
+              Đang lọc theo giá: <strong>{priceRange.label}</strong>
+            </span>
+            <Link className="link" href={href({ price: null })}>
+              <FontAwesomeIcon icon={faXmark} /> Bỏ lọc giá
+            </Link>
+          </p>
+        )}
 
         {q && list && (
           <p className="result-note">
@@ -306,6 +522,27 @@ export default async function HomePage(props: Props) {
                   <img className="testimonial-thumb" src={r.product.imageUrl} alt={r.product.name} width={96} height={72} loading="lazy" />
                 )}
               </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {landing && (
+        <section className="section">
+          <div className="section-head">
+            <div>
+              <h2>
+                <FontAwesomeIcon icon={faCircleQuestion} /> Câu hỏi thường gặp
+              </h2>
+              <p>Chưa thấy câu trả lời? Gọi hotline 1900 6868 (8h–22h mỗi ngày)</p>
+            </div>
+          </div>
+          <div className="faq">
+            {FAQ.map((f, i) => (
+              <details key={f.q} open={i === 0}>
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
+              </details>
             ))}
           </div>
         </section>

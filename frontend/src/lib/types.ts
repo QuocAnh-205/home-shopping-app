@@ -1,6 +1,8 @@
 export type Role = 'CUSTOMER' | 'ADMIN';
 export type OrderStatus = 'PENDING' | 'PAID' | 'SHIPPING' | 'COMPLETED' | 'CANCELLED';
 export type OAuthProvider = 'GOOGLE' | 'FACEBOOK';
+export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
+export type AddressType = 'HOME' | 'OFFICE';
 
 export interface Category {
   id: number;
@@ -30,6 +32,25 @@ export interface Product {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface StoreSummary {
+  products: number;
+  onSale: number;
+  sold: number;
+  reviews: number;
+  averageRating: number;
+  reviewers: number;
+}
+
+/** Khoảng giá cho mục "Mua theo mức giá" (max không bao gồm) */
+export const PRICE_RANGES = [
+  { id: 'duoi-200k', label: 'Dưới 200.000₫', hint: 'Quà nhỏ xinh', min: undefined, max: 200_000 },
+  { id: '200k-500k', label: '200.000₫ – 500.000₫', hint: 'Đồ dùng hằng ngày', min: 200_000, max: 500_000 },
+  { id: '500k-1tr', label: '500.000₫ – 1 triệu', hint: 'Nâng cấp tổ ấm', min: 500_000, max: 1_000_000 },
+  { id: '1tr-3tr', label: '1 – 3 triệu', hint: 'Thiết bị chất lượng', min: 1_000_000, max: 3_000_000 },
+  { id: 'tren-3tr', label: 'Trên 3 triệu', hint: 'Nội thất cao cấp', min: 3_000_000, max: undefined },
+] as const;
+export type PriceRangeId = (typeof PRICE_RANGES)[number]['id'];
 
 export interface Page<T> {
   items: T[];
@@ -124,9 +145,45 @@ export interface UserProfile {
 }
 
 export interface AccountProfile extends UserProfile {
+  phone: string | null;
+  gender: Gender | null;
+  /** YYYY-MM-DD */
+  dateOfBirth: string | null;
   createdAt: string;
   hasPassword: boolean;
   providers: OAuthProvider[];
+}
+
+export interface Address {
+  id: string;
+  fullName: string;
+  phone: string;
+  province: string;
+  district: string;
+  ward: string;
+  street: string;
+  type: AddressType;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AddressInput = Omit<Address, 'id' | 'createdAt' | 'updatedAt'>;
+
+/** "12 Bạch Đằng, P. Hải Châu 1, Q. Hải Châu, Đà Nẵng" – dùng làm địa chỉ giao hàng của đơn */
+export function formatAddress(a: Pick<Address, 'street' | 'ward' | 'district' | 'province'>): string {
+  return [a.street, a.ward, a.district, a.province].filter(Boolean).join(', ');
+}
+
+/** Che bớt email giống Shopee: "lan.nguyen@x.vn" → "la********@x.vn" */
+export function maskEmail(email: string): string {
+  const [name, domain] = email.split('@');
+  return `${name.slice(0, 2)}${'*'.repeat(Math.max(3, name.length - 2))}@${domain}`;
+}
+
+/** "0901234567" → "********67" */
+export function maskPhone(phone: string): string {
+  return `${'*'.repeat(phone.length - 2)}${phone.slice(-2)}`;
 }
 
 export interface AuthResponse {

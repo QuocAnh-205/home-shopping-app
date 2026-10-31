@@ -56,6 +56,21 @@ export class ListProductsQuery {
   @IsBoolean()
   onSale?: boolean;
 
+  /** Khoảng giá (VND, số nguyên) – dùng cho "Mua theo mức giá" */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10_000_000_000)
+  minPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10_000_000_000)
+  maxPrice?: number;
+
   @IsOptional()
   @IsIn(PRODUCT_SORTS)
   sort: ProductSort = 'newest';

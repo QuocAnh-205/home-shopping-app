@@ -36,6 +36,15 @@ const ORDER_BY: Record<ProductSort, Prisma.ProductOrderByWithRelationInput[]> = 
   top_rated: [{ ratingAvg: 'desc' }, { ratingCount: 'desc' }, { id: 'asc' }],
 };
 
+export interface StoreSummary {
+  products: number;
+  onSale: number;
+  sold: number;
+  reviews: number;
+  averageRating: number;
+  reviewers: number;
+}
+
 @Injectable()
 export class ProductsService {
   constructor(
@@ -52,6 +61,8 @@ export class ProductsService {
       query.category ?? 'all',
       q ? encodeURIComponent(q) : '-',
       query.onSale ? 'sale' : '-',
+      query.minPrice ?? '-',
+      query.maxPrice ?? '-',
       query.sort,
       query.page,
       query.limit,
@@ -63,6 +74,9 @@ export class ProductsService {
       ...(query.category ? { category: { slug: query.category } } : {}),
       ...(q ? { name: { contains: q, mode: 'insensitive' } } : {}),
       ...(query.onSale ? { compareAtPrice: { not: null } } : {}),
+      ...(query.minPrice !== undefined || query.maxPrice !== undefined
+        ? { price: { ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}), ...(query.maxPrice !== undefined ? { lt: query.maxPrice } : {}) } }
+        : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
@@ -85,6 +99,30 @@ export class ProductsService {
     // Kết quả tìm kiếm có độ đa dạng key cao → TTL ngắn hơn để không phình Redis
     await this.redis.setJson(key, result, q ? 30 : 60);
     return result;
+  }
+
+  /** Số liệu công khai cho trang chủ (tổng sản phẩm, đang giảm giá, đánh giá, đã bán) – cache 5 phút */
+  async summary(): Promise<StoreSummary> {
+    return this.cached(`${CACHE_PREFIX}:summary`, 300, async () => {
+      const [row] = await this.prisma.$queryRaw<
+        { products: number; on_sale: number; sold: number; reviews: number; rating: string | null; customers: number }[]
+      >`
+        SELECT
+          (SELECT COUNT(*)::int FROM products) AS products,
+          (SELECT COUNT(*)::int FROM products WHERE compare_at_price IS NOT NULL) AS on_sale,
+          (SELECT COALESCE(SUM(sold_count), 0)::int FROM products) AS sold,
+          (SELECT COUNT(*)::int FROM reviews) AS reviews,
+          (SELECT ROUND(AVG(rating)::numeric, 2)::text FROM reviews) AS rating,
+          (SELECT COUNT(DISTINCT user_id)::int FROM reviews) AS customers`;
+      return {
+        products: row.products,
+        onSale: row.on_sale,
+        sold: row.sold,
+        reviews: row.reviews,
+        averageRating: row.rating ? Number(row.rating) : 0,
+        reviewers: row.customers,
+      };
+    });
   }
 
   /** Bán chạy nhất: theo số lượng đã bán (cập nhật thật khi đặt/hủy đơn), chỉ sản phẩm còn hàng */

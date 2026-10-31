@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
+import { AccountModule } from './account/account.module';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
@@ -61,6 +62,7 @@ import { StorageModule } from './storage/storage.module';
       skipIf: () => process.env.THROTTLE_DISABLED === 'true',
     }),
     PrismaModule,
+    AccountModule,
     RedisModule,
     StorageModule,
     MailModule,

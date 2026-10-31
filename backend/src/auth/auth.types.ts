@@ -1,4 +1,4 @@
-import { OAuthProvider, Role } from '@prisma/client';
+import { Gender, OAuthProvider, Role } from '@prisma/client';
 
 export interface JwtPayload {
   sub: string;
@@ -26,6 +26,10 @@ export interface UserProfile {
 }
 
 export interface AccountProfile extends UserProfile {
+  phone: string | null;
+  gender: Gender | null;
+  /** YYYY-MM-DD */
+  dateOfBirth: string | null;
   createdAt: Date;
   hasPassword: boolean;
   providers: OAuthProvider[];

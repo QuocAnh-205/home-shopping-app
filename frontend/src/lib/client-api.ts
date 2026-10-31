@@ -68,6 +68,13 @@ export function saveSession(auth: AuthResponse | null): void {
   notifyCartChanged();
 }
 
+/** Cập nhật thông tin hiển thị (tên, ảnh đại diện) trong phiên hiện tại sau khi sửa hồ sơ */
+export function updateSessionUser(patch: Partial<Pick<UserProfile, 'fullName' | 'avatarUrl'>>): void {
+  const session = getSession();
+  if (!session) return;
+  saveSession({ accessToken: session.token, expiresAt: session.expiresAt, user: { ...session.user, ...patch } });
+}
+
 function subscribeSession(callback: () => void): () => void {
   window.addEventListener(SESSION_EVENT, callback);
   window.addEventListener('storage', callback);
@@ -153,6 +160,14 @@ const MESSAGE_VI: [RegExp, (m: RegExpMatchArray) => string][] = [
   [/^Login code is invalid or expired$/, () => 'Phiên đăng nhập mạng xã hội đã hết hạn, vui lòng thử lại'],
   [/^compareAtPrice must be greater than price$/, () => 'Giá gốc phải lớn hơn giá bán'],
   [/^email must be an email$/, () => 'Email không hợp lệ'],
+  [/^Invalid date of birth$/, () => 'Ngày sinh không hợp lệ'],
+  [/^You can save at most (\d+) addresses$/, (m) => `Bạn chỉ lưu được tối đa ${m[1]} địa chỉ`],
+  [/^Address not found$/, () => 'Không tìm thấy địa chỉ'],
+  [/^Only JPEG, PNG or WEBP images are allowed$/, () => 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP'],
+  [/^File too large$/, () => 'Ảnh vượt quá dung lượng cho phép'],
+  [/^File content does not match/, () => 'Tệp không phải ảnh hợp lệ'],
+  [/^fullName must be longer than or equal to 2 characters$/, () => 'Họ tên cần ít nhất 2 ký tự'],
+  [/^street must be longer than or equal to 3 characters$/, () => 'Địa chỉ cụ thể quá ngắn'],
 ];
 
 /** Mã lỗi OAuth (từ ?oauth_error=) → thông điệp tiếng Việt */

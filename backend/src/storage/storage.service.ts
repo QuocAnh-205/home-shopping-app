@@ -13,7 +13,7 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 export const LOCAL_PREFIX = 'local/';
-export const LOCAL_FILE_RE = /^products\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
+export const LOCAL_FILE_RE = /^(products|avatars)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
 
 /**
  * Lưu ảnh sản phẩm do admin upload:
@@ -86,6 +86,42 @@ export class StorageService {
   }
 
   /**
+   * Ảnh đại diện: lưu ở avatars/<userId>/<uuid>.<ext> (đĩa local hoặc S3) và luôn trả về đường dẫn công khai
+   * cố định /api/media/avatars/… – MediaController phục vụ file local hoặc chuyển hướng tới presigned URL của S3.
+   */
+  async uploadAvatar(userId: string, body: Buffer, mime: string): Promise<string> {
+    const relative = `avatars/${userId}/${randomUUID()}.${EXTENSIONS[mime]}`;
+    if (!this.bucket) {
+      await mkdir(join(this.uploadDir, 'avatars', userId), { recursive: true });
+      await writeFile(join(this.uploadDir, relative), body, { mode: 0o640 });
+    } else {
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: relative,
+          Body: body,
+          ContentType: mime,
+          CacheControl: 'public, max-age=31536000, immutable',
+          ServerSideEncryption: 'AES256',
+        }),
+      );
+    }
+    this.logger.log({ event: 'user.avatar_uploaded', userId, storage: this.bucket ? 's3' : 'local' });
+    return `/api/media/${relative}`;
+  }
+
+  /** Presigned URL cho object S3 (dùng khi phục vụ ảnh đại diện ở chế độ S3) */
+  async presign(key: string): Promise<string | null> {
+    if (!this.bucket) return null;
+    try {
+      return await getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: 3600 });
+    } catch (err) {
+      this.logger.warn(`Cannot presign ${key}: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
    * imageKey có 3 dạng:
    * - "/images/..."       : ảnh tĩnh đóng gói cùng frontend (dữ liệu seed) → trả nguyên đường dẫn
    * - "local/products/…"  : ảnh upload lưu trên đĩa → /api/media/products/…
@@ -95,12 +131,6 @@ export class StorageService {
     if (!key) return null;
     if (StorageService.isStaticAsset(key)) return key;
     if (key.startsWith(LOCAL_PREFIX)) return `/api/media/${key.slice(LOCAL_PREFIX.length)}`;
-    if (!this.bucket) return null;
-    try {
-      return await getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: 3600 });
-    } catch (err) {
-      this.logger.warn(`Cannot presign ${key}: ${(err as Error).message}`);
-      return null;
-    }
+    return this.presign(key);
   }
 }

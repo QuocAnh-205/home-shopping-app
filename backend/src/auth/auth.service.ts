@@ -225,14 +225,22 @@ export class AuthService {
         fullName: true,
         role: true,
         avatarUrl: true,
+        phone: true,
+        gender: true,
+        dateOfBirth: true,
         passwordHash: true,
         createdAt: true,
         oauthAccounts: { select: { provider: true } },
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    const { passwordHash, oauthAccounts, ...rest } = user;
-    return { ...rest, hasPassword: passwordHash !== null, providers: oauthAccounts.map((a) => a.provider) };
+    const { passwordHash, oauthAccounts, dateOfBirth, ...rest } = user;
+    return {
+      ...rest,
+      dateOfBirth: dateOfBirth ? dateOfBirth.toISOString().slice(0, 10) : null,
+      hasPassword: passwordHash !== null,
+      providers: oauthAccounts.map((a) => a.provider),
+    };
   }
 
   async issue(user: Pick<User, 'id' | 'email' | 'fullName' | 'role' | 'avatarUrl'>): Promise<AuthResponse> {

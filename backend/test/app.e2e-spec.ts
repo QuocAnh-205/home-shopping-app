@@ -352,6 +352,96 @@ describe('Home Shopping API (e2e)', () => {
     await http().post('/api/newsletter/subscribe').send({ email: 'not-an-email' }).expect(400);
   });
 
+  describe('my account (profile, avatar, address book)', () => {
+    const address = { fullName: 'Alice E2E', phone: '0912345678', province: 'Đà Nẵng', district: 'Q. Hải Châu', ward: 'P. Hải Châu 1', street: '12 Bạch Đằng' };
+    // PNG 1x1 hợp lệ (magic bytes đúng)
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+    it('updates profile fields and validates them', async () => {
+      const res = await http()
+        .patch('/api/account/profile')
+        .set(auth(aliceToken))
+        .send({ fullName: 'Alice Nguyễn', phone: '0912345678', gender: 'FEMALE', dateOfBirth: '2001-09-15' })
+        .expect(200);
+      expect(res.body).toMatchObject({ fullName: 'Alice Nguyễn', phone: '0912345678', gender: 'FEMALE', dateOfBirth: '2001-09-15' });
+
+      await http().patch('/api/account/profile').set(auth(aliceToken)).send({ phone: '12345' }).expect(400);
+      await http().patch('/api/account/profile').set(auth(aliceToken)).send({ dateOfBirth: '2001-02-30' }).expect(400);
+      await http().patch('/api/account/profile').set(auth(aliceToken)).send({ gender: 'ROBOT' }).expect(400);
+      await http().patch('/api/account/profile').send({ fullName: 'Nobody' }).expect(401);
+
+      const cleared = await http().patch('/api/account/profile').set(auth(aliceToken)).send({ phone: '' }).expect(200);
+      expect(cleared.body.phone).toBeNull();
+      expect(cleared.body.gender).toBe('FEMALE');
+    });
+
+    it('uploads an avatar (≤ 1 MB, real image only) and serves it', async () => {
+      const res = await http().post('/api/account/avatar').set(auth(aliceToken)).attach('file', png, { filename: 'a.png', contentType: 'image/png' }).expect(201);
+      expect(res.body.avatarUrl).toMatch(/^\/api\/media\/avatars\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.png$/);
+      await http().get(res.body.avatarUrl).expect(200).expect('Content-Type', 'image/png');
+
+      await http()
+        .post('/api/account/avatar')
+        .set(auth(aliceToken))
+        .attach('file', Buffer.from('not an image at all'), { filename: 'x.png', contentType: 'image/png' })
+        .expect(400);
+      await http()
+        .post('/api/account/avatar')
+        .set(auth(aliceToken))
+        .attach('file', Buffer.alloc(1024 * 1024 + 1, 1), { filename: 'big.png', contentType: 'image/png' })
+        .expect(413);
+      await http().get('/api/media/avatars/..%2F..%2Fetc/passwd').expect(404);
+    });
+
+    it('address book: first is default, one default at a time, private per user', async () => {
+      const first = await http().post('/api/account/addresses').set(auth(aliceToken)).send(address).expect(201);
+      expect(first.body.isDefault).toBe(true);
+
+      const second = await http()
+        .post('/api/account/addresses')
+        .set(auth(aliceToken))
+        .send({ ...address, street: '99 Trần Phú', type: 'OFFICE', isDefault: true })
+        .expect(201);
+      let list = (await http().get('/api/account/addresses').set(auth(aliceToken)).expect(200)).body;
+      expect(list.filter((a: { isDefault: boolean }) => a.isDefault).map((a: { id: string }) => a.id)).toEqual([second.body.id]);
+
+      list = (await http().post(`/api/account/addresses/${first.body.id}/default`).set(auth(aliceToken)).expect(201)).body;
+      expect(list[0].id).toBe(first.body.id);
+
+      // Bob không xem/sửa/xóa được địa chỉ của Alice
+      expect((await http().get('/api/account/addresses').set(auth(bobToken)).expect(200)).body).toEqual([]);
+      await http().put(`/api/account/addresses/${first.body.id}`).set(auth(bobToken)).send(address).expect(404);
+      await http().delete(`/api/account/addresses/${first.body.id}`).set(auth(bobToken)).expect(404);
+
+      await http().post('/api/account/addresses').set(auth(aliceToken)).send({ ...address, phone: 'abc' }).expect(400);
+      await http().post('/api/account/addresses').set(auth(aliceToken)).send({ ...address, street: '<script>' }).expect(400);
+
+      // Xóa địa chỉ mặc định → địa chỉ còn lại tự thành mặc định
+      list = (await http().delete(`/api/account/addresses/${first.body.id}`).set(auth(aliceToken)).expect(200)).body;
+      expect(list).toHaveLength(1);
+      expect(list[0]).toMatchObject({ id: second.body.id, isDefault: true });
+    });
+  });
+
+  it('filters products by price range and exposes a public store summary', async () => {
+    const inRange = await http().get('/api/products').query({ category: `e2e-${run}`, minPrice: 400000, maxPrice: 500000 }).expect(200);
+    expect(inRange.body.items.map((p: { id: string }) => p.id)).toContain(productId);
+    const outOfRange = await http().get('/api/products').query({ category: `e2e-${run}`, maxPrice: 400000 }).expect(200);
+    expect(outOfRange.body.items.map((p: { id: string }) => p.id)).not.toContain(productId);
+    await http().get('/api/products').query({ minPrice: -1 }).expect(400);
+
+    const summary = await http().get('/api/products/summary').expect(200);
+    expect(summary.body).toEqual({
+      products: expect.any(Number),
+      onSale: expect.any(Number),
+      sold: expect.any(Number),
+      reviews: expect.any(Number),
+      averageRating: expect.any(Number),
+      reviewers: expect.any(Number),
+    });
+    expect(summary.body.products).toBeGreaterThan(0);
+  });
+
   it('media endpoint only serves server-generated paths', async () => {
     await http().get('/api/media/products/..%2F..%2Fetc/passwd').expect(404);
     await http().get(`/api/media/products/${productId}/${randomUUID()}.webp`).expect(404);

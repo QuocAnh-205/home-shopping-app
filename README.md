@@ -21,10 +21,11 @@ Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn pro
 
 | Khách hàng | Quản trị viên |
 |---|---|
-| **131 sản phẩm / 7 danh mục**, ảnh chụp thật khớp từng sản phẩm, tìm kiếm (pg_trgm), lọc **đang giảm giá**, sắp xếp mới nhất / **bán chạy** / **đánh giá cao** / giá / tên | **Dashboard**: doanh thu, doanh thu 7 ngày, đơn theo trạng thái, top bán chạy, sắp hết hàng |
+| **200 sản phẩm / 7 danh mục**, ảnh chụp thật khớp từng sản phẩm, tìm kiếm (pg_trgm), lọc **đang giảm giá** & **theo mức giá**, sắp xếp mới nhất / **bán chạy** / **đánh giá cao** / giá / tên | **Dashboard**: doanh thu, doanh thu 7 ngày, đơn theo trạng thái, top bán chạy, sắp hết hàng |
 | Trang chi tiết: giá gốc gạch ngang & **% giảm**, điểm đánh giá, **số đã bán**, điểm nổi bật, **mô tả chi tiết**, **thông số kỹ thuật**, hướng dẫn sử dụng & bảo quản, chính sách, sản phẩm cùng danh mục | **Quản lý đơn**: lọc trạng thái, chuyển trạng thái theo state machine, hủy đơn hoàn kho |
-| Trang chủ: **Ưu đãi hấp dẫn** (giảm sâu nhất), **Bán chạy nhất** (xếp hạng theo số bán thật), **Khách hàng nói gì** (đánh giá mới nhất) | **Quản lý sản phẩm**: tạo mới (bắt buộc ảnh, giá gốc/khuyến mãi, điểm nổi bật), sửa tồn kho, bật/tắt "Hot" |
+| Trang chủ: **Mua theo mức giá**, **Ưu đãi hấp dẫn** (giảm sâu nhất), **Bộ sưu tập** theo không gian, **Bán chạy nhất**, **con số thật** của cửa hàng, **Hàng mới về**, **Đánh giá cao nhất**, 4 bước mua sắm, **Khách hàng nói gì**, **FAQ** | **Quản lý sản phẩm**: tạo mới (bắt buộc ảnh, giá gốc/khuyến mãi, điểm nổi bật), sửa tồn kho, bật/tắt "Hot" |
 | **Đánh giá sản phẩm**: mọi khách đã đăng nhập đều viết được, 1 đánh giá/sản phẩm (sửa/xóa được), lọc theo số sao, nhãn **"Đã mua hàng"** | **Kiểm duyệt đánh giá**: xem & gỡ đánh giá vi phạm |
+| **Tài khoản của tôi** (bố cục kiểu Shopee): hồ sơ (tên, SĐT, giới tính, ngày sinh), **ảnh đại diện ≤ 1 MB**, **sổ địa chỉ** (tối đa 10, 1 mặc định – tự điền khi thanh toán), đổi mật khẩu, liên kết Google/Facebook | |
 | Giỏ hàng Redis (ảnh thumbnail, tăng/giảm), đặt hàng COD **idempotent**, chống oversell, lịch sử đơn + timeline, tự hủy đơn | Upload ảnh: S3 (production) hoặc lưu đĩa (local) – kiểm tra magic bytes |
 | **Đăng ký / đăng nhập email**, **Google**, **Facebook** (OAuth 2.0 + PKCE), **quên mật khẩu qua email**, đổi/đặt mật khẩu, liên kết tài khoản mạng xã hội, đăng xuất thu hồi token, khóa khi sai 5 lần | Swagger UI `/api/docs`, metrics nghiệp vụ + alert brute-force / tỷ lệ đặt hàng lỗi |
 
@@ -38,7 +39,7 @@ Yêu cầu: Docker Desktop.
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-Backend tự chạy migration + seed: **131 sản phẩm, 7 danh mục, 5 tài khoản demo, ~225 đánh giá mẫu, 140 đơn hàng lịch sử 60 ngày** (để dashboard quản trị có số liệu). Mở http://localhost
+Backend tự chạy migration + seed: **200 sản phẩm, 7 danh mục, 5 tài khoản demo, ~930 đánh giá mẫu (mỗi sản phẩm 3–6 đánh giá), 140 đơn hàng lịch sử 60 ngày** (để dashboard quản trị có số liệu). Mở http://localhost
 
 > Cổng 80 đã bị chiếm? Chạy `LOCAL_HTTP_PORT=8088 docker compose -f docker-compose.local.yml up -d --build` (PowerShell: `$env:LOCAL_HTTP_PORT=8088; docker compose ...`) rồi mở http://localhost:8088
 
@@ -47,6 +48,7 @@ Backend tự chạy migration + seed: **131 sản phẩm, 7 danh mục, 5 tài k
 > **Sửa tài khoản demo tại một chỗ duy nhất:** [`backend/prisma/data/demo-accounts.js`](backend/prisma/data/demo-accounts.js)
 > (email, họ tên, mật khẩu, vai trò). Sau khi sửa: `docker compose -f docker-compose.local.yml up -d --build backend`.
 > Đổi email sẽ tạo tài khoản mới; muốn làm sạch DB local: `docker compose -f docker-compose.local.yml down -v` rồi `up` lại.
+> Người viết đánh giá mẫu (không đăng nhập được, chỉ để hiển thị) và nội dung đánh giá theo danh mục: [`backend/prisma/data/reviews.js`](backend/prisma/data/reviews.js).
 > Cờ bật dữ liệu demo: `SEED_DEMO_DATA: "true"` trong [`docker-compose.local.yml`](docker-compose.local.yml).
 
 | Vai trò | Email | Mật khẩu | Dùng để kiểm tra |

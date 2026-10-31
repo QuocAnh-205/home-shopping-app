@@ -21,9 +21,11 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { EmptyState } from '@/components/EmptyState';
 import { apiFetch, notifyCartChanged, useSession } from '@/lib/client-api';
-import { formatPrice, shortId, type Cart, type Order } from '@/lib/types';
+import { formatAddress, formatPrice, shortId, type Address, type Cart, type Order } from '@/lib/types';
 
 const MAX_PER_ITEM = 99;
+
+const toShipTo = (a: Address) => ({ address: `${a.fullName}, ${formatAddress(a)}`, phone: a.phone });
 
 export default function CartPage() {
   const router = useRouter();
@@ -33,6 +35,8 @@ export default function CartPage() {
   const [placed, setPlaced] = useState<Order | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [shipTo, setShipTo] = useState({ address: '', phone: '' });
   // Một Idempotency-Key cho mỗi lần "ý định đặt hàng": bấm 2 lần hay retry vẫn chỉ tạo 1 đơn
   const idempotencyKey = useRef<string>('');
 
@@ -52,6 +56,14 @@ export default function CartPage() {
     }
     idempotencyKey.current ||= crypto.randomUUID();
     void load();
+    // Sổ địa chỉ: điền sẵn địa chỉ mặc định (người dùng vẫn sửa tay được)
+    apiFetch<Address[]>('/account/addresses')
+      .then((list) => {
+        setAddresses(list);
+        const def = list.find((a) => a.isDefault);
+        if (def) setShipTo((cur) => (cur.address || cur.phone ? cur : toShipTo(def)));
+      })
+      .catch(() => setAddresses([]));
   }, [ready, session, load, router]);
 
   async function mutate(productId: string, request: () => Promise<Cart>) {
@@ -75,14 +87,13 @@ export default function CartPage() {
 
   async function checkout(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
     setSubmitting(true);
     setError(null);
     try {
       const order = await apiFetch<Order>('/orders', {
         method: 'POST',
         headers: { 'Idempotency-Key': idempotencyKey.current },
-        body: JSON.stringify({ shippingAddress: form.get('address'), phone: form.get('phone') }),
+        body: JSON.stringify({ shippingAddress: shipTo.address.trim(), phone: shipTo.phone.trim() }),
       });
       setPlaced(order);
       idempotencyKey.current = crypto.randomUUID();
@@ -223,11 +234,38 @@ export default function CartPage() {
               <dd className="total price">{formatPrice(cart.totalAmount)}</dd>
             </dl>
             <form className="form" onSubmit={checkout}>
+              {addresses.length > 0 && (
+                <label className="field">
+                  Chọn từ sổ địa chỉ
+                  <select
+                    className="input"
+                    defaultValue={addresses.find((a) => a.isDefault)?.id ?? ''}
+                    onChange={(e) => {
+                      const a = addresses.find((x) => x.id === e.target.value);
+                      if (a) setShipTo(toShipTo(a));
+                    }}
+                  >
+                    {addresses.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.isDefault ? '★ ' : ''}
+                        {a.fullName} · {a.district}, {a.province}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="field">
-                Địa chỉ nhận hàng
+                <span className="field-head">
+                  Địa chỉ nhận hàng
+                  <Link className="link small" href="/account?tab=address">
+                    {addresses.length ? 'Quản lý địa chỉ' : 'Lưu vào sổ địa chỉ'}
+                  </Link>
+                </span>
                 <textarea
                   className="input"
                   name="address"
+                  value={shipTo.address}
+                  onChange={(e) => setShipTo({ ...shipTo, address: e.target.value })}
                   rows={3}
                   placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành"
                   minLength={10}
@@ -243,6 +281,8 @@ export default function CartPage() {
                   <input
                     className="input"
                     name="phone"
+                    value={shipTo.phone}
+                    onChange={(e) => setShipTo({ ...shipTo, phone: e.target.value })}
                     type="tel"
                     inputMode="tel"
                     autoComplete="tel"

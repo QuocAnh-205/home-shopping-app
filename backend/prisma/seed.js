@@ -3,10 +3,10 @@
 
 /**
  * Seed idempotent (chạy lại nhiều lần không tạo trùng).
- * - Danh mục + 131 sản phẩm từ prisma/data/catalog.js (ảnh tĩnh trong frontend/public/images, nguồn Unsplash).
+ * - Danh mục + 200 sản phẩm từ prisma/data/catalog.js (ảnh tĩnh trong frontend/public/images, nguồn Unsplash).
  *   Sản phẩm đã có: cập nhật nội dung, giá, ảnh; GIỮ NGUYÊN tồn kho & số đã bán (dữ liệu vận hành thật).
  * - SEED_DEMO_DATA=true (chỉ môi trường demo/local): tạo tài khoản trong prisma/data/demo-accounts.js
- *   (SỬA TÀI KHOẢN DEMO Ở FILE ĐÓ), đánh giá mẫu và lịch sử đơn hàng 60 ngày cho dashboard quản trị.
+ *   (SỬA TÀI KHOẢN DEMO Ở FILE ĐÓ), đánh giá mẫu (mọi sản phẩm 3–6 đánh giá, người đánh giá trong prisma/data/reviews.js) và lịch sử đơn hàng 60 ngày cho dashboard quản trị.
  * - Production: không bật SEED_DEMO_DATA → không có tài khoản mặc định. Có thể tạo 1 admin đầu tiên
  *   bằng SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (chỉ tạo nếu chưa tồn tại, không ghi đè mật khẩu).
  */
@@ -14,6 +14,7 @@ const { PrismaClient, Prisma, Role } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { categories, products } = require('./data/catalog');
 const { demoAccounts } = require('./data/demo-accounts');
+const { reviewers, reviewTexts } = require('./data/reviews');
 
 const prisma = new PrismaClient();
 
@@ -43,21 +44,6 @@ const ADDRESSES = [
   '9 Hùng Vương, P. Lộc Thọ, TP. Nha Trang, Khánh Hòa',
   '76 Nguyễn Văn Linh, P. Tân Phong, Quận 7, TP. Hồ Chí Minh',
 ];
-
-const REVIEW_TEXT = {
-  5: [
-    'Sản phẩm đúng như mô tả, hoàn thiện rất chắc chắn. Giao hàng nhanh, đóng gói cẩn thận. Rất hài lòng!',
-    'Dùng được vài tuần rồi, chất lượng vượt mong đợi so với giá tiền. Sẽ tiếp tục ủng hộ shop.',
-    'Hàng ngoài đẹp hơn trong ảnh, màu sắc sang trọng. Shop tư vấn nhiệt tình.',
-    'Mua làm quà tặng mẹ, mẹ rất thích. Hộp đựng đẹp, giao đúng hẹn.',
-  ],
-  4: [
-    'Chất lượng tốt, dùng ổn định. Trừ một sao vì giao chậm hơn dự kiến một ngày.',
-    'Sản phẩm đẹp, đúng mô tả. Hướng dẫn sử dụng hơi ít nhưng dùng một lúc là quen.',
-    'Giá hợp lý, chất lượng ổn trong tầm giá. Đóng gói kỹ.',
-  ],
-  3: ['Sản phẩm dùng tạm ổn, màu thực tế hơi khác ảnh một chút. Giao hàng nhanh.'],
-};
 
 /** Hash ổn định theo chuỗi → seed tạo ra cùng một bộ dữ liệu mỗi lần chạy */
 function hash(str) {
@@ -143,32 +129,48 @@ async function seedOrders(customers) {
   console.log(`  ${created} demo orders (60 days history)`);
 }
 
+/** Người đánh giá mẫu: không có mật khẩu → không đăng nhập được, chỉ hiển thị tên trên đánh giá */
+async function upsertReviewers() {
+  const users = [];
+  for (const r of reviewers) {
+    users.push(
+      await prisma.user.upsert({
+        where: { email: r.email },
+        update: { fullName: r.fullName },
+        create: { email: r.email, fullName: r.fullName, role: Role.CUSTOMER, passwordHash: null },
+      }),
+    );
+  }
+  return users;
+}
+
 async function seedReviews(customers) {
+  const pool = [...customers, ...(await upsertReviewers())];
   let created = 0;
   for (const p of products) {
     const h = hash(p.slug);
-    // ~70% sản phẩm có đánh giá, mỗi sản phẩm 1–4 đánh giá từ các khách demo khác nhau
-    if (h % 10 >= 7) continue;
     const product = await prisma.product.findUnique({ where: { slug: p.slug }, select: { id: true } });
-    const count = 1 + (h % Math.min(4, customers.length));
+    // Mọi sản phẩm có 3–6 đánh giá từ những người khác nhau (bước nhảy lẻ → không trùng người trong 1 sản phẩm)
+    const count = 3 + (h % 4);
+    const step = 1 + 2 * ((h >>> 4) % 5);
     for (let i = 0; i < count; i++) {
-      const user = customers[(h + i) % customers.length];
-      const roll = (h >>> (i * 3)) % 10;
-      const rating = roll < 6 ? 5 : roll < 9 ? 4 : 3;
-      const texts = REVIEW_TEXT[rating];
-      await prisma.review.upsert({
+      const user = pool[(h + i * step) % pool.length];
+      const roll = (h >>> (i * 3)) % 20;
+      const rating = roll < 12 ? 5 : roll < 17 ? 4 : roll < 19 ? 3 : 2;
+      const texts = reviewTexts(p.cat, rating);
+      const res = await prisma.review.upsert({
         where: { productId_userId: { productId: product.id, userId: user.id } },
         update: {},
         create: {
           productId: product.id,
           userId: user.id,
           rating,
-          comment: texts[(h + i) % texts.length],
-          verifiedPurchase: (h + i) % 3 !== 0,
-          createdAt: new Date(Date.now() - ((h >>> i) % 60) * 86_400_000),
+          comment: texts[(h >>> i) % texts.length],
+          verifiedPurchase: (h + i) % 4 !== 0,
+          createdAt: new Date(Date.now() - ((h >>> i) % 90) * 86_400_000 - i * 3_600_000),
         },
       });
-      created++;
+      if (res) created++;
     }
   }
   // Tính lại điểm trung bình & số lượt đánh giá cho mọi sản phẩm bằng 1 câu SQL
