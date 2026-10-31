@@ -1,5 +1,7 @@
 'use client';
 
+import { faFloppyDisk, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useState, type FormEvent } from 'react';
 import { apiFetch } from '@/lib/client-api';
 
@@ -35,7 +37,8 @@ export function StockEditor({ productId, stock, onSaved }: { productId: string; 
         required
       />
       <button className="btn btn-sm" disabled={busy || value === String(stock)}>
-        {busy ? '…' : 'Lưu'}
+        <FontAwesomeIcon icon={busy ? faSpinner : faFloppyDisk} spin={busy} />
+        Lưu
       </button>
       {error && <span className="small danger">{error}</span>}
     </form>

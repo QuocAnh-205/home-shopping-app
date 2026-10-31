@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { StorageService } from '../storage/storage.service';
 import { CartService } from './cart.service';
 
 describe('CartService', () => {
@@ -18,6 +19,7 @@ describe('CartService', () => {
   const service = new CartService(
     { client: redisClient } as unknown as RedisService,
     prisma as unknown as PrismaService,
+    { getSignedImageUrl: jest.fn(async (k: string | null) => k) } as unknown as StorageService,
   );
   const userId = '7f0c2f4e-1b1a-4d3e-9a51-3c4f7e1d2a10';
   const productId = 'b8f3f5a2-55a1-4b8e-8f3e-0c1f2a3b4c5d';
@@ -27,7 +29,7 @@ describe('CartService', () => {
   it('computes totals with decimal precision', async () => {
     redisClient.hgetall.mockResolvedValue({ [productId]: '3' });
     prisma.product.findMany.mockResolvedValue([
-      { id: productId, name: 'Nồi chiên', slug: 'noi-chien', price: new Prisma.Decimal('1890000.10'), stock: 10 },
+      { id: productId, name: 'Nồi chiên', slug: 'noi-chien', price: new Prisma.Decimal('1890000.10'), stock: 10, imageKey: '/images/products/noi-chien.webp' },
     ]);
 
     const cart = await service.get(userId);
@@ -35,6 +37,7 @@ describe('CartService', () => {
     expect(cart.totalItems).toBe(3);
     expect(cart.totalAmount).toBe('5670000.30');
     expect(cart.items[0].available).toBe(true);
+    expect(cart.items[0].imageUrl).toBe('/images/products/noi-chien.webp');
   });
 
   it('returns an empty cart without querying the database', async () => {

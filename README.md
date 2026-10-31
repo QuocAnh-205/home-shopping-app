@@ -27,6 +27,8 @@ Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn pro
 | **Lịch sử đơn hàng**, chi tiết + timeline, **tự hủy đơn** khi còn chờ xác nhận | Swagger UI tại `/api/docs` (bật bằng `SWAGGER_ENABLED`) |
 | Đăng ký/đăng nhập, **đăng xuất thu hồi token**, khóa tài khoản khi sai mật khẩu 5 lần | Metrics nghiệp vụ + alert brute-force, tỷ lệ đặt hàng lỗi |
 
+**Giao diện:** bố cục bento, ảnh sản phẩm thật (Unsplash, xem `frontend/public/images/CREDITS.md`), icon Font Awesome 7, font Be Vietnam Pro tự host, **chế độ sáng/tối**, thanh điều hướng đáy trên mobile, skeleton loading, tôn trọng `prefers-reduced-motion`.
+
 ## 1. Chạy demo local (1 lệnh)
 
 Yêu cầu: Docker Desktop.

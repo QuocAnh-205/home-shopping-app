@@ -18,6 +18,13 @@ describe('StorageService.matchesSignature', () => {
     expect(StorageService.matchesSignature(buf, mime)).toBe(expected);
   });
 
+  it('only treats safe local paths as static assets', () => {
+    expect(StorageService.isStaticAsset('/images/products/sofa-bang-3-cho.webp')).toBe(true);
+    expect(StorageService.isStaticAsset('/images/../etc/passwd')).toBe(false);
+    expect(StorageService.isStaticAsset('https://evil.example/x.png')).toBe(false);
+    expect(StorageService.isStaticAsset('products/abc/1.png')).toBe(false);
+  });
+
   it('rejects tiny files', () => {
     expect(StorageService.matchesSignature(Buffer.from([0xff, 0xd8]), 'image/jpeg')).toBe(false);
   });

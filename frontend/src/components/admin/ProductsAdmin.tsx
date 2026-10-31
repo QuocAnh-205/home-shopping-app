@@ -1,7 +1,19 @@
 'use client';
 
+import {
+  faChevronLeft,
+  faChevronRight,
+  faCircleCheck,
+  faMagnifyingGlass,
+  faPlus,
+  faSpinner,
+  faTags,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { apiFetch } from '@/lib/client-api';
+import { ProductImage } from '@/components/ProductImage';
 import { formatPrice, type Category, type Product, type ProductPage } from '@/lib/types';
 import { StockEditor } from './StockEditor';
 
@@ -69,7 +81,12 @@ function CreateProductForm({ categories, onCreated }: { categories: Category[]; 
 
   return (
     <form className="panel form form-grid" onSubmit={submit}>
-      <h2 className="span-2">Thêm sản phẩm</h2>
+      <h2 className="span-2 panel-title" style={{ margin: 0 }}>
+        <span className="fa-icon-wrap">
+          <FontAwesomeIcon icon={faPlus} />
+        </span>
+        Thêm sản phẩm
+      </h2>
       <label>
         <span>Tên sản phẩm</span>
         <input
@@ -127,9 +144,14 @@ function CreateProductForm({ categories, onCreated }: { categories: Category[]; 
         <input type="checkbox" name="isHot" /> Đánh dấu bán chạy
       </label>
       <button className="btn" disabled={busy}>
+        <FontAwesomeIcon icon={busy ? faSpinner : faPlus} spin={busy} />
         {busy ? 'Đang lưu…' : 'Tạo sản phẩm'}
       </button>
-      {message && <p className={`span-2 alert ${message.ok ? 'alert-ok' : ''}`}>{message.text}</p>}
+      {message && (
+        <p className={`span-2 alert ${message.ok ? 'alert-ok' : ''}`}>
+          <FontAwesomeIcon icon={message.ok ? faCircleCheck : faTriangleExclamation} /> {message.text}
+        </p>
+      )}
     </form>
   );
 }
@@ -139,6 +161,7 @@ function HotToggle({ product, onSaved }: { product: Product; onSaved: () => void
   return (
     <input
       type="checkbox"
+      className="switch"
       checked={product.isHot}
       disabled={busy}
       aria-label={`Bán chạy: ${product.name}`}
@@ -180,7 +203,14 @@ export function ProductsAdmin() {
       {categories.length > 0 && <CreateProductForm categories={categories} onCreated={load} />}
       <div className="panel">
         <div className="page-head">
-          <h2>Danh sách sản phẩm</h2>
+          <h2 className="panel-title" style={{ margin: 0 }}>
+            <span className="fa-icon-wrap">
+              <FontAwesomeIcon icon={faTags} />
+            </span>
+            Danh sách sản phẩm
+          </h2>
+          <span className="input-wrap">
+            <FontAwesomeIcon icon={faMagnifyingGlass} />
           <input
             className="input input-sm"
             type="search"
@@ -191,10 +221,17 @@ export function ProductsAdmin() {
               setPage(1);
             }}
           />
+          </span>
         </div>
-        {error && <p className="alert">{error}</p>}
+        {error && (
+          <p className="alert">
+            <FontAwesomeIcon icon={faTriangleExclamation} /> {error}
+          </p>
+        )}
         {!data ? (
-          <div className="skeleton">Đang tải…</div>
+          <div className="skeleton">
+            <FontAwesomeIcon icon={faSpinner} spin /> Đang tải…
+          </div>
         ) : (
           <div className="table-wrap">
             <table className="table">
@@ -211,9 +248,14 @@ export function ProductsAdmin() {
                 {data.items.map((p) => (
                   <tr key={p.id}>
                     <td>
-                      <a className="link" href={`/products/${p.slug}`} target="_blank" rel="noreferrer">
-                        {p.name}
-                      </a>
+                      <span className="cell-product">
+                        <span className="thumb-sm">
+                          <ProductImage product={p} />
+                        </span>
+                        <a className="link" href={`/products/${p.slug}`} target="_blank" rel="noreferrer">
+                          {p.name}
+                        </a>
+                      </span>
                     </td>
                     <td>{p.category.name}</td>
                     <td>{formatPrice(p.price)}</td>
@@ -232,13 +274,13 @@ export function ProductsAdmin() {
         {data && data.totalPages > 1 && (
           <nav className="pagination">
             <button className="btn btn-ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              ← Trước
+              <FontAwesomeIcon icon={faChevronLeft} /> Trước
             </button>
             <span className="muted">
               Trang {data.page}/{data.totalPages}
             </span>
             <button className="btn btn-ghost" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>
-              Sau →
+              Sau <FontAwesomeIcon icon={faChevronRight} />
             </button>
           </nav>
         )}

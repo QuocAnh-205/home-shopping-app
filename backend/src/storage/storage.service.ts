@@ -33,6 +33,10 @@ export class StorageService {
     return mime in EXTENSIONS;
   }
 
+  static isStaticAsset(key: string): boolean {
+    return /^\/images\/[a-z0-9/-]+\.(webp|jpe?g|png)$/.test(key);
+  }
+
   /** Kiểm tra chữ ký file (magic bytes) khớp với MIME khai báo */
   static matchesSignature(buf: Buffer, mime: string): boolean {
     if (buf.length < 12) return false;
@@ -65,7 +69,13 @@ export class StorageService {
     return key;
   }
 
+  /**
+   * imageKey có 2 dạng:
+   * - "/images/..." : ảnh tĩnh đóng gói cùng frontend (dữ liệu seed) → trả nguyên đường dẫn
+   * - "products/..." : object trên S3 (admin upload) → presigned URL hết hạn sau 1 giờ
+   */
   async getSignedImageUrl(key: string | null): Promise<string | null> {
+    if (key && StorageService.isStaticAsset(key)) return key;
     if (!key || !this.bucket) return null;
     try {
       return await getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: 3600 });

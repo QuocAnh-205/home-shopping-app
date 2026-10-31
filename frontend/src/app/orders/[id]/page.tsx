@@ -1,9 +1,22 @@
 'use client';
 
+import {
+  faArrowLeft,
+  faBan,
+  faCalendar,
+  faClockRotateLeft,
+  faLocationDot,
+  faPhone,
+  faReceipt,
+  faSpinner,
+  faTriangleExclamation,
+  faTruckFast,
+} from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 import { RequireAuth } from '@/components/RequireAuth';
-import { StatusBadge } from '@/components/StatusBadge';
+import { STATUS_ICON, StatusBadge } from '@/components/StatusBadge';
 import { apiFetch } from '@/lib/client-api';
 import { STATUS_LABEL, formatDate, formatPrice, shortId, type Order, type OrderStatus } from '@/lib/types';
 
@@ -38,30 +51,55 @@ function OrderDetail({ id }: { id: string }) {
     }
   }
 
-  if (error && !order) return <p className="alert">{error}</p>;
-  if (!order) return <div className="skeleton">Đang tải đơn hàng…</div>;
+  if (error && !order) {
+    return (
+      <p className="alert">
+        <FontAwesomeIcon icon={faTriangleExclamation} /> {error}
+      </p>
+    );
+  }
+  if (!order) {
+    return (
+      <div className="skeleton">
+        <FontAwesomeIcon icon={faSpinner} spin /> Đang tải đơn hàng…
+      </div>
+    );
+  }
 
   const step = FLOW.indexOf(order.status);
 
   return (
     <>
       <div className="page-head">
-        <h1 className="page-title">Đơn hàng #{shortId(order.id)}</h1>
+        <h1 className="page-title" style={{ margin: 0 }}>
+          <FontAwesomeIcon icon={faReceipt} /> Đơn hàng #{shortId(order.id)}
+        </h1>
         <StatusBadge status={order.status} />
       </div>
-      {error && <p className="alert">{error}</p>}
-
-      {order.status === 'CANCELLED' ? (
-        <p className="alert">Đơn hàng đã hủy. Sản phẩm đã được hoàn lại kho.</p>
-      ) : (
-        <ol className="timeline" aria-label="Tiến trình đơn hàng">
-          {FLOW.map((s, i) => (
-            <li key={s} className={i <= step ? 'done' : undefined} aria-current={i === step ? 'step' : undefined}>
-              {STATUS_LABEL[s]}
-            </li>
-          ))}
-        </ol>
+      {error && (
+        <p className="alert">
+          <FontAwesomeIcon icon={faTriangleExclamation} /> {error}
+        </p>
       )}
+
+      <div className="panel" style={{ marginBottom: 20 }}>
+        {order.status === 'CANCELLED' ? (
+          <p className="alert" style={{ margin: 0 }}>
+            <FontAwesomeIcon icon={faBan} /> Đơn hàng đã hủy. Sản phẩm đã được hoàn lại kho.
+          </p>
+        ) : (
+          <ol className="timeline" aria-label="Tiến trình đơn hàng" style={{ margin: 0 }}>
+            {FLOW.map((s, i) => (
+              <li key={s} className={i <= step ? 'done' : undefined} aria-current={i === step ? 'step' : undefined}>
+                <span className="dot">
+                  <FontAwesomeIcon icon={STATUS_ICON[s]} />
+                </span>
+                {STATUS_LABEL[s]}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
 
       <div className="cart-layout">
         <div className="panel table-wrap">
@@ -83,7 +121,7 @@ function OrderDetail({ id }: { id: string }) {
                     </Link>
                   </td>
                   <td>{formatPrice(i.unitPrice)}</td>
-                  <td>{i.quantity}</td>
+                  <td>×{i.quantity}</td>
                   <td>{formatPrice(Number(i.unitPrice) * i.quantity)}</td>
                 </tr>
               ))}
@@ -96,40 +134,54 @@ function OrderDetail({ id }: { id: string }) {
             </tfoot>
           </table>
         </div>
-        <aside className="panel">
-          <h2>Giao hàng</h2>
-          <dl className="summary">
-            <dt>Ngày đặt</dt>
+        <aside className="panel stack">
+          <h2 className="panel-title" style={{ margin: 0 }}>
+            <span className="fa-icon-wrap">
+              <FontAwesomeIcon icon={faTruckFast} />
+            </span>
+            Thông tin giao hàng
+          </h2>
+          <dl className="summary" style={{ margin: 0 }}>
+            <dt>
+              <FontAwesomeIcon icon={faCalendar} fixedWidth /> Ngày đặt
+            </dt>
             <dd>{formatDate(order.createdAt)}</dd>
-            <dt>Cập nhật</dt>
+            <dt>
+              <FontAwesomeIcon icon={faClockRotateLeft} fixedWidth /> Cập nhật
+            </dt>
             <dd>{formatDate(order.updatedAt)}</dd>
-            <dt>Điện thoại</dt>
+            <dt>
+              <FontAwesomeIcon icon={faPhone} fixedWidth /> Điện thoại
+            </dt>
             <dd>{order.phone}</dd>
           </dl>
-          <p className="address">{order.shippingAddress}</p>
+          <p className="address" style={{ margin: 0 }}>
+            <FontAwesomeIcon icon={faLocationDot} />
+            {order.shippingAddress}
+          </p>
           {order.status === 'PENDING' &&
             (confirming ? (
               <div className="confirm">
                 <p>Bạn chắc chắn muốn hủy đơn này?</p>
-                <div className="row-gap">
-                  <button className="btn btn-danger" disabled={busy} onClick={cancel}>
-                    {busy ? 'Đang hủy…' : 'Xác nhận hủy'}
+                <div className="row">
+                  <button className="btn btn-danger btn-sm" disabled={busy} onClick={cancel}>
+                    {busy && <FontAwesomeIcon icon={faSpinner} spin />} Xác nhận hủy
                   </button>
-                  <button className="btn btn-ghost" disabled={busy} onClick={() => setConfirming(false)}>
+                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setConfirming(false)}>
                     Không
                   </button>
                 </div>
               </div>
             ) : (
               <button className="btn btn-ghost btn-block" onClick={() => setConfirming(true)}>
-                Hủy đơn hàng
+                <FontAwesomeIcon icon={faBan} /> Hủy đơn hàng
               </button>
             ))}
         </aside>
       </div>
-      <p>
+      <p style={{ marginTop: 20 }}>
         <Link className="link" href="/orders">
-          ← Tất cả đơn hàng
+          <FontAwesomeIcon icon={faArrowLeft} /> Tất cả đơn hàng
         </Link>
       </p>
     </>
@@ -138,7 +190,13 @@ function OrderDetail({ id }: { id: string }) {
 
 export default function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  if (!UUID_RE.test(id)) return <p className="alert">Mã đơn hàng không hợp lệ</p>;
+  if (!UUID_RE.test(id)) {
+    return (
+      <p className="alert">
+        <FontAwesomeIcon icon={faTriangleExclamation} /> Mã đơn hàng không hợp lệ
+      </p>
+    );
+  }
   return (
     <section>
       <RequireAuth>

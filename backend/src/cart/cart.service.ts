@@ -2,11 +2,13 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { StorageService } from '../storage/storage.service';
 
 export interface CartLine {
   productId: string;
   name: string;
   slug: string;
+  imageUrl: string | null;
   unitPrice: string;
   quantity: number;
   lineTotal: string;
@@ -27,6 +29,7 @@ export class CartService {
   constructor(
     private readonly redis: RedisService,
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
   ) {}
 
   static key(userId: string): string {
@@ -49,26 +52,30 @@ export class CartService {
 
     const products = await this.prisma.product.findMany({
       where: { id: { in: [...raw.keys()] } },
-      select: { id: true, name: true, slug: true, price: true, stock: true },
+      select: { id: true, name: true, slug: true, price: true, stock: true, imageKey: true },
+      orderBy: { name: 'asc' },
     });
 
     let total = new Prisma.Decimal(0);
     let totalItems = 0;
-    const items: CartLine[] = products.map((p) => {
-      const quantity = raw.get(p.id) ?? 0;
-      const lineTotal = p.price.mul(quantity);
-      total = total.add(lineTotal);
-      totalItems += quantity;
-      return {
-        productId: p.id,
-        name: p.name,
-        slug: p.slug,
-        unitPrice: p.price.toFixed(2),
-        quantity,
-        lineTotal: lineTotal.toFixed(2),
-        available: p.stock >= quantity,
-      };
-    });
+    const items: CartLine[] = await Promise.all(
+      products.map(async (p) => {
+        const quantity = raw.get(p.id) ?? 0;
+        const lineTotal = p.price.mul(quantity);
+        total = total.add(lineTotal);
+        totalItems += quantity;
+        return {
+          productId: p.id,
+          name: p.name,
+          slug: p.slug,
+          imageUrl: await this.storage.getSignedImageUrl(p.imageKey),
+          unitPrice: p.price.toFixed(2),
+          quantity,
+          lineTotal: lineTotal.toFixed(2),
+          available: p.stock >= quantity,
+        };
+      }),
+    );
 
     return { items, totalItems, totalAmount: total.toFixed(2) };
   }

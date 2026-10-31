@@ -1,5 +1,7 @@
 'use client';
 
+import { faBagShopping, faCircleCheck, faMinus, faPlus, faSpinner, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -41,36 +43,53 @@ export function AddToCartButton({ productId, stock }: { productId: string; stock
     }
   }
 
-  if (stock <= 0) return <p className="alert">Sản phẩm tạm hết hàng</p>;
+  if (stock <= 0) {
+    return (
+      <p className="alert">
+        <FontAwesomeIcon icon={faTriangleExclamation} /> Sản phẩm tạm hết hàng, vui lòng quay lại sau.
+      </p>
+    );
+  }
 
   return (
-    <div className="add-to-cart">
-      <div className="qty">
-        <button type="button" className="btn btn-ghost" onClick={() => setQuantity((q) => Math.max(1, q - 1))} aria-label="Giảm">
-          −
-        </button>
-        <input
-          className="input"
-          type="number"
-          inputMode="numeric"
-          min={1}
-          max={max}
-          value={quantity}
-          aria-label="Số lượng"
-          onChange={(e) => setQuantity(Math.max(1, Math.min(Number(e.target.value) || 1, max)))}
-        />
-        <button type="button" className="btn btn-ghost" onClick={() => setQuantity((q) => Math.min(max, q + 1))} aria-label="Tăng">
-          +
+    <>
+      <div className="buy-row">
+        <div className="qty">
+          <button type="button" onClick={() => setQuantity((q) => Math.max(1, q - 1))} disabled={quantity <= 1} aria-label="Giảm số lượng">
+            <FontAwesomeIcon icon={faMinus} />
+          </button>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={max}
+            value={quantity}
+            aria-label="Số lượng"
+            onChange={(e) => setQuantity(Math.max(1, Math.min(Number(e.target.value) || 1, max)))}
+          />
+          <button type="button" onClick={() => setQuantity((q) => Math.min(max, q + 1))} disabled={quantity >= max} aria-label="Tăng số lượng">
+            <FontAwesomeIcon icon={faPlus} />
+          </button>
+        </div>
+        <button className="btn btn-lg" onClick={add} disabled={busy}>
+          <FontAwesomeIcon icon={busy ? faSpinner : faBagShopping} spin={busy} />
+          {busy ? 'Đang thêm…' : 'Thêm vào giỏ hàng'}
         </button>
       </div>
-      <button className="btn btn-lg" onClick={add} disabled={busy}>
-        {busy ? 'Đang thêm…' : '🛒 Thêm vào giỏ'}
-      </button>
       {status && (
         <p className={status.ok ? 'alert alert-ok' : 'alert'} role="status">
-          {status.text} {status.ok && <Link href="/cart">Xem giỏ hàng →</Link>}
+          <FontAwesomeIcon icon={status.ok ? faCircleCheck : faTriangleExclamation} />
+          <span>
+            {status.text}
+            {status.ok && (
+              <>
+                {' · '}
+                <Link href="/cart">Xem giỏ hàng</Link>
+              </>
+            )}
+          </span>
         </p>
       )}
-    </div>
+    </>
   );
 }

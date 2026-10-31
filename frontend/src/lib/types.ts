@@ -37,6 +37,7 @@ export interface CartLine {
   productId: string;
   name: string;
   slug: string;
+  imageUrl: string | null;
   unitPrice: string;
   quantity: number;
   lineTotal: string;
@@ -121,18 +122,6 @@ export const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
   COMPLETED: [],
   CANCELLED: [],
 };
-
-const CATEGORY_ICON: Record<string, string> = {
-  'nha-bep': '🍳',
-  'phong-khach': '🛋️',
-  'phong-ngu': '🛏️',
-  'dien-gia-dung': '🔌',
-  'phong-tam': '🛁',
-};
-
-export function categoryIcon(slug?: string): string {
-  return (slug && CATEGORY_ICON[slug]) || '🏠';
-}
 
 const vnd = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Ho_Chi_Minh' });

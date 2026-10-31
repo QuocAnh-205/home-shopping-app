@@ -1,14 +1,27 @@
-import { categoryIcon, type Product } from '@/lib/types';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { categoryIcon } from '@/lib/icons';
+import type { Product } from '@/lib/types';
 
-/** Ảnh sản phẩm từ S3 (presigned URL); chưa có ảnh → minh họa theo danh mục */
-export function ProductImage({ product, large = false }: { product: Product; large?: boolean }) {
+/** Ảnh sản phẩm (file tĩnh hoặc presigned URL S3); chưa có ảnh → icon danh mục trên nền gradient */
+export function ProductImage({ product, eager = false }: { product: Pick<Product, 'name' | 'imageUrl' | 'category'>; eager?: boolean }) {
   if (product.imageUrl) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img className="product-img" src={product.imageUrl} alt={product.name} loading={large ? 'eager' : 'lazy'} />;
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        className="product-img"
+        src={product.imageUrl}
+        alt={product.name}
+        width={1200}
+        height={900}
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+        fetchPriority={eager ? 'high' : undefined}
+      />
+    );
   }
   return (
-    <div className={`product-img placeholder cat-${product.category?.slug ?? 'default'}`} aria-hidden>
-      <span style={{ fontSize: large ? '6rem' : '3rem' }}>{categoryIcon(product.category?.slug)}</span>
+    <div className="product-img placeholder" role="img" aria-label={product.name}>
+      <FontAwesomeIcon icon={categoryIcon(product.category?.slug)} />
     </div>
   );
 }

@@ -1,7 +1,18 @@
 'use client';
 
+import {
+  faChevronLeft,
+  faChevronRight,
+  faInbox,
+  faLocationDot,
+  faPhone,
+  faSpinner,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import { StatusBadge } from '@/components/StatusBadge';
+import { EmptyState } from '@/components/EmptyState';
+import { STATUS_ICON, StatusBadge } from '@/components/StatusBadge';
 import { apiFetch } from '@/lib/client-api';
 import {
   NEXT_STATUSES,
@@ -74,15 +85,24 @@ export function OrdersAdmin() {
               setPage(1);
             }}
           >
+            {f && <FontAwesomeIcon icon={STATUS_ICON[f]} />}
             {f ? STATUS_LABEL[f] : 'Tất cả'}
           </button>
         ))}
       </div>
-      {error && <p className="alert">{error}</p>}
+      {error && (
+        <p className="alert">
+          <FontAwesomeIcon icon={faTriangleExclamation} /> {error}
+        </p>
+      )}
       {!data ? (
-        <div className="skeleton">Đang tải đơn hàng…</div>
+        <div className="skeleton">
+          <FontAwesomeIcon icon={faSpinner} spin /> Đang tải đơn hàng…
+        </div>
       ) : data.items.length === 0 ? (
-        <p className="muted">Không có đơn hàng.</p>
+        <EmptyState icon={faInbox} title="Không có đơn hàng">
+          <p>Chưa có đơn nào ở trạng thái này.</p>
+        </EmptyState>
       ) : (
         <div className="panel table-wrap">
           <table className="table">
@@ -122,6 +142,7 @@ export function OrdersAdmin() {
                           disabled={busy === o.id}
                           onClick={() => transition(o, next)}
                         >
+                          <FontAwesomeIcon icon={STATUS_ICON[next]} />
                           {next === 'CANCELLED' && confirmCancel === o.id ? 'Chắc chắn hủy?' : ACTION_LABEL[next]}
                         </button>
                       ))}
@@ -130,7 +151,7 @@ export function OrdersAdmin() {
                   {expanded === o.id && (
                     <tr className="detail-row">
                       <td colSpan={6}>
-                        <strong>Giao tới:</strong> {o.shippingAddress} · ☎ {o.phone}
+                        <FontAwesomeIcon icon={faLocationDot} /> {o.shippingAddress} · <FontAwesomeIcon icon={faPhone} /> {o.phone}
                         <ul>
                           {o.items.map((i) => (
                             <li key={i.id}>
@@ -150,13 +171,13 @@ export function OrdersAdmin() {
       {data && data.totalPages > 1 && (
         <nav className="pagination">
           <button className="btn btn-ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            ← Trước
+            <FontAwesomeIcon icon={faChevronLeft} /> Trước
           </button>
           <span className="muted">
             Trang {data.page}/{data.totalPages} · {data.total} đơn
           </span>
           <button className="btn btn-ghost" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>
-            Sau →
+            Sau <FontAwesomeIcon icon={faChevronRight} />
           </button>
         </nav>
       )}

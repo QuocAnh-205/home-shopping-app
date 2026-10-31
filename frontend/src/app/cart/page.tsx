@@ -1,8 +1,25 @@
 'use client';
 
+import {
+  faArrowLeft,
+  faBagShopping,
+  faCircleCheck,
+  faLocationDot,
+  faLock,
+  faMinus,
+  faPhone,
+  faPlus,
+  faReceipt,
+  faSpinner,
+  faTrashCan,
+  faTriangleExclamation,
+  faTruckFast,
+} from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { EmptyState } from '@/components/EmptyState';
 import { apiFetch, notifyCartChanged, useSession } from '@/lib/client-api';
 import { formatPrice, shortId, type Cart, type Order } from '@/lib/types';
 
@@ -81,18 +98,18 @@ export default function CartPage() {
 
   if (placed) {
     return (
-      <section className="panel center success">
-        <span className="success-icon" aria-hidden>
-          ✅
+      <section className="panel success">
+        <span className="success-ico" aria-hidden>
+          <FontAwesomeIcon icon={faCircleCheck} />
         </span>
-        <h1>Đặt hàng thành công!</h1>
+        <h1 className="page-title">Đặt hàng thành công!</h1>
         <p>
           Mã đơn <strong>#{shortId(placed.id)}</strong> · Tổng thanh toán <span className="price">{formatPrice(placed.totalAmount)}</span>
         </p>
         <p className="muted">Chúng tôi sẽ gọi xác nhận qua số {placed.phone} trong ít phút.</p>
-        <div className="row-gap">
+        <div className="row row-center">
           <Link className="btn" href={`/orders/${placed.id}`}>
-            Xem đơn hàng
+            <FontAwesomeIcon icon={faReceipt} /> Theo dõi đơn hàng
           </Link>
           <Link className="btn btn-ghost" href="/">
             Tiếp tục mua sắm
@@ -106,96 +123,143 @@ export default function CartPage() {
 
   return (
     <section>
-      <h1 className="page-title">Giỏ hàng</h1>
+      <h1 className="page-title">
+        <FontAwesomeIcon icon={faBagShopping} /> Giỏ hàng
+        {cart && cart.totalItems > 0 && <span className="muted small">({cart.totalItems} sản phẩm)</span>}
+      </h1>
       {error && (
         <p className="alert" role="alert">
-          {error}
+          <FontAwesomeIcon icon={faTriangleExclamation} /> {error}
         </p>
       )}
       {!cart ? (
-        <div className="skeleton" aria-busy>
-          Đang tải giỏ hàng…
+        <div className="skeleton">
+          <FontAwesomeIcon icon={faSpinner} spin /> Đang tải giỏ hàng…
         </div>
       ) : cart.items.length === 0 ? (
-        <div className="empty">
-          <span aria-hidden>🛒</span>
-          <p>Giỏ hàng của bạn đang trống.</p>
-          <Link className="btn" href="/">
+        <EmptyState icon={faBagShopping} title="Giỏ hàng của bạn đang trống">
+          <p>Khám phá hàng trăm món đồ gia dụng đang chờ bạn.</p>
+          <Link className="btn" href="/#products">
             Bắt đầu mua sắm
           </Link>
-        </div>
+        </EmptyState>
       ) : (
         <div className="cart-layout">
-          <div className="panel">
+          <div className="stack">
             <ul className="cart-list">
               {cart.items.map((i) => (
                 <li key={i.productId} className={`cart-item ${pending === i.productId ? 'is-pending' : ''}`}>
+                  <Link href={`/products/${i.slug}`} className="cart-thumb">
+                    {i.imageUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img className="product-img" src={i.imageUrl} alt={i.name} width={96} height={80} loading="lazy" />
+                    )}
+                  </Link>
                   <div className="cart-item-info">
                     <Link href={`/products/${i.slug}`} className="cart-item-name">
                       {i.name}
                     </Link>
                     <span className="muted small">{formatPrice(i.unitPrice)} / sản phẩm</span>
-                    {!i.available && <span className="badge badge-danger">Không đủ hàng, vui lòng giảm số lượng</span>}
+                    {!i.available && (
+                      <span className="badge badge-danger">
+                        <FontAwesomeIcon icon={faTriangleExclamation} /> Không đủ hàng, vui lòng giảm số lượng
+                      </span>
+                    )}
                   </div>
                   <div className="qty">
                     <button
                       type="button"
-                      className="btn btn-ghost"
                       disabled={pending !== null || i.quantity <= 1}
                       onClick={() => setQuantity(i.productId, i.quantity - 1)}
                       aria-label={`Giảm số lượng ${i.name}`}
                     >
-                      −
+                      <FontAwesomeIcon icon={faMinus} />
                     </button>
                     <span className="qty-value">{i.quantity}</span>
                     <button
                       type="button"
-                      className="btn btn-ghost"
                       disabled={pending !== null || i.quantity >= MAX_PER_ITEM}
                       onClick={() => setQuantity(i.productId, i.quantity + 1)}
                       aria-label={`Tăng số lượng ${i.name}`}
                     >
-                      +
+                      <FontAwesomeIcon icon={faPlus} />
                     </button>
                   </div>
-                  <strong className="cart-item-total">{formatPrice(i.lineTotal)}</strong>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-icon"
-                    disabled={pending !== null}
-                    onClick={() => remove(i.productId)}
-                    aria-label={`Xóa ${i.name}`}
-                  >
-                    🗑
-                  </button>
+                  <div className="cart-item-right">
+                    <strong>{formatPrice(i.lineTotal)}</strong>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={pending !== null}
+                      onClick={() => remove(i.productId)}
+                      aria-label={`Xóa ${i.name}`}
+                    >
+                      <FontAwesomeIcon icon={faTrashCan} /> Xóa
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
+            <Link className="link" href="/#products">
+              <FontAwesomeIcon icon={faArrowLeft} /> Tiếp tục mua sắm
+            </Link>
           </div>
 
           <aside className="panel checkout">
-            <h2>Thanh toán</h2>
+            <h2 className="panel-title">
+              <span className="fa-icon-wrap">
+                <FontAwesomeIcon icon={faReceipt} />
+              </span>
+              Thanh toán
+            </h2>
             <dl className="summary">
               <dt>Tạm tính ({cart.totalItems} sản phẩm)</dt>
               <dd>{formatPrice(cart.totalAmount)}</dd>
-              <dt>Phí vận chuyển</dt>
+              <dt>
+                <FontAwesomeIcon icon={faTruckFast} /> Phí vận chuyển
+              </dt>
               <dd className="ok">Miễn phí</dd>
               <dt className="total">Tổng cộng</dt>
               <dd className="total price">{formatPrice(cart.totalAmount)}</dd>
             </dl>
             <form className="form" onSubmit={checkout}>
-              <label>
-                <span>Địa chỉ nhận hàng</span>
-                <textarea className="input" name="address" rows={3} placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành" minLength={10} maxLength={500} required />
+              <label className="field">
+                Địa chỉ nhận hàng
+                <textarea
+                  className="input"
+                  name="address"
+                  rows={3}
+                  placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành"
+                  minLength={10}
+                  maxLength={500}
+                  autoComplete="street-address"
+                  required
+                />
               </label>
-              <label>
-                <span>Số điện thoại</span>
-                <input className="input" name="phone" type="tel" inputMode="tel" placeholder="0901234567" pattern="(\+84|0)[0-9]{9,10}" required />
+              <label className="field">
+                Số điện thoại
+                <span className="input-wrap">
+                  <FontAwesomeIcon icon={faPhone} />
+                  <input
+                    className="input"
+                    name="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="0901 234 567"
+                    pattern="(\+84|0)[0-9 .\-]{9,13}"
+                    required
+                  />
+                </span>
               </label>
-              <button className="btn btn-lg" type="submit" disabled={submitting || blocked || pending !== null}>
-                {submitting ? 'Đang đặt hàng…' : 'Đặt hàng (COD)'}
+              <button className="btn btn-lg btn-block" type="submit" disabled={submitting || blocked || pending !== null}>
+                <FontAwesomeIcon icon={submitting ? faSpinner : faLocationDot} spin={submitting} />
+                {submitting ? 'Đang đặt hàng…' : 'Đặt hàng · Thanh toán khi nhận'}
               </button>
             </form>
+            <p className="secure-note">
+              <FontAwesomeIcon icon={faLock} /> Thông tin của bạn được mã hóa và bảo mật
+            </p>
           </aside>
         </div>
       )}

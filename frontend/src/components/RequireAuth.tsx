@@ -1,9 +1,13 @@
 'use client';
 
+import { faLock, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { useSession } from '@/lib/client-api';
 import type { Role } from '@/lib/types';
+import { EmptyState } from './EmptyState';
 
 /**
  * Chặn trang cần đăng nhập ở phía client (UX). Bảo mật thực sự nằm ở backend:
@@ -18,13 +22,21 @@ export function RequireAuth({ role, children }: { role?: Role; children: ReactNo
     if (ready && !session) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
   }, [ready, session, router, pathname]);
 
-  if (!ready || !session) return <div className="skeleton">Đang kiểm tra đăng nhập…</div>;
+  if (!ready || !session) {
+    return (
+      <div className="skeleton">
+        <FontAwesomeIcon icon={faSpinner} spin /> Đang kiểm tra đăng nhập…
+      </div>
+    );
+  }
   if (role && session.user.role !== role) {
     return (
-      <div className="panel center">
-        <h1>403 - Không có quyền truy cập</h1>
-        <p className="muted">Trang này chỉ dành cho quản trị viên.</p>
-      </div>
+      <EmptyState icon={faLock} title="Không có quyền truy cập">
+        <p>Trang này chỉ dành cho quản trị viên.</p>
+        <Link className="btn btn-ghost" href="/">
+          Về trang chủ
+        </Link>
+      </EmptyState>
     );
   }
   return <>{children}</>;

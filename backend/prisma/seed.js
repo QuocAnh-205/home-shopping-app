@@ -3,7 +3,10 @@
 
 /**
  * Seed idempotent (chạy lại nhiều lần không tạo trùng): danh mục, sản phẩm mẫu, tài khoản admin/khách demo.
- * Admin & khách demo chỉ được tạo khi có biến môi trường tương ứng → production không có tài khoản mặc định.
+ * - Sản phẩm đã tồn tại: cập nhật tên, mô tả, ảnh theo dữ liệu mới nhất; GIỮ NGUYÊN giá & tồn kho
+ *   (có thể đã được admin chỉnh trên production).
+ * - Ảnh mẫu là file tĩnh trong frontend/public/images/products (nguồn: Unsplash, xem CREDITS.md).
+ * - Admin & khách demo chỉ được tạo khi có biến môi trường tương ứng → production không có tài khoản mặc định.
  */
 const { PrismaClient, Role } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
@@ -19,22 +22,136 @@ const categories = [
 ];
 
 const products = [
-  { name: 'Nồi chiên không dầu 6L', slug: 'noi-chien-khong-dau-6l', price: '1890000', stock: 120, isHot: true, category: 'dien-gia-dung', description: 'Nồi chiên không dầu dung tích 6 lít, công suất 1700W, 8 chế độ nấu tự động, lòng nồi chống dính men ceramic.' },
-  { name: 'Bộ nồi inox 5 món', slug: 'bo-noi-inox-5-mon', price: '1250000', stock: 80, isHot: true, category: 'nha-bep', description: 'Bộ nồi inox 304 ba lớp đáy, dùng được trên mọi loại bếp kể cả bếp từ, nắp kính cường lực.' },
-  { name: 'Máy lọc không khí HEPA', slug: 'may-loc-khong-khi-hepa', price: '3490000', stock: 45, isHot: true, category: 'dien-gia-dung', description: 'Màng lọc HEPA H13, phù hợp phòng 40m², cảm biến bụi PM2.5, chế độ ngủ siêu êm 22dB.' },
-  { name: 'Sofa băng 3 chỗ', slug: 'sofa-bang-3-cho', price: '7990000', stock: 12, isHot: false, category: 'phong-khach', description: 'Khung gỗ sồi tự nhiên, đệm mút D40 đàn hồi cao, bọc vải chống thấm dễ vệ sinh.' },
-  { name: 'Đèn cây đứng LED', slug: 'den-cay-dung-led', price: '890000', stock: 60, isHot: false, category: 'phong-khach', description: 'Đèn LED 3 chế độ màu, điều chỉnh độ sáng vô cấp, chân đế kim loại sơn tĩnh điện.' },
-  { name: 'Bộ chăn ga cotton 100%', slug: 'bo-chan-ga-cotton', price: '1150000', stock: 90, isHot: true, category: 'phong-ngu', description: 'Cotton 100% mật độ 300 sợi, kích thước 1m8 x 2m, thoáng mát, không phai màu.' },
-  { name: 'Gối cao su non', slug: 'goi-cao-su-non', price: '390000', stock: 200, isHot: false, category: 'phong-ngu', description: 'Cao su non định hình, hỗ trợ đốt sống cổ, vỏ gối tencel tháo rời giặt được.' },
-  { name: 'Máy xay sinh tố đa năng', slug: 'may-xay-sinh-to-da-nang', price: '990000', stock: 75, isHot: false, category: 'nha-bep', description: 'Cối thủy tinh 1.5L, động cơ 800W, 6 lưỡi dao inox, kèm cối xay khô.' },
-  { name: 'Bàn trà mặt đá', slug: 'ban-tra-mat-da', price: '2450000', stock: 20, isHot: false, category: 'phong-khach', description: 'Mặt đá ceramic vân marble chống trầy, chân thép sơn đen tĩnh điện, kích thước 100x50cm.' },
-  { name: 'Kệ gia vị xoay 360°', slug: 'ke-gia-vi-xoay-360', price: '320000', stock: 150, isHot: false, category: 'nha-bep', description: 'Kệ xoay 2 tầng, kèm 16 hũ thủy tinh có nắp, tiết kiệm diện tích bếp.' },
-  { name: 'Robot hút bụi lau nhà', slug: 'robot-hut-bui-lau-nha', price: '5990000', stock: 25, isHot: true, category: 'dien-gia-dung', description: 'Lực hút 4000Pa, cảm biến LiDAR vẽ bản đồ, lau rung, điều khiển qua ứng dụng.' },
-  { name: 'Ấm siêu tốc 1.7L', slug: 'am-sieu-toc-1-7l', price: '450000', stock: 3, isHot: false, category: 'dien-gia-dung', description: 'Thân inox 2 lớp cách nhiệt, tự ngắt khi sôi, đế xoay 360°.' },
-  { name: 'Nệm foam 1m6', slug: 'nem-foam-1m6', price: '4590000', stock: 15, isHot: false, category: 'phong-ngu', description: 'Foam memory 5 vùng nâng đỡ, dày 25cm, vỏ vải kháng khuẩn tháo rời.' },
-  { name: 'Đèn ngủ cảm ứng', slug: 'den-ngu-cam-ung', price: '250000', stock: 0, isHot: false, category: 'phong-ngu', description: 'Chạm để bật/tắt, 3 mức sáng, pin sạc USB-C dùng 7 đêm.' },
-  { name: 'Vòi sen tăng áp', slug: 'voi-sen-tang-ap', price: '560000', stock: 70, isHot: false, category: 'phong-tam', description: '3 chế độ phun, tăng áp 200%, lõi lọc vitamin C khử clo.' },
-  { name: 'Kệ nhà tắm inox 3 tầng', slug: 'ke-nha-tam-inox-3-tang', price: '480000', stock: 8, isHot: false, category: 'phong-tam', description: 'Inox 304 chống gỉ, dán tường không cần khoan, chịu lực 15kg mỗi tầng.' },
+  {
+    slug: 'noi-chien-khong-dau-6l',
+    name: 'Nồi chiên không dầu điện tử 6.2L',
+    category: 'dien-gia-dung', price: '1890000', stock: 120, isHot: true,
+    description:
+      'Thân máy màu đen bóng sang trọng với núm xoay điều chỉnh nhiệt độ 80–200°C và hẹn giờ đến 60 phút, đèn báo nguồn xanh dễ quan sát.\n' +
+      'Công nghệ đối lưu khí nóng tốc độ cao giúp món ăn giòn đều, giảm đến 90% dầu mỡ.\n' +
+      'Lòng nồi 6.2L chống dính, giỏ chiên tháo rời rửa được bằng máy rửa bát. Công suất 1700W.',
+  },
+  {
+    slug: 'bo-noi-inox-5-mon',
+    name: 'Bộ nồi inox 304 cao cấp 5 món',
+    category: 'nha-bep', price: '1250000', stock: 80, isHot: true,
+    description:
+      'Gồm nồi 16 / 20 / 24 cm, quánh 16 cm và nồi luộc 26 cm, inox 304 đánh bóng gương sáng loáng.\n' +
+      'Tay cầm inox tán đinh chắc chắn, nắp khít giữ nhiệt; đáy 3 lớp truyền nhiệt đều, dùng được mọi loại bếp kể cả bếp từ.',
+  },
+  {
+    slug: 'may-loc-khong-khi-hepa',
+    name: 'Máy lọc không khí dạng tháp HEPA H13',
+    category: 'dien-gia-dung', price: '3490000', stock: 45, isHot: true,
+    description:
+      'Thiết kế trụ tròn màu trắng tối giản, hút gió 360° từ thân dưới và thổi khí sạch lên trên.\n' +
+      'Bộ lọc 3 lớp: màng lọc thô, HEPA H13 giữ lại 99.97% bụi mịn PM2.5 và than hoạt tính khử mùi.\n' +
+      'Phù hợp phòng đến 40 m², chế độ ngủ chỉ 22 dB.',
+  },
+  {
+    slug: 'sofa-bang-3-cho',
+    name: 'Sofa băng 3 chỗ vải bố xám',
+    category: 'phong-khach', price: '7990000', stock: 12, isHot: false,
+    description:
+      'Bọc vải bố màu xám ghi chống bám bụi, 3 gối tựa lưng rời êm ái, đệm ngồi mút D40 đàn hồi cao.\n' +
+      'Tay vịn bo tròn, chân gỗ sồi tự nhiên. Kích thước 210 x 88 x 82 cm, hợp phòng khách hiện đại.',
+  },
+  {
+    slug: 'den-cay-dung-led',
+    name: 'Đèn cây chụp vải xếp ly',
+    category: 'phong-khach', price: '890000', stock: 60, isHot: false,
+    description:
+      'Chụp vải xếp ly hình trụ cao, khuếch tán ánh sáng vàng ấm dịu mắt cho góc đọc sách và phòng khách.\n' +
+      'Thân thép sơn đen mảnh, đế tròn chắc chắn, chiều cao 160 cm. Đui E27 kèm bóng LED tiết kiệm điện, công tắc chân.',
+  },
+  {
+    slug: 'bo-chan-ga-cotton',
+    name: 'Bộ chăn ga gối cotton trắng',
+    category: 'phong-ngu', price: '1150000', stock: 90, isHot: true,
+    description:
+      'Bộ 4 món màu trắng tinh khôi: ga bọc, vỏ chăn và 2 vỏ gối nằm.\n' +
+      'Cotton 100% mật độ 300 sợi mềm mát, thấm hút tốt, không xù lông sau nhiều lần giặt. Kích thước 1m8 x 2m.',
+  },
+  {
+    slug: 'goi-cao-su-non',
+    name: 'Gối ngủ bông mềm trắng',
+    category: 'phong-ngu', price: '390000', stock: 200, isHot: false,
+    description:
+      'Ruột gối bông microfiber siêu mềm, độ phồng cao, ôm đầu và cổ tự nhiên.\n' +
+      'Vỏ cotton trắng có khóa kéo, giặt máy được. Kích thước 50 x 70 cm.',
+  },
+  {
+    slug: 'may-xay-sinh-to-da-nang',
+    name: 'Máy xay sinh tố công suất lớn 1.8L',
+    category: 'nha-bep', price: '990000', stock: 75, isHot: false,
+    description:
+      'Cối xay Tritan trong suốt 1.8L không chứa BPA, tay cầm đen chống trượt.\n' +
+      'Lưỡi dao inox 6 cánh cùng động cơ mạnh xay nhuyễn rau xanh, trái cây và đá viên chỉ trong 30 giây.',
+  },
+  {
+    slug: 'ban-tra-mat-da',
+    name: 'Bàn trà gỗ thông 2 tầng',
+    category: 'phong-khach', price: '2450000', stock: 20, isHot: false,
+    description:
+      'Gỗ thông tự nhiên dày, vân gỗ mộc ấm áp phong cách rustic.\n' +
+      'Thiết kế 2 tầng: mặt trên bày trí, tầng dưới để sách báo. Kích thước 110 x 55 x 40 cm.',
+  },
+  {
+    slug: 'ke-gia-vi-xoay-360',
+    name: 'Bộ hũ gia vị thủy tinh nắp đen',
+    category: 'nha-bep', price: '320000', stock: 150, isHot: false,
+    description:
+      'Bộ 8 hũ thủy tinh dày trong suốt, nắp kim loại sơn đen có ron cao su kín hơi, giữ gia vị luôn khô thơm.\n' +
+      'Kèm nhãn dán ghi tên, xếp gọn đẹp mắt trên kệ bếp.',
+  },
+  {
+    slug: 'robot-hut-bui-lau-nha',
+    name: 'Robot hút bụi lau nhà LiDAR',
+    category: 'dien-gia-dung', price: '5990000', stock: 25, isHot: true,
+    description:
+      'Thân robot màu đen nhám, tháp cảm biến LiDAR viền vàng quét laser vẽ bản đồ nhà chính xác.\n' +
+      'Lực hút 4000 Pa, lau rung, tự động về sạc; thân mỏng luồn được dưới sofa và giường. Điều khiển qua ứng dụng.',
+  },
+  {
+    slug: 'am-sieu-toc-1-7l',
+    name: 'Ấm siêu tốc thủy tinh 1.7L',
+    category: 'dien-gia-dung', price: '450000', stock: 3, isHot: false,
+    description:
+      'Thân thủy tinh borosilicate trong suốt chịu nhiệt, quan sát được nước sôi.\n' +
+      'Tay cầm và đế màu đen, đế xoay 360°, tự ngắt khi sôi và chống đun khô. Công suất 2200W.',
+  },
+  {
+    slug: 'nem-foam-1m6',
+    name: 'Nệm foam 1m6 vỏ gấm chần bông',
+    category: 'phong-ngu', price: '4590000', stock: 15, isHot: false,
+    description:
+      'Mặt nệm vải gấm trắng chần bông hoa văn trám, êm ái và thoáng khí.\n' +
+      'Lõi foam memory 5 vùng nâng đỡ cột sống, dày 25 cm. Kích thước 1m6 x 2m.',
+  },
+  {
+    slug: 'den-ngu-cam-ung',
+    name: 'Đèn ngủ cầu thủy tinh mờ',
+    category: 'phong-ngu', price: '250000', stock: 0, isHot: false,
+    description:
+      'Quả cầu thủy tinh mờ cho ánh sáng vàng ấm dịu nhẹ, không chói mắt khi ngủ.\n' +
+      'Đế kim loại nhỏ gọn đặt vừa tab đầu giường, 3 mức sáng, cổng sạc USB-C.',
+  },
+  {
+    slug: 'voi-sen-tang-ap',
+    name: 'Bộ sen tắm 2 trong 1 mạ vàng',
+    category: 'phong-tam', price: '560000', stock: 70, isHot: false,
+    description:
+      'Bát sen tròn kết hợp tay sen cầm tay, lớp mạ vàng PVD sang trọng chống bong tróc.\n' +
+      '3 chế độ phun, công nghệ tăng áp cho dòng nước mạnh kể cả khi áp lực nước yếu. Dây sen đen dài 1.5 m.',
+  },
+  {
+    slug: 'ke-nha-tam-inox-3-tang',
+    name: 'Kệ nhà tắm thép sơn đen 3 tầng',
+    category: 'phong-tam', price: '480000', stock: 8, isHot: false,
+    description:
+      'Khung thép sơn tĩnh điện đen nhám chống gỉ, gồm kệ treo tường và kệ đứng 3 tầng.\n' +
+      'Để chai lọ, khăn tắm và giỏ đựng đồ gọn gàng; mỗi tầng chịu lực 15 kg.',
+  },
 ];
 
 async function upsertUser(email, password, fullName, role) {
@@ -54,10 +171,11 @@ async function main() {
   const bySlug = new Map((await prisma.category.findMany()).map((c) => [c.slug, c.id]));
   for (const p of products) {
     const { category, ...data } = p;
+    const imageKey = `/images/products/${p.slug}.webp`;
     await prisma.product.upsert({
       where: { slug: p.slug },
-      update: {},
-      create: { ...data, categoryId: bySlug.get(category) },
+      update: { name: p.name, description: p.description, imageKey, categoryId: bySlug.get(category) },
+      create: { ...data, imageKey, categoryId: bySlug.get(category) },
     });
   }
   console.log(`  ${categories.length} categories, ${products.length} products`);
@@ -67,6 +185,25 @@ async function main() {
   }
   if (process.env.SEED_CUSTOMER_EMAIL && process.env.SEED_CUSTOMER_PASSWORD) {
     await upsertUser(process.env.SEED_CUSTOMER_EMAIL, process.env.SEED_CUSTOMER_PASSWORD, 'Khách hàng Demo', Role.CUSTOMER);
+  }
+
+  // Seed thay đổi dữ liệu trực tiếp trong DB → xóa cache sản phẩm trên Redis (nếu cấu hình) để web hiện ngay
+  if (process.env.REDIS_URL) {
+    const Redis = require('ioredis');
+    const redis = new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: 2, lazyConnect: true });
+    try {
+      await redis.connect();
+      let cursor = '0';
+      do {
+        const [next, keys] = await redis.scan(cursor, 'MATCH', 'cache:products:*', 'COUNT', 200);
+        cursor = next;
+        if (keys.length) await redis.unlink(...keys);
+      } while (cursor !== '0');
+    } catch (err) {
+      console.warn(`  cache invalidation skipped: ${err.message}`);
+    } finally {
+      redis.disconnect();
+    }
   }
   console.log('Seed completed');
 }
