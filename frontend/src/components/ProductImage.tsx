@@ -1,9 +1,10 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { categoryIcon } from '@/lib/icons';
 import type { Product } from '@/lib/types';
 
-/** Ảnh sản phẩm (file tĩnh hoặc presigned URL S3); chưa có ảnh → icon danh mục trên nền gradient */
-export function ProductImage({ product, eager = false }: { product: Pick<Product, 'name' | 'imageUrl' | 'category'>; eager?: boolean }) {
+/**
+ * Ảnh sản phẩm (ảnh tĩnh, ảnh upload local hoặc presigned URL S3).
+ * Không bao giờ dùng icon thay ảnh: sản phẩm chưa có ảnh hiển thị khung trung tính kèm tên sản phẩm.
+ */
+export function ProductImage({ product, eager = false }: { product: Pick<Product, 'name' | 'imageUrl'>; eager?: boolean }) {
   if (product.imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -20,8 +21,9 @@ export function ProductImage({ product, eager = false }: { product: Pick<Product
     );
   }
   return (
-    <div className="product-img placeholder" role="img" aria-label={product.name}>
-      <FontAwesomeIcon icon={categoryIcon(product.category?.slug)} />
+    <div className="product-img no-image" role="img" aria-label={`${product.name} – ảnh đang được cập nhật`}>
+      <span>{product.name}</span>
+      <small>Ảnh đang được cập nhật</small>
     </div>
   );
 }

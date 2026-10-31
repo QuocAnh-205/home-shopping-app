@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client';
+import { OAuthProvider, Role } from '@prisma/client';
 
 export interface JwtPayload {
   sub: string;
@@ -6,6 +6,8 @@ export interface JwtPayload {
   role: Role;
   /** Token ID: dùng để thu hồi token khi logout (denylist trong Redis) */
   jti: string;
+  /** Thời điểm cấp (giây) – so với mốc đổi mật khẩu để vô hiệu hóa phiên cũ */
+  iat: number;
   exp: number;
 }
 
@@ -20,6 +22,13 @@ export interface UserProfile {
   email: string;
   fullName: string;
   role: Role;
+  avatarUrl: string | null;
+}
+
+export interface AccountProfile extends UserProfile {
+  createdAt: Date;
+  hasPassword: boolean;
+  providers: OAuthProvider[];
 }
 
 export interface AuthResponse {

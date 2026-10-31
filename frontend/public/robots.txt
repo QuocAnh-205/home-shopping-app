@@ -2,6 +2,11 @@ User-agent: *
 Allow: /
 Disallow: /cart
 Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /auth/
+Disallow: /account
 Disallow: /orders
 Disallow: /admin
 Disallow: /api/

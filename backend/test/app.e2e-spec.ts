@@ -11,6 +11,7 @@ import * as bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { MailMessage, MailService } from '../src/mail/mail.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Home Shopping API (e2e)', () => {
@@ -19,6 +20,9 @@ describe('Home Shopping API (e2e)', () => {
   const run = randomUUID().slice(0, 8);
   const password = 'E2eTest123';
   const created = { userIds: [] as string[], productIds: [] as string[], categoryId: 0 };
+  // Bắt email thay vì gửi SMTP thật → đọc được link đặt lại mật khẩu trong test
+  const outbox: MailMessage[] = [];
+  const fakeMail = { enabled: true, send: async (m: MailMessage) => (outbox.push(m), true) };
 
   let adminToken: string;
   let aliceToken: string;
@@ -39,7 +43,7 @@ describe('Home Shopping API (e2e)', () => {
   }
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(MailService).useValue(fakeMail).compile();
     app = moduleRef.createNestApplication<NestExpressApplication>({ logger: ['error'] });
     configureApp(app as NestExpressApplication);
     await app.init();
@@ -64,6 +68,7 @@ describe('Home Shopping API (e2e)', () => {
       await prisma.product.deleteMany({ where: { id: { in: created.productIds } } });
       await prisma.category.deleteMany({ where: { id: created.categoryId } });
       await prisma.user.deleteMany({ where: { id: { in: created.userIds } } });
+      await prisma.newsletterSubscriber.deleteMany({ where: { email: { endsWith: `${run}@e2e.test` } } });
     }
     await app?.close();
   });
@@ -195,6 +200,158 @@ describe('Home Shopping API (e2e)', () => {
       await http().post('/api/auth/login').send({ email, password: 'WrongPass1' }).expect(401);
     }
     await http().post('/api/auth/login').send({ email, password }).expect(429);
+  });
+
+  it('tracks units sold through order create/cancel (best-seller data is real)', async () => {
+    const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+    // 1 (đơn mua đồng thời) + 2 (đơn idempotent) − 2 (đơn bị hủy) = 1
+    expect(product.soldCount).toBe(1);
+  });
+
+  it('sale pricing: compare-at price must be higher and discount is computed', async () => {
+    await http().patch(`/api/products/${productId}`).set(auth(adminToken)).send({ compareAtPrice: '400000' }).expect(400);
+    const res = await http().patch(`/api/products/${productId}`).set(auth(adminToken)).send({ compareAtPrice: '500000' }).expect(200);
+    expect(res.body.discountPercent).toBe(10);
+
+    const onSale = await http().get('/api/products').query({ category: `e2e-${run}`, onSale: 'true' }).expect(200);
+    expect(onSale.body.items.map((p: { id: string }) => p.id)).toEqual([productId]);
+    await http().get('/api/products/deals').expect(200);
+    await http().get('/api/products/best-sellers').expect(200);
+  });
+
+  describe('reviews', () => {
+    const slug = () => `am-sieu-toc-e2e-${run}`;
+    let erinToken: string;
+
+    beforeAll(async () => {
+      erinToken = (await register('erin')).token;
+    });
+
+    it('anyone signed in can review; validation and auth are enforced', async () => {
+      await http().put(`/api/products/${slug()}/reviews`).send({ rating: 5, comment: 'Rất tốt, đáng tiền.' }).expect(401);
+      await http().put(`/api/products/${slug()}/reviews`).set(auth(erinToken)).send({ rating: 6, comment: 'Rất tốt, đáng tiền.' }).expect(400);
+      await http().put(`/api/products/${slug()}/reviews`).set(auth(erinToken)).send({ rating: 5, comment: 'ngắn' }).expect(400);
+
+      const erin = await http()
+        .put(`/api/products/${slug()}/reviews`)
+        .set(auth(erinToken))
+        .send({ rating: 4, comment: 'Đun nước nhanh, thiết kế đẹp.' })
+        .expect(200);
+      expect(erin.body.verifiedPurchase).toBe(false);
+      await http()
+        .put(`/api/products/${slug()}/reviews`)
+        .set(auth(aliceToken))
+        .send({ rating: 5, comment: 'Mua lần hai rồi, rất hài lòng!' })
+        .expect(200);
+
+      const list = await http().get(`/api/products/${slug()}/reviews`).expect(200);
+      expect(list.body.summary).toMatchObject({ count: 2, average: 4.5 });
+      expect(list.body.items[0].user).not.toHaveProperty('email');
+      expect((await http().get(`/api/products/${slug()}`).expect(200)).body).toMatchObject({ ratingAvg: 4.5, ratingCount: 2 });
+    });
+
+    it('a user has one review per product: re-submitting updates it, and it can be deleted', async () => {
+      await http()
+        .put(`/api/products/${slug()}/reviews`)
+        .set(auth(erinToken))
+        .send({ rating: 2, comment: 'Sau một tuần thì nắp hơi lỏng.' })
+        .expect(200);
+      let list = await http().get(`/api/products/${slug()}/reviews`).expect(200);
+      expect(list.body.summary).toMatchObject({ count: 2, average: 3.5 });
+
+      const mine = await http().get(`/api/products/${slug()}/reviews/mine`).set(auth(erinToken)).expect(200);
+      expect(mine.body.review.rating).toBe(2);
+
+      await http().delete(`/api/products/${slug()}/reviews/mine`).set(auth(erinToken)).expect(204);
+      list = await http().get(`/api/products/${slug()}/reviews`).expect(200);
+      expect(list.body.summary).toMatchObject({ count: 1, average: 5 });
+    });
+
+    it('admins can moderate reviews; customers cannot', async () => {
+      const list = await http().get(`/api/products/${slug()}/reviews`).expect(200);
+      const id = list.body.items[0].id;
+      await http().delete(`/api/admin/reviews/${id}`).set(auth(aliceToken)).expect(403);
+      await http().delete(`/api/admin/reviews/${id}`).set(auth(adminToken)).expect(204);
+      expect((await http().get(`/api/products/${slug()}`).expect(200)).body).toMatchObject({ ratingAvg: 0, ratingCount: 0 });
+    });
+  });
+
+  describe('password reset & change', () => {
+    let dave: { token: string; id: string };
+    const email = () => `dave-${run}@e2e.test`;
+
+    beforeAll(async () => {
+      dave = await register('dave');
+    });
+
+    it('does not reveal whether an email exists', async () => {
+      const before = outbox.length;
+      const res = await http().post('/api/auth/forgot-password').send({ email: `nobody-${run}@e2e.test` }).expect(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(outbox.length).toBe(before);
+    });
+
+    it('emails a single-use link; resetting logs out old sessions', async () => {
+      await http().post('/api/auth/forgot-password').send({ email: email() }).expect(200);
+      const mail = outbox.filter((m) => m.to === email()).pop()!;
+      const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text)![1];
+
+      await http().post('/api/auth/reset-password').send({ token, password: 'weak' }).expect(400);
+      // iat tính theo giây: chờ sang giây mới để chắc chắn token cũ được cấp TRƯỚC mốc đổi mật khẩu
+      await new Promise((r) => setTimeout(r, 1100));
+      await http().post('/api/auth/reset-password').send({ token, password: 'NewPass456' }).expect(200);
+      await http().post('/api/auth/reset-password').send({ token, password: 'Another789' }).expect(400);
+
+      await http().get('/api/auth/me').set(auth(dave.token)).expect(401);
+      await http().post('/api/auth/login').send({ email: email(), password }).expect(401);
+      const login = await http().post('/api/auth/login').send({ email: email(), password: 'NewPass456' }).expect(200);
+      dave.token = login.body.accessToken;
+      expect(outbox.some((m) => m.to === email() && m.subject.includes('thay đổi'))).toBe(true);
+    });
+
+    it('change password requires the current one and keeps the current session', async () => {
+      await http()
+        .post('/api/auth/change-password')
+        .set(auth(dave.token))
+        .send({ currentPassword: 'Wrong999x', newPassword: 'Changed123' })
+        .expect(400);
+      await new Promise((r) => setTimeout(r, 1100));
+      const res = await http()
+        .post('/api/auth/change-password')
+        .set(auth(dave.token))
+        .send({ currentPassword: 'NewPass456', newPassword: 'Changed123' })
+        .expect(200);
+      await http().get('/api/auth/me').set(auth(dave.token)).expect(401);
+      const me = await http().get('/api/auth/me').set(auth(res.body.accessToken)).expect(200);
+      expect(me.body).toMatchObject({ email: email(), hasPassword: true, providers: [] });
+    });
+  });
+
+  describe('social login (not configured in CI)', () => {
+    it('advertises no providers and redirects back with a friendly error', async () => {
+      expect((await http().get('/api/auth/oauth/providers').expect(200)).body).toEqual({ google: false, facebook: false });
+      const res = await http().get('/api/auth/oauth/google').expect(302);
+      expect(res.headers.location).toMatch(/\/login\?oauth_error=not_configured$/);
+      expect((await http().get('/api/auth/oauth/twitter').expect(302)).headers.location).toMatch(/oauth_error=unknown_provider/);
+    });
+
+    it('rejects unknown or malformed login codes', async () => {
+      await http().post('/api/auth/oauth/exchange').send({ code: 'x'.repeat(43) }).expect(401);
+      await http().post('/api/auth/oauth/exchange').send({ code: '../../etc' }).expect(400);
+    });
+  });
+
+  it('newsletter subscription is idempotent and sends one welcome mail', async () => {
+    const email = `news-${run}@e2e.test`;
+    await http().post('/api/newsletter/subscribe').send({ email }).expect(200);
+    await http().post('/api/newsletter/subscribe').send({ email: email.toUpperCase() }).expect(200);
+    expect(outbox.filter((m) => m.to === email)).toHaveLength(1);
+    await http().post('/api/newsletter/subscribe').send({ email: 'not-an-email' }).expect(400);
+  });
+
+  it('media endpoint only serves server-generated paths', async () => {
+    await http().get('/api/media/products/..%2F..%2Fetc/passwd').expect(404);
+    await http().get(`/api/media/products/${productId}/${randomUUID()}.webp`).expect(404);
   });
 
   it('exposes Prometheus metrics with business counters', async () => {

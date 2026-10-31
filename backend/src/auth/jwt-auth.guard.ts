@@ -31,12 +31,12 @@ export class JwtAuthGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
-    if (!payload.jti) throw new UnauthorizedException('Invalid token');
+    if (!payload.jti || typeof payload.iat !== 'number') throw new UnauthorizedException('Invalid token');
 
     // Fail-closed: không kiểm tra được denylist thì không cho token (có thể đã logout) lọt qua
     let revoked: boolean;
     try {
-      revoked = await this.auth.isRevoked(payload.jti);
+      revoked = await this.auth.isRevoked(payload);
     } catch (err) {
       this.logger.error(`Revocation check failed: ${(err as Error).message}`);
       throw new ServiceUnavailableException('Authentication temporarily unavailable');

@@ -13,6 +13,10 @@ const nextConfig = {
   reactStrictMode: true,
   compress: false, // Nginx đã gzip, tránh nén 2 lần tốn CPU
   images: { unoptimized: true },
+  // Trình duyệt luôn tự gọi /favicon.ico → trỏ về icon SVG duy nhất của site
+  async rewrites() {
+    return [{ source: '/favicon.ico', destination: '/favicon.svg' }];
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

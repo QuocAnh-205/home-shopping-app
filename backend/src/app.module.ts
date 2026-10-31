@@ -11,11 +11,15 @@ import { CategoriesModule } from './categories/categories.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { MailModule } from './mail/mail.module';
+import { MediaModule } from './media/media.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { NewsletterModule } from './newsletter/newsletter.module';
 import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { RedisModule } from './redis/redis.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { StorageModule } from './storage/storage.module';
 
 @Module({
@@ -33,7 +37,7 @@ import { StorageModule } from './storage/storage.module';
           return id;
         },
         redact: {
-          paths: ['req.headers.authorization', 'req.headers.cookie', 'req.body.password'],
+          paths: ['req.headers.authorization', 'req.headers.cookie', 'req.body.password', 'req.body.token', 'req.query.code'],
           censor: '[REDACTED]',
         },
         autoLogging: {
@@ -41,7 +45,12 @@ import { StorageModule } from './storage/storage.module';
         },
         customProps: () => ({ service: 'backend' }),
         serializers: {
-          req: (req: { id: string; method: string; url: string }) => ({ id: req.id, method: req.method, url: req.url }),
+          // Callback OAuth chứa code/state trên query → chỉ log path, không log query
+          req: (req: { id: string; method: string; url: string }) => ({
+            id: req.id,
+            method: req.method,
+            url: req.url.startsWith('/api/auth/oauth/') ? req.url.split('?')[0] : req.url,
+          }),
           res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
         },
       },
@@ -54,6 +63,8 @@ import { StorageModule } from './storage/storage.module';
     PrismaModule,
     RedisModule,
     StorageModule,
+    MailModule,
+    MediaModule,
     MetricsModule,
     HealthModule,
     AuthModule,
@@ -61,6 +72,8 @@ import { StorageModule } from './storage/storage.module';
     ProductsModule,
     CartModule,
     OrdersModule,
+    ReviewsModule,
+    NewsletterModule,
     AdminModule,
   ],
   providers: [

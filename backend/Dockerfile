@@ -42,9 +42,11 @@ LABEL org.opencontainers.image.title="home-shopping-backend" \
       org.opencontainers.image.source="https://github.com/home-shopping-app"
 
 # Vá các gói OS + tạo user không phải root (UID cố định để map quyền volume)
+# Thư mục uploads (chế độ không có S3) là nơi DUY NHẤT user runtime được ghi; named volume kế thừa quyền này
 RUN apk upgrade --no-cache \
  && addgroup -S -g 1001 nodejs \
- && adduser -S -D -u 1001 -G nodejs -h /home/nestjs nestjs
+ && adduser -S -D -u 1001 -G nodejs -h /home/nestjs nestjs \
+ && mkdir -p /app/uploads && chown 1001:1001 /app/uploads && chmod 750 /app/uploads
 
 # File thuộc root, user runtime chỉ có quyền đọc → container bị chiếm cũng không sửa được code
 COPY --from=prod-deps /app/node_modules ./node_modules

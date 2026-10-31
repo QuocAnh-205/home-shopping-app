@@ -2,180 +2,164 @@
 'use strict';
 
 /**
- * Seed idempotent (chạy lại nhiều lần không tạo trùng): danh mục, sản phẩm mẫu, tài khoản admin/khách demo.
- * - Sản phẩm đã tồn tại: cập nhật tên, mô tả, ảnh theo dữ liệu mới nhất; GIỮ NGUYÊN giá & tồn kho
- *   (có thể đã được admin chỉnh trên production).
- * - Ảnh mẫu là file tĩnh trong frontend/public/images/products (nguồn: Unsplash, xem CREDITS.md).
- * - Admin & khách demo chỉ được tạo khi có biến môi trường tương ứng → production không có tài khoản mặc định.
+ * Seed idempotent (chạy lại nhiều lần không tạo trùng).
+ * - Danh mục + 131 sản phẩm từ prisma/data/catalog.js (ảnh tĩnh trong frontend/public/images, nguồn Unsplash).
+ *   Sản phẩm đã có: cập nhật nội dung, giá, ảnh; GIỮ NGUYÊN tồn kho & số đã bán (dữ liệu vận hành thật).
+ * - Tài khoản chỉ tạo khi có biến môi trường → production không có tài khoản mặc định:
+ *     SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD          → 1 admin
+ *     SEED_CUSTOMER_EMAIL / SEED_CUSTOMER_PASSWORD    → khách demo chính
+ *     SEED_DEMO_CUSTOMERS=true                        → thêm 3 khách demo (cùng mật khẩu khách)
+ *     SEED_DEMO_REVIEWS=true                          → đánh giá mẫu từ các khách demo (chỉ dùng cho môi trường demo)
  */
-const { PrismaClient, Role } = require('@prisma/client');
+const { PrismaClient, Prisma, Role } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { categories, products } = require('./data/catalog');
 
 const prisma = new PrismaClient();
 
-const categories = [
-  { name: 'Nhà bếp', slug: 'nha-bep' },
-  { name: 'Phòng khách', slug: 'phong-khach' },
-  { name: 'Phòng ngủ', slug: 'phong-ngu' },
-  { name: 'Điện gia dụng', slug: 'dien-gia-dung' },
-  { name: 'Phòng tắm', slug: 'phong-tam' },
+// Đoạn giới thiệu bổ sung theo danh mục → trang chi tiết có nội dung phong phú, tự nhiên
+const CATEGORY_STORY = {
+  'dien-gia-dung':
+    'Sản phẩm được nhập khẩu chính hãng, đạt chứng nhận an toàn điện và tương thích điện áp 220V tại Việt Nam. Mỗi máy đều được kiểm tra vận hành trước khi giao, kèm phiếu bảo hành điện tử tra cứu bằng số điện thoại.',
+  'nha-bep':
+    'Chất liệu đạt tiêu chuẩn an toàn thực phẩm, không chứa chì, cadmium hay BPA. Thiết kế chú trọng công năng để việc nấu nướng hằng ngày nhẹ nhàng, gọn gàng và đẹp mắt hơn.',
+  'ban-an':
+    'Từng món được tuyển chọn để bàn ăn gia đình thêm ấm cúng và tinh tế – từ bữa cơm thường ngày đến buổi tiệc đãi khách. Đóng gói chống sốc nhiều lớp, cam kết đổi mới nếu sứt mẻ khi vận chuyển.',
+  'phong-khach':
+    'Nội thất được sản xuất theo quy trình kiểm soát chất lượng nghiêm ngặt: gỗ sấy đạt độ ẩm tiêu chuẩn, vải bọc chống phai màu. Đội ngũ kỹ thuật giao và lắp đặt miễn phí tận nơi trong nội thành.',
+  'phong-ngu':
+    'Chất liệu mềm mại, thân thiện với làn da và an toàn cho cả trẻ nhỏ. Thiết kế hướng đến không gian nghỉ ngơi yên bình, giúp bạn có giấc ngủ sâu và trọn vẹn hơn mỗi đêm.',
+  'phong-tam':
+    'Vật liệu chống gỉ, chống ẩm mốc, phù hợp khí hậu nồm ẩm của Việt Nam. Dễ lắp đặt, dễ vệ sinh và giữ vẻ sáng đẹp sau thời gian dài sử dụng.',
+  'trang-tri':
+    'Mỗi món đồ trang trí được chọn lọc để dễ phối với nhiều phong cách: tối giản, Bắc Âu, Japandi hay vintage. Một điểm nhấn nhỏ nhưng đủ làm không gian sống trở nên có hồn.',
+};
+
+const DEMO_CUSTOMERS = [
+  { email: 'lan.nguyen@homeshop.local', fullName: 'Nguyễn Thị Lan' },
+  { email: 'minh.tran@homeshop.local', fullName: 'Trần Văn Minh' },
+  { email: 'huong.le@homeshop.local', fullName: 'Lê Thu Hương' },
 ];
 
-const products = [
-  {
-    slug: 'noi-chien-khong-dau-6l',
-    name: 'Nồi chiên không dầu điện tử 6.2L',
-    category: 'dien-gia-dung', price: '1890000', stock: 120, isHot: true,
-    description:
-      'Thân máy màu đen bóng sang trọng với núm xoay điều chỉnh nhiệt độ 80–200°C và hẹn giờ đến 60 phút, đèn báo nguồn xanh dễ quan sát.\n' +
-      'Công nghệ đối lưu khí nóng tốc độ cao giúp món ăn giòn đều, giảm đến 90% dầu mỡ.\n' +
-      'Lòng nồi 6.2L chống dính, giỏ chiên tháo rời rửa được bằng máy rửa bát. Công suất 1700W.',
-  },
-  {
-    slug: 'bo-noi-inox-5-mon',
-    name: 'Bộ nồi inox 304 cao cấp 5 món',
-    category: 'nha-bep', price: '1250000', stock: 80, isHot: true,
-    description:
-      'Gồm nồi 16 / 20 / 24 cm, quánh 16 cm và nồi luộc 26 cm, inox 304 đánh bóng gương sáng loáng.\n' +
-      'Tay cầm inox tán đinh chắc chắn, nắp khít giữ nhiệt; đáy 3 lớp truyền nhiệt đều, dùng được mọi loại bếp kể cả bếp từ.',
-  },
-  {
-    slug: 'may-loc-khong-khi-hepa',
-    name: 'Máy lọc không khí dạng tháp HEPA H13',
-    category: 'dien-gia-dung', price: '3490000', stock: 45, isHot: true,
-    description:
-      'Thiết kế trụ tròn màu trắng tối giản, hút gió 360° từ thân dưới và thổi khí sạch lên trên.\n' +
-      'Bộ lọc 3 lớp: màng lọc thô, HEPA H13 giữ lại 99.97% bụi mịn PM2.5 và than hoạt tính khử mùi.\n' +
-      'Phù hợp phòng đến 40 m², chế độ ngủ chỉ 22 dB.',
-  },
-  {
-    slug: 'sofa-bang-3-cho',
-    name: 'Sofa băng 3 chỗ vải bố xám',
-    category: 'phong-khach', price: '7990000', stock: 12, isHot: false,
-    description:
-      'Bọc vải bố màu xám ghi chống bám bụi, 3 gối tựa lưng rời êm ái, đệm ngồi mút D40 đàn hồi cao.\n' +
-      'Tay vịn bo tròn, chân gỗ sồi tự nhiên. Kích thước 210 x 88 x 82 cm, hợp phòng khách hiện đại.',
-  },
-  {
-    slug: 'den-cay-dung-led',
-    name: 'Đèn cây chụp vải xếp ly',
-    category: 'phong-khach', price: '890000', stock: 60, isHot: false,
-    description:
-      'Chụp vải xếp ly hình trụ cao, khuếch tán ánh sáng vàng ấm dịu mắt cho góc đọc sách và phòng khách.\n' +
-      'Thân thép sơn đen mảnh, đế tròn chắc chắn, chiều cao 160 cm. Đui E27 kèm bóng LED tiết kiệm điện, công tắc chân.',
-  },
-  {
-    slug: 'bo-chan-ga-cotton',
-    name: 'Bộ chăn ga gối cotton trắng',
-    category: 'phong-ngu', price: '1150000', stock: 90, isHot: true,
-    description:
-      'Bộ 4 món màu trắng tinh khôi: ga bọc, vỏ chăn và 2 vỏ gối nằm.\n' +
-      'Cotton 100% mật độ 300 sợi mềm mát, thấm hút tốt, không xù lông sau nhiều lần giặt. Kích thước 1m8 x 2m.',
-  },
-  {
-    slug: 'goi-cao-su-non',
-    name: 'Gối ngủ bông mềm trắng',
-    category: 'phong-ngu', price: '390000', stock: 200, isHot: false,
-    description:
-      'Ruột gối bông microfiber siêu mềm, độ phồng cao, ôm đầu và cổ tự nhiên.\n' +
-      'Vỏ cotton trắng có khóa kéo, giặt máy được. Kích thước 50 x 70 cm.',
-  },
-  {
-    slug: 'may-xay-sinh-to-da-nang',
-    name: 'Máy xay sinh tố công suất lớn 1.8L',
-    category: 'nha-bep', price: '990000', stock: 75, isHot: false,
-    description:
-      'Cối xay Tritan trong suốt 1.8L không chứa BPA, tay cầm đen chống trượt.\n' +
-      'Lưỡi dao inox 6 cánh cùng động cơ mạnh xay nhuyễn rau xanh, trái cây và đá viên chỉ trong 30 giây.',
-  },
-  {
-    slug: 'ban-tra-mat-da',
-    name: 'Bàn trà gỗ thông 2 tầng',
-    category: 'phong-khach', price: '2450000', stock: 20, isHot: false,
-    description:
-      'Gỗ thông tự nhiên dày, vân gỗ mộc ấm áp phong cách rustic.\n' +
-      'Thiết kế 2 tầng: mặt trên bày trí, tầng dưới để sách báo. Kích thước 110 x 55 x 40 cm.',
-  },
-  {
-    slug: 'ke-gia-vi-xoay-360',
-    name: 'Bộ hũ gia vị thủy tinh nắp đen',
-    category: 'nha-bep', price: '320000', stock: 150, isHot: false,
-    description:
-      'Bộ 8 hũ thủy tinh dày trong suốt, nắp kim loại sơn đen có ron cao su kín hơi, giữ gia vị luôn khô thơm.\n' +
-      'Kèm nhãn dán ghi tên, xếp gọn đẹp mắt trên kệ bếp.',
-  },
-  {
-    slug: 'robot-hut-bui-lau-nha',
-    name: 'Robot hút bụi lau nhà LiDAR',
-    category: 'dien-gia-dung', price: '5990000', stock: 25, isHot: true,
-    description:
-      'Thân robot màu đen nhám, tháp cảm biến LiDAR viền vàng quét laser vẽ bản đồ nhà chính xác.\n' +
-      'Lực hút 4000 Pa, lau rung, tự động về sạc; thân mỏng luồn được dưới sofa và giường. Điều khiển qua ứng dụng.',
-  },
-  {
-    slug: 'am-sieu-toc-1-7l',
-    name: 'Ấm siêu tốc thủy tinh 1.7L',
-    category: 'dien-gia-dung', price: '450000', stock: 3, isHot: false,
-    description:
-      'Thân thủy tinh borosilicate trong suốt chịu nhiệt, quan sát được nước sôi.\n' +
-      'Tay cầm và đế màu đen, đế xoay 360°, tự ngắt khi sôi và chống đun khô. Công suất 2200W.',
-  },
-  {
-    slug: 'nem-foam-1m6',
-    name: 'Nệm foam 1m6 vỏ gấm chần bông',
-    category: 'phong-ngu', price: '4590000', stock: 15, isHot: false,
-    description:
-      'Mặt nệm vải gấm trắng chần bông hoa văn trám, êm ái và thoáng khí.\n' +
-      'Lõi foam memory 5 vùng nâng đỡ cột sống, dày 25 cm. Kích thước 1m6 x 2m.',
-  },
-  {
-    slug: 'den-ngu-cam-ung',
-    name: 'Đèn ngủ cầu thủy tinh mờ',
-    category: 'phong-ngu', price: '250000', stock: 0, isHot: false,
-    description:
-      'Quả cầu thủy tinh mờ cho ánh sáng vàng ấm dịu nhẹ, không chói mắt khi ngủ.\n' +
-      'Đế kim loại nhỏ gọn đặt vừa tab đầu giường, 3 mức sáng, cổng sạc USB-C.',
-  },
-  {
-    slug: 'voi-sen-tang-ap',
-    name: 'Bộ sen tắm 2 trong 1 mạ vàng',
-    category: 'phong-tam', price: '560000', stock: 70, isHot: false,
-    description:
-      'Bát sen tròn kết hợp tay sen cầm tay, lớp mạ vàng PVD sang trọng chống bong tróc.\n' +
-      '3 chế độ phun, công nghệ tăng áp cho dòng nước mạnh kể cả khi áp lực nước yếu. Dây sen đen dài 1.5 m.',
-  },
-  {
-    slug: 'ke-nha-tam-inox-3-tang',
-    name: 'Kệ nhà tắm thép sơn đen 3 tầng',
-    category: 'phong-tam', price: '480000', stock: 8, isHot: false,
-    description:
-      'Khung thép sơn tĩnh điện đen nhám chống gỉ, gồm kệ treo tường và kệ đứng 3 tầng.\n' +
-      'Để chai lọ, khăn tắm và giỏ đựng đồ gọn gàng; mỗi tầng chịu lực 15 kg.',
-  },
-];
+const REVIEW_TEXT = {
+  5: [
+    'Sản phẩm đúng như mô tả, hoàn thiện rất chắc chắn. Giao hàng nhanh, đóng gói cẩn thận. Rất hài lòng!',
+    'Dùng được vài tuần rồi, chất lượng vượt mong đợi so với giá tiền. Sẽ tiếp tục ủng hộ shop.',
+    'Hàng ngoài đẹp hơn trong ảnh, màu sắc sang trọng. Shop tư vấn nhiệt tình.',
+    'Mua làm quà tặng mẹ, mẹ rất thích. Hộp đựng đẹp, giao đúng hẹn.',
+  ],
+  4: [
+    'Chất lượng tốt, dùng ổn định. Trừ một sao vì giao chậm hơn dự kiến một ngày.',
+    'Sản phẩm đẹp, đúng mô tả. Hướng dẫn sử dụng hơi ít nhưng dùng một lúc là quen.',
+    'Giá hợp lý, chất lượng ổn trong tầm giá. Đóng gói kỹ.',
+  ],
+  3: ['Sản phẩm dùng tạm ổn, màu thực tế hơi khác ảnh một chút. Giao hàng nhanh.'],
+};
+
+/** Hash ổn định theo chuỗi → seed tạo ra cùng một bộ dữ liệu mỗi lần chạy */
+function hash(str) {
+  let h = 2166136261;
+  for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return h;
+}
+
+function toProductData(p, categoryId) {
+  const story = CATEGORY_STORY[p.cat] ?? '';
+  return {
+    name: p.name,
+    description: story ? `${p.summary}\n\n${story}` : p.summary,
+    highlights: p.features,
+    specs: p.specs,
+    price: new Prisma.Decimal(p.price),
+    compareAtPrice: p.compare ? new Prisma.Decimal(p.compare) : null,
+    imageKey: `/images/products/${p.slug}.webp`,
+    isHot: Boolean(p.hot),
+    categoryId,
+  };
+}
 
 async function upsertUser(email, password, fullName, role) {
-  await prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { email },
     update: {},
     create: { email, fullName, role, passwordHash: await bcrypt.hash(password, 12) },
   });
   console.log(`  user ${email} (${role})`);
+  return user;
+}
+
+async function seedReviews(customers) {
+  let created = 0;
+  for (const p of products) {
+    const h = hash(p.slug);
+    // ~70% sản phẩm có đánh giá, mỗi sản phẩm 1–4 đánh giá từ các khách demo khác nhau
+    if (h % 10 >= 7) continue;
+    const product = await prisma.product.findUnique({ where: { slug: p.slug }, select: { id: true } });
+    const count = 1 + (h % Math.min(4, customers.length));
+    for (let i = 0; i < count; i++) {
+      const user = customers[(h + i) % customers.length];
+      const roll = (h >>> (i * 3)) % 10;
+      const rating = roll < 6 ? 5 : roll < 9 ? 4 : 3;
+      const texts = REVIEW_TEXT[rating];
+      await prisma.review.upsert({
+        where: { productId_userId: { productId: product.id, userId: user.id } },
+        update: {},
+        create: {
+          productId: product.id,
+          userId: user.id,
+          rating,
+          comment: texts[(h + i) % texts.length],
+          verifiedPurchase: (h + i) % 3 !== 0,
+          createdAt: new Date(Date.now() - ((h >>> i) % 60) * 86_400_000),
+        },
+      });
+      created++;
+    }
+  }
+  // Tính lại điểm trung bình & số lượt đánh giá cho mọi sản phẩm bằng 1 câu SQL
+  await prisma.$executeRaw`
+    UPDATE products p
+    SET rating_avg = r.avg, rating_count = r.cnt
+    FROM (
+      SELECT p2.id, COALESCE(ROUND(AVG(rv.rating)::numeric, 2), 0) AS avg, COUNT(rv.id)::int AS cnt
+      FROM products p2 LEFT JOIN reviews rv ON rv.product_id = p2.id
+      GROUP BY p2.id
+    ) r
+    WHERE p.id = r.id`;
+  console.log(`  ${created} demo reviews`);
+}
+
+async function clearProductCache() {
+  if (!process.env.REDIS_URL) return;
+  const Redis = require('ioredis');
+  const redis = new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: 2, lazyConnect: true });
+  try {
+    await redis.connect();
+    let cursor = '0';
+    do {
+      const [next, keys] = await redis.scan(cursor, 'MATCH', 'cache:products:*', 'COUNT', 500);
+      cursor = next;
+      if (keys.length) await redis.unlink(...keys);
+    } while (cursor !== '0');
+  } catch (err) {
+    console.warn(`  cache invalidation skipped: ${err.message}`);
+  } finally {
+    redis.disconnect();
+  }
 }
 
 async function main() {
   for (const c of categories) {
-    await prisma.category.upsert({ where: { slug: c.slug }, update: { name: c.name }, create: c });
+    await prisma.category.upsert({ where: { slug: c.slug }, update: { name: c.name }, create: { name: c.name, slug: c.slug } });
   }
+  const categoryIds = new Map((await prisma.category.findMany()).map((c) => [c.slug, c.id]));
 
-  const bySlug = new Map((await prisma.category.findMany()).map((c) => [c.slug, c.id]));
   for (const p of products) {
-    const { category, ...data } = p;
-    const imageKey = `/images/products/${p.slug}.webp`;
+    const data = toProductData(p, categoryIds.get(p.cat));
     await prisma.product.upsert({
       where: { slug: p.slug },
-      update: { name: p.name, description: p.description, imageKey, categoryId: bySlug.get(category) },
-      create: { ...data, imageKey, categoryId: bySlug.get(category) },
+      update: data,
+      create: { ...data, slug: p.slug, stock: p.stock, soldCount: p.sold ?? 0 },
     });
   }
   console.log(`  ${categories.length} categories, ${products.length} products`);
@@ -183,28 +167,19 @@ async function main() {
   if (process.env.SEED_ADMIN_EMAIL && process.env.SEED_ADMIN_PASSWORD) {
     await upsertUser(process.env.SEED_ADMIN_EMAIL, process.env.SEED_ADMIN_PASSWORD, 'Quản trị viên', Role.ADMIN);
   }
-  if (process.env.SEED_CUSTOMER_EMAIL && process.env.SEED_CUSTOMER_PASSWORD) {
-    await upsertUser(process.env.SEED_CUSTOMER_EMAIL, process.env.SEED_CUSTOMER_PASSWORD, 'Khách hàng Demo', Role.CUSTOMER);
-  }
 
-  // Seed thay đổi dữ liệu trực tiếp trong DB → xóa cache sản phẩm trên Redis (nếu cấu hình) để web hiện ngay
-  if (process.env.REDIS_URL) {
-    const Redis = require('ioredis');
-    const redis = new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: 2, lazyConnect: true });
-    try {
-      await redis.connect();
-      let cursor = '0';
-      do {
-        const [next, keys] = await redis.scan(cursor, 'MATCH', 'cache:products:*', 'COUNT', 200);
-        cursor = next;
-        if (keys.length) await redis.unlink(...keys);
-      } while (cursor !== '0');
-    } catch (err) {
-      console.warn(`  cache invalidation skipped: ${err.message}`);
-    } finally {
-      redis.disconnect();
+  const customers = [];
+  const customerPassword = process.env.SEED_CUSTOMER_PASSWORD;
+  if (process.env.SEED_CUSTOMER_EMAIL && customerPassword) {
+    customers.push(await upsertUser(process.env.SEED_CUSTOMER_EMAIL, customerPassword, 'Khách hàng Demo', Role.CUSTOMER));
+    if (process.env.SEED_DEMO_CUSTOMERS === 'true') {
+      for (const c of DEMO_CUSTOMERS) customers.push(await upsertUser(c.email, customerPassword, c.fullName, Role.CUSTOMER));
     }
   }
+
+  if (process.env.SEED_DEMO_REVIEWS === 'true' && customers.length > 0) await seedReviews(customers);
+
+  await clearProductCache();
   console.log('Seed completed');
 }
 

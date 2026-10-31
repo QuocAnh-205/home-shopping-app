@@ -87,7 +87,7 @@ export class OrdersService {
             const qty = cart.get(p.id)!;
             const updated = await tx.product.updateMany({
               where: { id: p.id, stock: { gte: qty } },
-              data: { stock: { decrement: qty } },
+              data: { stock: { decrement: qty }, soldCount: { increment: qty } },
             });
             if (updated.count !== 1) throw new OutOfStockError(p.id);
             total = total.add(p.price.mul(qty));
@@ -194,7 +194,10 @@ export class OrdersService {
       if (to === OrderStatus.CANCELLED) {
         const items = await tx.orderItem.findMany({ where: { orderId: id }, select: { productId: true, quantity: true }, orderBy: { productId: 'asc' } });
         for (const item of items) {
-          await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: item.quantity } } });
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity }, soldCount: { decrement: item.quantity } },
+          });
         }
       }
     });

@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, type FormEvent } from 'react';
 import { logout, useCartCount, useSession } from '@/lib/client-api';
+import { initials } from '@/lib/types';
 import { ThemeToggle } from './ThemeToggle';
 
 function HeaderSearch() {
@@ -35,7 +36,7 @@ function HeaderSearch() {
         name="q"
         key={params.get('q') ?? ''}
         defaultValue={params.get('q') ?? ''}
-        placeholder="Tìm nồi chiên, sofa, chăn ga…"
+        placeholder="Tìm kiếm sản phẩm gia dụng…"
         maxLength={100}
         aria-label="Tìm kiếm sản phẩm"
       />
@@ -56,11 +57,6 @@ export function Header() {
     router.refresh();
   }
 
-  const initials = session?.user.fullName
-    .split(/\s+/)
-    .slice(-1)[0]
-    ?.charAt(0)
-    .toUpperCase();
 
   return (
     <header className="header">
@@ -103,10 +99,17 @@ export function Header() {
           {ready &&
             (session ? (
               <span className="user-chip desktop-only" title={session.user.email}>
-                <span className="avatar" aria-hidden>
-                  {initials}
-                </span>
-                <span className="name">{session.user.fullName}</span>
+                <Link href="/account" className="user-link" aria-label="Tài khoản của tôi">
+                  {session.user.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img className="avatar avatar-img" src={session.user.avatarUrl} alt="" width={32} height={32} referrerPolicy="no-referrer" />
+                  ) : (
+                    <span className="avatar" aria-hidden>
+                      {initials(session.user.fullName)}
+                    </span>
+                  )}
+                  <span className="name">{session.user.fullName}</span>
+                </Link>
                 <button type="button" className="icon-btn" onClick={onLogout} aria-label="Đăng xuất" title="Đăng xuất">
                   <FontAwesomeIcon icon={faRightFromBracket} />
                 </button>

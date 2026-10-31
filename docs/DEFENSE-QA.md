@@ -100,6 +100,30 @@ Hướng mở rộng: thêm rule vào chain `DOCKER-USER` hoặc đưa Grafana r
 
 ---
 
+## Câu 9. "Đăng nhập Google/Facebook của em có an toàn không? Quên mật khẩu làm thế nào để không bị lợi dụng?"
+
+**Trả lời:** (`backend/src/auth/oauth/`, `auth.service.ts`)
+- **OAuth 2.0 Authorization Code** (không dùng Implicit), Google thêm **PKCE S256**. Trình duyệt điều hướng toàn trang tới backend → không nhúng SDK/JS của bên thứ 3, CSP giữ nguyên `script-src 'self'`.
+- **Chống CSRF/login-CSRF:** `state` ngẫu nhiên 192-bit lưu Redis (10 phút, GETDEL dùng 1 lần) **và** cookie `httpOnly; SameSite=Lax; path=/api/auth/oauth` – callback phải khớp cả hai.
+- **Token không bao giờ nằm trên URL:** callback chỉ trả về *mã đăng nhập 1 lần* (Redis 2 phút) → trang `/auth/callback` đổi mã lấy JWT bằng POST. Nginx và pino **không ghi query** của `/api/auth/oauth/*` vào log.
+- **Chống chiếm tài khoản:** chỉ tự liên kết theo email khi nhà cung cấp xác nhận `email_verified`; tài khoản mạng xã hội đã gắn với người khác thì từ chối (`already_linked`). Tham số `next` được lọc chống open-redirect (`//evil.com`, `/\evil.com` → `/`).
+- **Quên mật khẩu:** luôn trả `200 {ok:true}` dù email có tồn tại hay không (chống dò tài khoản); giới hạn 3 yêu cầu/giờ/email + Throttler theo IP. Token 256-bit, DB **chỉ lưu SHA-256**, hết hạn 30 phút, đánh dấu đã dùng bằng `UPDATE … WHERE used_at IS NULL` (2 request song song chỉ 1 thành công).
+- **Đổi/đặt lại mật khẩu → đăng xuất mọi thiết bị:** ghi mốc `auth:pwd_changed:{userId}` vào Redis; guard từ chối mọi JWT có `iat` trước mốc đó; gửi email thông báo "mật khẩu vừa được thay đổi".
+- Local dùng **Mailpit** để bắt email (không gửi ra Internet); production cấu hình `SMTP_URL` (Amazon SES…). Toàn bộ luồng có e2e test.
+
+---
+
+## Câu 10. "Điểm đánh giá trung bình và 'bán chạy' có đúng khi nhiều người thao tác cùng lúc không?"
+
+**Trả lời:**
+- `rating_avg`, `rating_count`, `sold_count` là **cột phi chuẩn hóa** để trang danh sách sắp xếp/hiển thị nhanh (có index), nhưng luôn được cập nhật **trong cùng transaction** với thao tác gốc:
+  - Đặt hàng: `UPDATE products SET stock = stock - qty, sold_count = sold_count + qty WHERE stock >= qty`; hủy đơn hoàn lại cả hai.
+  - Đánh giá: `SELECT … FOR UPDATE` khóa dòng sản phẩm → upsert review → tính lại AVG/COUNT bằng 1 câu SQL. Hai người đánh giá cùng lúc sẽ chạy tuần tự nên không bị mất cập nhật (lost update).
+- Ràng buộc DB: `rating BETWEEN 1 AND 5`, `UNIQUE(product_id, user_id)` (mỗi người 1 đánh giá), `compare_at_price > price`, `sold_count >= 0`.
+- "Ưu đãi" sắp theo **% giảm** (biểu thức) bằng SQL thô đã tham số hóa; "Bán chạy" theo `sold_count` thật – e2e test kiểm chứng số đã bán sau chuỗi đặt/hủy đơn.
+
+---
+
 ## Câu hỏi phụ hay gặp (trả lời nhanh)
 
 - **Vì sao multi-stage build?** Image runtime không chứa compiler/devDependencies/source TS → backend nhỏ hơn nhiều so với single-stage, ít CVE hơn; layer `npm ci` được cache cho tới khi `package-lock.json` đổi.

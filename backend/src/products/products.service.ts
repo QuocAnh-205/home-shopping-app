@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -8,7 +8,14 @@ import { CreateProductDto, ListProductsQuery, ProductSort, UpdateProductDto } fr
 const productInclude = { category: { select: { id: true, name: true, slug: true } } } satisfies Prisma.ProductInclude;
 type ProductRow = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
 
-export type ProductView = Omit<ProductRow, 'imageKey' | 'price'> & { price: string; imageUrl: string | null };
+export type ProductView = Omit<ProductRow, 'imageKey' | 'price' | 'compareAtPrice' | 'ratingAvg'> & {
+  price: string;
+  compareAtPrice: string | null;
+  /** % giảm làm tròn, 0 nếu không khuyến mãi */
+  discountPercent: number;
+  ratingAvg: number;
+  imageUrl: string | null;
+};
 
 export interface ProductPage {
   items: ProductView[];
@@ -25,6 +32,8 @@ const ORDER_BY: Record<ProductSort, Prisma.ProductOrderByWithRelationInput[]> = 
   price_asc: [{ price: 'asc' }, { id: 'asc' }],
   price_desc: [{ price: 'desc' }, { id: 'asc' }],
   name: [{ name: 'asc' }, { id: 'asc' }],
+  best_selling: [{ soldCount: 'desc' }, { id: 'asc' }],
+  top_rated: [{ ratingAvg: 'desc' }, { ratingCount: 'desc' }, { id: 'asc' }],
 };
 
 @Injectable()
@@ -42,6 +51,7 @@ export class ProductsService {
       'list',
       query.category ?? 'all',
       q ? encodeURIComponent(q) : '-',
+      query.onSale ? 'sale' : '-',
       query.sort,
       query.page,
       query.limit,
@@ -52,6 +62,7 @@ export class ProductsService {
     const where: Prisma.ProductWhereInput = {
       ...(query.category ? { category: { slug: query.category } } : {}),
       ...(q ? { name: { contains: q, mode: 'insensitive' } } : {}),
+      ...(query.onSale ? { compareAtPrice: { not: null } } : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
@@ -76,20 +87,32 @@ export class ProductsService {
     return result;
   }
 
-  async hot(): Promise<ProductView[]> {
-    const key = `${CACHE_PREFIX}:hot`;
-    const cached = await this.redis.getJson<ProductView[]>(key);
-    if (cached) return cached;
+  /** Bán chạy nhất: theo số lượng đã bán (cập nhật thật khi đặt/hủy đơn), chỉ sản phẩm còn hàng */
+  async bestSellers(limit = 10): Promise<ProductView[]> {
+    return this.cached(`${CACHE_PREFIX}:best:${limit}`, 300, async () =>
+      this.toViews(
+        await this.prisma.product.findMany({
+          where: { stock: { gt: 0 } },
+          include: productInclude,
+          orderBy: [{ soldCount: 'desc' }, { id: 'asc' }],
+          take: limit,
+        }),
+      ),
+    );
+  }
 
-    const rows = await this.prisma.product.findMany({
-      where: { isHot: true, stock: { gt: 0 } },
-      include: productInclude,
-      take: 8,
-      orderBy: { updatedAt: 'desc' },
+  /** Giảm giá sâu nhất: sắp theo % giảm (biểu thức tính toán → dùng SQL thô để sắp xếp đúng) */
+  async deals(limit = 12): Promise<ProductView[]> {
+    return this.cached(`${CACHE_PREFIX}:deals:${limit}`, 300, async () => {
+      const ids = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM products
+        WHERE compare_at_price IS NOT NULL AND stock > 0
+        ORDER BY (compare_at_price - price) / compare_at_price DESC, sold_count DESC
+        LIMIT ${limit}`;
+      const rows = await this.prisma.product.findMany({ where: { id: { in: ids.map((r) => r.id) } }, include: productInclude });
+      const order = new Map(ids.map((r, i) => [r.id, i]));
+      return this.toViews(rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!));
     });
-    const result = await this.toViews(rows);
-    await this.redis.setJson(key, result, 300);
-    return result;
   }
 
   async bySlug(slug: string): Promise<ProductView> {
@@ -104,6 +127,12 @@ export class ProductsService {
     return view;
   }
 
+  async idBySlug(slug: string): Promise<string> {
+    const row = await this.prisma.product.findUnique({ where: { slug }, select: { id: true } });
+    if (!row) throw new NotFoundException('Product not found');
+    return row.id;
+  }
+
   /** Danh sách sắp hết hàng cho trang quản trị (không cache: cần số liệu thời gian thực) */
   async lowStock(threshold = 10): Promise<ProductView[]> {
     const rows = await this.prisma.product.findMany({
@@ -116,8 +145,16 @@ export class ProductsService {
   }
 
   async create(dto: CreateProductDto): Promise<ProductView> {
+    ProductsService.assertPricing(dto.price, dto.compareAtPrice);
+    const { price, compareAtPrice, specs, ...rest } = dto;
     const row = await this.prisma.product.create({
-      data: { ...dto, price: new Prisma.Decimal(dto.price), isHot: dto.isHot ?? false },
+      data: {
+        ...rest,
+        price: new Prisma.Decimal(price),
+        compareAtPrice: compareAtPrice ? new Prisma.Decimal(compareAtPrice) : null,
+        specs: (specs ?? {}) as Prisma.InputJsonValue,
+        isHot: dto.isHot ?? false,
+      },
       include: productInclude,
     });
     await this.invalidateCache();
@@ -125,10 +162,22 @@ export class ProductsService {
   }
 
   async update(id: string, dto: UpdateProductDto): Promise<ProductView> {
-    const { price, ...rest } = dto;
+    const current = await this.prisma.product.findUnique({ where: { id }, select: { price: true, compareAtPrice: true } });
+    if (!current) throw new NotFoundException('Product not found');
+    const { price, compareAtPrice, specs, ...rest } = dto;
+    ProductsService.assertPricing(
+      price ?? current.price.toFixed(2),
+      compareAtPrice === undefined ? (current.compareAtPrice?.toFixed(2) ?? null) : compareAtPrice,
+    );
+
     const row = await this.prisma.product.update({
       where: { id },
-      data: { ...rest, ...(price !== undefined ? { price: new Prisma.Decimal(price) } : {}) },
+      data: {
+        ...rest,
+        ...(price !== undefined ? { price: new Prisma.Decimal(price) } : {}),
+        ...(compareAtPrice !== undefined ? { compareAtPrice: compareAtPrice ? new Prisma.Decimal(compareAtPrice) : null } : {}),
+        ...(specs !== undefined ? { specs: specs as Prisma.InputJsonValue } : {}),
+      },
       include: productInclude,
     });
     await this.invalidateCache();
@@ -153,11 +202,33 @@ export class ProductsService {
     return this.redis.deleteByPattern(`${CACHE_PREFIX}:*`);
   }
 
+  static assertPricing(price: string, compareAtPrice: string | null | undefined): void {
+    if (compareAtPrice && new Prisma.Decimal(compareAtPrice).lte(new Prisma.Decimal(price))) {
+      throw new BadRequestException('compareAtPrice must be greater than price');
+    }
+  }
+
+  static discountPercent(price: Prisma.Decimal, compareAtPrice: Prisma.Decimal | null): number {
+    if (!compareAtPrice || compareAtPrice.lte(price)) return 0;
+    return compareAtPrice.minus(price).div(compareAtPrice).mul(100).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP).toNumber();
+  }
+
+  private async cached<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> {
+    const hit = await this.redis.getJson<T>(key);
+    if (hit) return hit;
+    const value = await load();
+    await this.redis.setJson(key, value, ttl);
+    return value;
+  }
+
   private toViews(rows: ProductRow[]): Promise<ProductView[]> {
     return Promise.all(
-      rows.map(async ({ imageKey, price, ...rest }) => ({
+      rows.map(async ({ imageKey, price, compareAtPrice, ratingAvg, ...rest }) => ({
         ...rest,
         price: price.toFixed(2),
+        compareAtPrice: compareAtPrice?.toFixed(2) ?? null,
+        discountPercent: ProductsService.discountPercent(price, compareAtPrice),
+        ratingAvg: ratingAvg.toNumber(),
         imageUrl: await this.storage.getSignedImageUrl(imageKey),
       })),
     );

@@ -1,17 +1,19 @@
 'use client';
 
-import { faBoxOpen, faGauge, faReceipt, faTags } from '@fortawesome/free-solid-svg-icons';
+import { faBoxOpen, faGauge, faReceipt, faStar, faTags } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useState } from 'react';
 import { Dashboard } from '@/components/admin/Dashboard';
 import { OrdersAdmin } from '@/components/admin/OrdersAdmin';
 import { ProductsAdmin } from '@/components/admin/ProductsAdmin';
+import { ReviewsAdmin } from '@/components/admin/ReviewsAdmin';
 import { RequireAuth } from '@/components/RequireAuth';
 
 const TABS = [
   { id: 'dashboard', label: 'Tổng quan', icon: faGauge },
   { id: 'orders', label: 'Đơn hàng', icon: faReceipt },
   { id: 'products', label: 'Sản phẩm', icon: faTags },
+  { id: 'reviews', label: 'Đánh giá', icon: faStar },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
 
@@ -34,6 +36,7 @@ export default function AdminPage() {
         {tab === 'dashboard' && <Dashboard />}
         {tab === 'orders' && <OrdersAdmin />}
         {tab === 'products' && <ProductsAdmin />}
+        {tab === 'reviews' && <ReviewsAdmin />}
       </RequireAuth>
     </section>
   );

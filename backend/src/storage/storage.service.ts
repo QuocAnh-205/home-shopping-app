@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 const EXTENSIONS: Record<string, string> = {
@@ -10,22 +12,28 @@ const EXTENSIONS: Record<string, string> = {
   'image/webp': 'webp',
 };
 
+export const LOCAL_PREFIX = 'local/';
+export const LOCAL_FILE_RE = /^products\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
+
 /**
- * Không truyền access key: AWS SDK tự lấy credentials tạm thời từ IAM Instance Profile
- * của EC2 qua IMDSv2 (default credential provider chain).
+ * Lưu ảnh sản phẩm do admin upload:
+ * - Production (có S3_BUCKET): Amazon S3, không cần access key – SDK tự lấy credentials từ IAM Instance Profile (IMDSv2).
+ * - Local/dev (không có S3_BUCKET): ghi vào UPLOAD_DIR (Docker volume), phục vụ qua GET /api/media/... (MediaController).
  */
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
   private readonly s3: S3Client;
   private readonly bucket?: string;
+  readonly uploadDir: string;
 
   constructor(config: ConfigService) {
-    this.bucket = config.get<string>('S3_BUCKET');
+    this.bucket = config.get<string>('S3_BUCKET') || undefined;
+    this.uploadDir = config.get<string>('UPLOAD_DIR') ?? join(process.cwd(), 'uploads');
     this.s3 = new S3Client({ region: config.get<string>('AWS_REGION') ?? 'ap-southeast-1' });
   }
 
-  get enabled(): boolean {
+  get usesS3(): boolean {
     return Boolean(this.bucket);
   }
 
@@ -53,30 +61,41 @@ export class StorageService {
   }
 
   async uploadProductImage(productId: string, body: Buffer, mime: string): Promise<string> {
-    if (!this.bucket) throw new ServiceUnavailableException('Object storage is not configured');
-    const key = `products/${productId}/${randomUUID()}.${EXTENSIONS[mime]}`;
+    // Tên file do server sinh (UUID) → không bao giờ dùng tên file người dùng gửi lên (chống path traversal)
+    const relative = `products/${productId}/${randomUUID()}.${EXTENSIONS[mime]}`;
+
+    if (!this.bucket) {
+      await mkdir(join(this.uploadDir, 'products', productId), { recursive: true });
+      await writeFile(join(this.uploadDir, relative), body, { mode: 0o640 });
+      this.logger.log({ event: 'product.image_uploaded', productId, storage: 'local' });
+      return `${LOCAL_PREFIX}${relative}`;
+    }
+
     await this.s3.send(
       new PutObjectCommand({
         Bucket: this.bucket,
-        Key: key,
+        Key: relative,
         Body: body,
         ContentType: mime,
         CacheControl: 'public, max-age=31536000, immutable',
         ServerSideEncryption: 'AES256',
       }),
     );
-    this.logger.log({ event: 'product.image_uploaded', productId, key });
-    return key;
+    this.logger.log({ event: 'product.image_uploaded', productId, storage: 's3', key: relative });
+    return relative;
   }
 
   /**
-   * imageKey có 2 dạng:
-   * - "/images/..." : ảnh tĩnh đóng gói cùng frontend (dữ liệu seed) → trả nguyên đường dẫn
-   * - "products/..." : object trên S3 (admin upload) → presigned URL hết hạn sau 1 giờ
+   * imageKey có 3 dạng:
+   * - "/images/..."       : ảnh tĩnh đóng gói cùng frontend (dữ liệu seed) → trả nguyên đường dẫn
+   * - "local/products/…"  : ảnh upload lưu trên đĩa → /api/media/products/…
+   * - "products/…"        : object trên S3 → presigned URL hết hạn sau 1 giờ
    */
   async getSignedImageUrl(key: string | null): Promise<string | null> {
-    if (key && StorageService.isStaticAsset(key)) return key;
-    if (!key || !this.bucket) return null;
+    if (!key) return null;
+    if (StorageService.isStaticAsset(key)) return key;
+    if (key.startsWith(LOCAL_PREFIX)) return `/api/media/${key.slice(LOCAL_PREFIX.length)}`;
+    if (!this.bucket) return null;
     try {
       return await getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: 3600 });
     } catch (err) {

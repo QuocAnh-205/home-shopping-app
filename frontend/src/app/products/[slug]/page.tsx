@@ -1,16 +1,31 @@
-import { faChevronRight, faCubes, faHouse, faMoneyBillWave, faRotateLeft, faShieldHalved, faTruckFast } from '@fortawesome/free-solid-svg-icons';
+import {
+  faBoxOpen,
+  faChevronRight,
+  faCircleCheck,
+  faClipboardList,
+  faCubes,
+  faHouse,
+  faListCheck,
+  faMoneyBillWave,
+  faRotateLeft,
+  faShieldHalved,
+  faTruckFast,
+} from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { AddToCartButton } from '@/components/AddToCartButton';
+import { PriceTag } from '@/components/PriceTag';
 import { ProductCard } from '@/components/ProductCard';
 import { ProductImage } from '@/components/ProductImage';
+import { ReviewSection } from '@/components/ReviewSection';
+import { Stars } from '@/components/Stars';
 import { StockBadge } from '@/components/StockBadge';
-import { categoryIcon } from '@/lib/icons';
+import { CARE_GUIDE, categoryIcon } from '@/lib/icons';
 import { ApiError, getProduct, getProducts } from '@/lib/server-api';
-import { formatPrice, type Product } from '@/lib/types';
+import { formatCompact, formatPrice, type Product } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,17 +53,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 const PERKS = [
-  { icon: faTruckFast, text: 'Giao nhanh 2 giờ nội thành' },
-  { icon: faRotateLeft, text: 'Đổi trả miễn phí 30 ngày' },
-  { icon: faShieldHalved, text: 'Bảo hành chính hãng 12 tháng' },
-  { icon: faMoneyBillWave, text: 'Thanh toán khi nhận hàng' },
+  { icon: faTruckFast, title: 'Giao nhanh 2 giờ', text: 'Nội thành, miễn phí mọi đơn' },
+  { icon: faRotateLeft, title: 'Đổi trả 30 ngày', text: 'Lỗi là đổi, hoàn tiền nhanh' },
+  { icon: faShieldHalved, title: 'Chính hãng 100%', text: 'Bảo hành theo nhà sản xuất' },
+  { icon: faMoneyBillWave, title: 'Thanh toán COD', text: 'Kiểm tra hàng rồi trả tiền' },
 ];
 
 export default async function ProductPage({ params }: Props) {
   const product = await load((await params).slug);
-  const related = await getProducts({ page: 1, category: product.category.slug })
-    .then((r) => r.items.filter((p) => p.id !== product.id).slice(0, 4))
+  const related = await getProducts({ page: 1, limit: 9, category: product.category.slug, sort: 'best_selling' })
+    .then((r) => r.items.filter((p) => p.id !== product.id).slice(0, 8))
     .catch(() => []);
+  const specs = Object.entries(product.specs ?? {});
+  const care = CARE_GUIDE[product.category.slug] ?? [];
+  const saving = product.compareAtPrice ? Number(product.compareAtPrice) - Number(product.price) : 0;
 
   return (
     <>
@@ -65,6 +83,7 @@ export default async function ProductPage({ params }: Props) {
       <article className="product-detail">
         <div className="gallery">
           <ProductImage product={product} eager />
+          {product.discountPercent > 0 && <span className="gallery-badge">-{product.discountPercent}%</span>}
         </div>
 
         <div className="detail-info">
@@ -73,30 +92,137 @@ export default async function ProductPage({ params }: Props) {
             {product.isHot && <span className="badge tag-hot">Bán chạy</span>}
           </span>
           <h1>{product.name}</h1>
-          <div className="row">
-            <span className="price price-lg">{formatPrice(product.price)}</span>
-            <StockBadge stock={product.stock} />
+          <div className="detail-stats">
+            {product.ratingCount > 0 ? (
+              <a href="#reviews" className="detail-rating">
+                <strong>{product.ratingAvg.toFixed(1)}</strong>
+                <Stars value={product.ratingAvg} />
+                <span className="muted">{product.ratingCount} đánh giá</span>
+              </a>
+            ) : (
+              <a href="#reviews" className="muted">
+                Chưa có đánh giá – hãy là người đầu tiên
+              </a>
+            )}
+            <span className="divider" aria-hidden />
+            <span className="muted">Đã bán {formatCompact(product.soldCount)}</span>
           </div>
-          <p className="description">{product.description}</p>
+
+          <div className="price-box">
+            <PriceTag product={product} large />
+            {saving > 0 && <span className="small ok">Tiết kiệm {formatPrice(saving)}</span>}
+          </div>
+
+          {product.highlights.length > 0 && (
+            <ul className="highlights">
+              {product.highlights.map((h) => (
+                <li key={h}>
+                  <FontAwesomeIcon icon={faCircleCheck} /> {h}
+                </li>
+              ))}
+            </ul>
+          )}
 
           <div className="buy-box">
+            <div className="row">
+              <StockBadge stock={product.stock} />
+              {product.stock > 0 && (
+                <span className="muted small">
+                  <FontAwesomeIcon icon={faCubes} /> Còn {product.stock} sản phẩm
+                </span>
+              )}
+            </div>
             <AddToCartButton productId={product.id} stock={product.stock} />
-            {product.stock > 0 && (
-              <span className="muted small">
-                <FontAwesomeIcon icon={faCubes} /> Còn {product.stock} sản phẩm trong kho
-              </span>
-            )}
           </div>
 
           <ul className="perks">
             {PERKS.map((p) => (
-              <li key={p.text}>
-                <FontAwesomeIcon icon={p.icon} fixedWidth /> {p.text}
+              <li key={p.title}>
+                <FontAwesomeIcon icon={p.icon} fixedWidth />
+                <span>
+                  <strong>{p.title}</strong>
+                  <small>{p.text}</small>
+                </span>
               </li>
             ))}
           </ul>
         </div>
       </article>
+
+      <div className="detail-sections">
+        <section className="panel">
+          <h2 className="panel-title">
+            <span className="fa-icon-wrap">
+              <FontAwesomeIcon icon={faClipboardList} />
+            </span>
+            Mô tả chi tiết
+          </h2>
+          <div className="prose">
+            {product.description.split('\n\n').map((para) => (
+              <p key={para.slice(0, 40)}>{para}</p>
+            ))}
+            {product.highlights.length > 0 && (
+              <>
+                <h3>Điểm nổi bật</h3>
+                <ul>
+                  {product.highlights.map((h) => (
+                    <li key={h}>{h}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {care.length > 0 && (
+              <>
+                <h3>Hướng dẫn sử dụng & bảo quản</h3>
+                <ul>
+                  {care.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </section>
+
+        <aside className="stack">
+          {specs.length > 0 && (
+            <section className="panel">
+              <h2 className="panel-title">
+                <span className="fa-icon-wrap">
+                  <FontAwesomeIcon icon={faListCheck} />
+                </span>
+                Thông số kỹ thuật
+              </h2>
+              <table className="spec-table">
+                <tbody>
+                  {specs.map(([k, v]) => (
+                    <tr key={k}>
+                      <th scope="row">{k}</th>
+                      <td>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+          <section className="panel">
+            <h2 className="panel-title">
+              <span className="fa-icon-wrap">
+                <FontAwesomeIcon icon={faBoxOpen} />
+              </span>
+              Giao hàng & đổi trả
+            </h2>
+            <ul className="policy-list">
+              <li>Giao nhanh 2 giờ nội thành, 2–4 ngày toàn quốc. Miễn phí vận chuyển.</li>
+              <li>Được kiểm tra hàng trước khi thanh toán (COD).</li>
+              <li>Đổi trả miễn phí trong 30 ngày nếu sản phẩm lỗi do nhà sản xuất.</li>
+              <li>Hỗ trợ kỹ thuật 8:00 – 21:00 mỗi ngày.</li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+
+      <ReviewSection slug={product.slug} />
 
       {related.length > 0 && (
         <section className="section">
@@ -111,7 +237,7 @@ export default async function ProductPage({ params }: Props) {
               Xem tất cả <FontAwesomeIcon icon={faChevronRight} />
             </Link>
           </div>
-          <div className="grid">
+          <div className="scroller">
             {related.map((p) => (
               <ProductCard key={p.id} product={p} />
             ))}

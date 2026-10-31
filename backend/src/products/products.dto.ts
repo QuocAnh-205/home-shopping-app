@@ -1,12 +1,28 @@
 import { PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
-export const PRODUCT_SORTS = ['newest', 'price_asc', 'price_desc', 'name'] as const;
+export const PRODUCT_SORTS = ['newest', 'price_asc', 'price_desc', 'name', 'best_selling', 'top_rated'] as const;
 export type ProductSort = (typeof PRODUCT_SORTS)[number];
 
 const PRICE_RE = /^\d{1,10}(\.\d{1,2})?$/;
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+const toBool = ({ value }: { value: unknown }) => value === true || value === 'true' || value === '1';
 
 export class ListProductsQuery {
   @IsOptional()
@@ -20,7 +36,7 @@ export class ListProductsQuery {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(50)
+  @Max(60)
   limit = 12;
 
   @IsOptional()
@@ -33,6 +49,12 @@ export class ListProductsQuery {
   @Transform(trim)
   @MaxLength(100)
   q?: string;
+
+  /** Chỉ lấy sản phẩm đang giảm giá */
+  @IsOptional()
+  @Transform(toBool)
+  @IsBoolean()
+  onSale?: boolean;
 
   @IsOptional()
   @IsIn(PRODUCT_SORTS)
@@ -51,11 +73,17 @@ export class CreateProductDto {
   slug: string;
 
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(8000)
   description: string;
 
   @Matches(PRICE_RE, { message: 'price must be a positive decimal with at most 2 fraction digits' })
   price: string;
+
+  /** Giá gốc (gạch ngang) khi khuyến mãi; null để bỏ khuyến mãi. Phải lớn hơn price */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @Matches(PRICE_RE, { message: 'compareAtPrice must be a positive decimal' })
+  compareAtPrice?: string | null;
 
   @IsInt()
   @Min(0)
@@ -69,6 +97,18 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   isHot?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  highlights?: string[];
+
+  /** Thông số kỹ thuật { "Nhãn": "Giá trị" } */
+  @IsOptional()
+  @IsObject()
+  specs?: Record<string, string>;
 }
 
 export class UpdateProductDto extends PartialType(CreateProductDto) {}

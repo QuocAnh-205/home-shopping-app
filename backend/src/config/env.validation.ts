@@ -23,6 +23,17 @@ export function validateEnv(config: Env): Env {
   }
   if (config.REDIS_URL && !/^rediss?:\/\//.test(config.REDIS_URL)) errors.push('REDIS_URL must be a redis:// URL');
 
+  if (config.APP_URL && !/^https?:\/\/[^/\s]+$/.test(config.APP_URL.replace(/\/+$/, ''))) {
+    errors.push('APP_URL must be an origin like https://shop.example.com (no path)');
+  }
+  if (config.SMTP_URL && !/^smtps?:\/\//.test(config.SMTP_URL)) errors.push('SMTP_URL must start with smtp:// or smtps://');
+  for (const [id, secret] of [
+    ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+    ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET'],
+  ] as const) {
+    if (Boolean(config[id]) !== Boolean(config[secret])) errors.push(`${id} and ${secret} must be set together`);
+  }
+
   // Cờ chỉ dành cho test e2e: cấm tuyệt đối ở production
   if (config.NODE_ENV === 'production' && config.THROTTLE_DISABLED === 'true') {
     errors.push('THROTTLE_DISABLED must not be enabled in production');

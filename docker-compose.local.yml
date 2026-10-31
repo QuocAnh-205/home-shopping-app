@@ -1,7 +1,10 @@
 # ============================================================
-# Môi trường demo local (build từ source, HTTP tại http://localhost)
+# Môi trường demo local (build từ source)
 # Chạy:  docker compose -f docker-compose.local.yml up -d --build
-# Seed:  docker compose -f docker-compose.local.yml exec backend node prisma/seed.js
+#        (cổng 80 bận → LOCAL_HTTP_PORT=8088 docker compose -f docker-compose.local.yml up -d --build)
+# Web:   http://localhost[:LOCAL_HTTP_PORT]     Email (Mailpit): http://localhost:8025
+# Backend tự chạy migration + seed (131 sản phẩm, tài khoản demo, đánh giá mẫu) khi khởi động.
+# Đăng nhập Google/Facebook: export GOOGLE_CLIENT_ID/SECRET, FACEBOOK_APP_ID/SECRET trước khi chạy (xem README).
 # ============================================================
 name: homeshop-local
 
@@ -15,7 +18,6 @@ services:
   nginx:
     image: nginx:1.28.0-alpine
     ports:
-      # Đổi cổng nếu máy đã có dịch vụ khác chiếm cổng 80:  LOCAL_HTTP_PORT=8088 docker compose ... up
       - "${LOCAL_HTTP_PORT:-80}:80"
     volumes:
       - ./nginx/local.conf:/etc/nginx/nginx.conf:ro
@@ -41,20 +43,47 @@ services:
       DATABASE_URL: postgresql://homeshop:localdevpassword@postgres:5432/homeshop?schema=public
       REDIS_URL: redis://:localredispassword@redis:6379/0
       JWT_SECRET: local-development-secret-at-least-32-chars
+      # URL công khai: dùng tạo link trong email và redirect URI của OAuth
+      APP_URL: http://localhost:${LOCAL_HTTP_PORT:-80}
+      SMTP_URL: smtp://mailpit:1025
+      MAIL_FROM: "Home Shopping <no-reply@homeshop.local>"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      UPLOAD_DIR: /app/uploads
       SEED_ADMIN_EMAIL: admin@homeshop.local
       SEED_ADMIN_PASSWORD: Admin12345
       SEED_CUSTOMER_EMAIL: khach@homeshop.local
       SEED_CUSTOMER_PASSWORD: Khach12345
+      SEED_DEMO_CUSTOMERS: "true"
+      SEED_DEMO_REVIEWS: "true"
       SWAGGER_ENABLED: "true"
       LOG_LEVEL: info
     # Local: tự migrate + seed (idempotent) khi khởi động; production chạy migration riêng trong pipeline
     command: ["sh", "-c", "npx prisma migrate deploy && node prisma/seed.js && exec node dist/main.js"]
+    volumes:
+      # Ảnh admin upload khi không có S3 (production dùng S3)
+      - uploads:/app/uploads
     networks: [frontend-net, backend-net]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mailpit:
+        condition: service_started
+    logging: *default-logging
+
+  # Hộp thư giả lập: bắt mọi email (quên mật khẩu, bản tin) để xem tại http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "127.0.0.1:8025:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    networks: [frontend-net]
     logging: *default-logging
 
   postgres:
@@ -91,3 +120,4 @@ networks:
 
 volumes:
   pgdata: {}
+  uploads: {}

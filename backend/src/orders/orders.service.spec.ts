@@ -72,7 +72,7 @@ describe('OrdersService', () => {
       expect(order.totalAmount.toFixed(2)).toBe('2500001.00');
       expect(tx.product.updateMany).toHaveBeenCalledWith({
         where: { id: productId, stock: { gte: 2 } },
-        data: { stock: { decrement: 2 } },
+        data: { stock: { decrement: 2 }, soldCount: { increment: 2 } },
       });
       expect(cart.clear).toHaveBeenCalledWith(userId);
       expect(products.invalidateCache).toHaveBeenCalled();
@@ -129,7 +129,10 @@ describe('OrdersService', () => {
         where: { id: orderId, status: OrderStatus.PAID },
         data: { status: OrderStatus.CANCELLED },
       });
-      expect(tx.product.update).toHaveBeenCalledWith({ where: { id: productId }, data: { stock: { increment: 3 } } });
+      expect(tx.product.update).toHaveBeenCalledWith({
+        where: { id: productId },
+        data: { stock: { increment: 3 }, soldCount: { decrement: 3 } },
+      });
       expect(products.invalidateCache).toHaveBeenCalled();
     });
 

@@ -146,7 +146,27 @@ const MESSAGE_VI: [RegExp, (m: RegExpMatchArray) => string][] = [
   [/^phone must be a valid/, () => 'Số điện thoại không hợp lệ'],
   [/^Order in status .* can no longer be cancelled/, () => 'Đơn hàng đã được xử lý, không thể hủy'],
   [/^Order was modified concurrently/, () => 'Đơn hàng vừa được người khác cập nhật, vui lòng tải lại'],
+  [/^Reset link is invalid or has expired$/, () => 'Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn'],
+  [/^Current password is incorrect$/, () => 'Mật khẩu hiện tại không đúng'],
+  [/^comment must be at least 10 characters$/, () => 'Nội dung đánh giá cần ít nhất 10 ký tự'],
+  [/^comment must be shorter than or equal to 1000 characters$/, () => 'Nội dung đánh giá tối đa 1000 ký tự'],
+  [/^Login code is invalid or expired$/, () => 'Phiên đăng nhập mạng xã hội đã hết hạn, vui lòng thử lại'],
+  [/^compareAtPrice must be greater than price$/, () => 'Giá gốc phải lớn hơn giá bán'],
+  [/^email must be an email$/, () => 'Email không hợp lệ'],
 ];
+
+/** Mã lỗi OAuth (từ ?oauth_error=) → thông điệp tiếng Việt */
+export const OAUTH_ERROR_VI: Record<string, string> = {
+  not_configured: 'Đăng nhập bằng tài khoản này chưa được quản trị viên kích hoạt.',
+  access_denied: 'Bạn đã hủy đăng nhập.',
+  invalid_state: 'Phiên đăng nhập đã hết hạn, vui lòng thử lại.',
+  email_required: 'Tài khoản mạng xã hội chưa chia sẻ email. Vui lòng cấp quyền email hoặc đăng ký bằng email.',
+  email_unverified: 'Email của tài khoản mạng xã hội chưa được xác minh.',
+  already_linked: 'Tài khoản mạng xã hội này đã liên kết với một tài khoản khác.',
+  link_expired: 'Yêu cầu liên kết đã hết hạn, vui lòng thử lại.',
+  token_exchange_failed: 'Không xác thực được với nhà cung cấp, vui lòng thử lại.',
+  profile_failed: 'Không lấy được thông tin tài khoản, vui lòng thử lại.',
+};
 
 function translate(message: string): string {
   for (const [re, fn] of MESSAGE_VI) {

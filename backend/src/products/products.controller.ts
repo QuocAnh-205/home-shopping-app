@@ -32,9 +32,16 @@ export class ProductsController {
     return this.products.list(query);
   }
 
-  @Get('hot')
-  hot(): Promise<ProductView[]> {
-    return this.products.hot();
+  /** Bán chạy nhất (theo số lượng đã bán) – giữ đường dẫn /hot để tương thích client cũ */
+  @Get(['hot', 'best-sellers'])
+  bestSellers(): Promise<ProductView[]> {
+    return this.products.bestSellers();
+  }
+
+  /** Đang giảm giá sâu nhất */
+  @Get('deals')
+  deals(): Promise<ProductView[]> {
+    return this.products.deals();
   }
 
   @Get(':slug')

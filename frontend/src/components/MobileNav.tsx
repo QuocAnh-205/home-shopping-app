@@ -19,7 +19,9 @@ export function MobileNav() {
     isAdmin
       ? { href: '/admin', label: 'Quản trị', icon: faGauge, match: (p: string) => p.startsWith('/admin') }
       : { href: '/orders', label: 'Đơn hàng', icon: faReceipt, match: (p: string) => p.startsWith('/orders') },
-    { href: '/login', label: session ? 'Tài khoản' : 'Đăng nhập', icon: faUser, match: (p: string) => p.startsWith('/login') },
+    session
+      ? { href: '/account', label: 'Tài khoản', icon: faUser, match: (p: string) => p.startsWith('/account') }
+      : { href: '/login', label: 'Đăng nhập', icon: faUser, match: (p: string) => p.startsWith('/login') || p.startsWith('/register') },
   ];
 
   return (

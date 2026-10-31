@@ -39,6 +39,22 @@ function CreateProductForm({ categories, onCreated }: { categories: Category[]; 
     e.preventDefault();
     const formEl = e.currentTarget;
     const form = new FormData(formEl);
+    const file = form.get('image');
+    // Sản phẩm luôn phải có ảnh thật (không dùng icon thay ảnh) → kiểm tra trước khi tạo
+    if (!(file instanceof File) || file.size === 0) {
+      setMessage({ ok: false, text: 'Vui lòng chọn ảnh sản phẩm' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setMessage({ ok: false, text: 'Ảnh phải là JPEG/PNG/WEBP và tối đa 5MB' });
+      return;
+    }
+    const compare = String(form.get('compareAtPrice') ?? '').trim();
+    const highlights = String(form.get('highlights') ?? '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 10);
     setBusy(true);
     setMessage(null);
     try {
@@ -49,22 +65,21 @@ function CreateProductForm({ categories, onCreated }: { categories: Category[]; 
           slug,
           description: form.get('description'),
           price: String(form.get('price')),
+          compareAtPrice: compare || null,
+          highlights,
           stock: Number(form.get('stock')),
           categoryId: Number(form.get('categoryId')),
           isHot: form.get('isHot') === 'on',
         }),
       });
-      const file = form.get('image');
-      if (file instanceof File && file.size > 0) {
-        const upload = new FormData();
-        upload.set('file', file);
-        try {
-          await apiFetch(`/products/${product.id}/image`, { method: 'POST', body: upload });
-        } catch (err) {
-          setMessage({ ok: false, text: `Đã tạo sản phẩm nhưng tải ảnh lỗi: ${(err as Error).message}` });
-          onCreated();
-          return;
-        }
+      const upload = new FormData();
+      upload.set('file', file);
+      try {
+        await apiFetch(`/products/${product.id}/image`, { method: 'POST', body: upload });
+      } catch (err) {
+        setMessage({ ok: false, text: `Đã tạo sản phẩm nhưng tải ảnh lỗi: ${(err as Error).message}. Hãy thử tải lại ảnh.` });
+        onCreated();
+        return;
       }
       setMessage({ ok: true, text: `Đã tạo "${product.name}"` });
       formEl.reset();
@@ -115,8 +130,12 @@ function CreateProductForm({ categories, onCreated }: { categories: Category[]; 
         />
       </label>
       <label>
-        <span>Giá (VND)</span>
+        <span>Giá bán (VND)</span>
         <input className="input" name="price" type="number" min={0} step={1000} required />
+      </label>
+      <label>
+        <span>Giá gốc trước giảm (để trống nếu không giảm)</span>
+        <input className="input" name="compareAtPrice" type="number" min={0} step={1000} />
       </label>
       <label>
         <span>Tồn kho</span>
@@ -133,12 +152,16 @@ function CreateProductForm({ categories, onCreated }: { categories: Category[]; 
         </select>
       </label>
       <label>
-        <span>Ảnh (JPEG/PNG/WEBP ≤ 5MB, cần S3)</span>
-        <input className="input" name="image" type="file" accept="image/jpeg,image/png,image/webp" />
+        <span>Ảnh sản phẩm (bắt buộc, JPEG/PNG/WEBP ≤ 5MB)</span>
+        <input className="input" name="image" type="file" accept="image/jpeg,image/png,image/webp" required />
       </label>
       <label className="span-2">
         <span>Mô tả</span>
-        <textarea className="input" name="description" rows={3} maxLength={5000} required />
+        <textarea className="input" name="description" rows={4} maxLength={8000} required />
+      </label>
+      <label className="span-2">
+        <span>Điểm nổi bật (mỗi dòng 1 ý, tối đa 10)</span>
+        <textarea className="input" name="highlights" rows={3} maxLength={2000} />
       </label>
       <label className="checkbox">
         <input type="checkbox" name="isHot" /> Đánh dấu bán chạy

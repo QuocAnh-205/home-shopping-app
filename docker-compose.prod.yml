@@ -119,6 +119,14 @@ services:
       APP_VERSION: ${IMAGE_TAG:-latest}
       # Tài liệu API /api/docs: mặc định tắt ở production (giảm bề mặt tấn công), bật khi demo
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      # Link trong email + redirect URI OAuth (vd https://shop.example.com)
+      APP_URL: ${APP_URL:?APP_URL is required}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-Home Shopping <no-reply@example.com>}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
     # Backend là service DUY NHẤT nằm ở cả 2 mạng: nhận request từ Nginx và gọi DB/Redis
     networks:
       - frontend-net

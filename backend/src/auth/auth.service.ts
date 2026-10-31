@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   HttpStatus,
@@ -8,31 +9,43 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { MailService } from '../mail/mail.service';
+import { passwordChangedMail, passwordResetMail } from '../mail/mail.templates';
 import { MetricsService } from '../metrics/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
-import { LoginDto, RegisterDto } from './auth.dto';
-import { AuthResponse, JwtClaims, JwtPayload, UserProfile } from './auth.types';
+import { ChangePasswordDto, LoginDto, RegisterDto, ResetPasswordDto } from './auth.dto';
+import { AccountProfile, AuthResponse, JwtClaims, JwtPayload, UserProfile } from './auth.types';
 
 // Hash giả dùng để so sánh khi email không tồn tại, chống timing attack dò email
 const DUMMY_HASH = bcrypt.hashSync('timing-attack-mitigation', 12);
 const BCRYPT_ROUNDS = 12;
 export const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_SECONDS = 15 * 60;
+export const RESET_TOKEN_MINUTES = 30;
+const MAX_RESET_REQUESTS_PER_HOUR = 3;
+/** Giữ mốc "đổi mật khẩu" lâu hơn tuổi thọ tối đa của access token */
+const PASSWORD_CHANGED_TTL_SECONDS = 30 * 24 * 3600;
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly appUrl: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly redis: RedisService,
     private readonly metrics: MetricsService,
-  ) {}
+    private readonly mail: MailService,
+    config: ConfigService,
+  ) {
+    this.appUrl = (config.get<string>('APP_URL') ?? 'http://localhost').replace(/\/+$/, '');
+  }
 
   static revokedKey(jti: string): string {
     return `auth:revoked:${jti}`;
@@ -40,6 +53,14 @@ export class AuthService {
 
   static failedKey(email: string): string {
     return `auth:failed:${email}`;
+  }
+
+  static passwordChangedKey(userId: string): string {
+    return `auth:pwd_changed:${userId}`;
+  }
+
+  static hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   async register(dto: RegisterDto): Promise<AuthResponse> {
@@ -50,7 +71,7 @@ export class AuthService {
       data: { email: dto.email, fullName: dto.fullName, passwordHash: await bcrypt.hash(dto.password, BCRYPT_ROUNDS) },
     });
     this.metrics.authEvents.inc({ event: 'register' });
-    this.logger.log({ event: 'user.registered', userId: user.id });
+    this.logger.log({ event: 'user.registered', userId: user.id, method: 'password' });
     return this.issue(user);
   }
 
@@ -72,8 +93,9 @@ export class AuthService {
     }
 
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    // Tài khoản chỉ đăng nhập Google/Facebook (chưa có mật khẩu) vẫn so sánh hash giả → không lộ loại tài khoản
     const valid = await bcrypt.compare(dto.password, user?.passwordHash ?? DUMMY_HASH);
-    if (!user || !valid) {
+    if (!user || !user.passwordHash || !valid) {
       await this.redis.client.multi().incr(failedKey).expire(failedKey, LOCKOUT_SECONDS).exec();
       this.metrics.authEvents.inc({ event: 'login_failed' });
       this.logger.warn({ event: 'auth.login_failed', email: dto.email, attempt: failures + 1 });
@@ -82,7 +104,7 @@ export class AuthService {
 
     await this.redis.client.del(failedKey);
     this.metrics.authEvents.inc({ event: 'login_success' });
-    this.logger.log({ event: 'auth.login_success', userId: user.id });
+    this.logger.log({ event: 'auth.login_success', userId: user.id, method: 'password' });
     return this.issue(user);
   }
 
@@ -94,27 +116,130 @@ export class AuthService {
     this.logger.log({ event: 'auth.logout', userId: payload.sub });
   }
 
-  async isRevoked(jti: string): Promise<boolean> {
-    return (await this.redis.client.exists(AuthService.revokedKey(jti))) === 1;
+  /** Token bị thu hồi khi: đã logout (denylist jti) HOẶC được cấp trước lần đổi mật khẩu gần nhất */
+  async isRevoked(payload: Pick<JwtPayload, 'jti' | 'sub' | 'iat'>): Promise<boolean> {
+    const [[, revoked], [, changedAt]] = (await this.redis.client
+      .multi()
+      .exists(AuthService.revokedKey(payload.jti))
+      .get(AuthService.passwordChangedKey(payload.sub))
+      .exec()) as [[Error | null, number], [Error | null, string | null]];
+    if (revoked === 1) return true;
+    return changedAt !== null && payload.iat < Number(changedAt);
   }
 
-  async profile(userId: string): Promise<UserProfile> {
+  /**
+   * Quên mật khẩu: luôn trả cùng một kết quả dù email có tồn tại hay không (chống dò tài khoản).
+   * Token ngẫu nhiên 256-bit, chỉ lưu SHA-256 trong DB, hết hạn sau 30 phút, dùng 1 lần.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    const limitKey = `auth:reset_req:${email}`;
+    const requests = await this.redis.client.multi().incr(limitKey).expire(limitKey, 3600, 'NX').exec();
+    if (Number(requests?.[0]?.[1] ?? 0) > MAX_RESET_REQUESTS_PER_HOUR) {
+      this.logger.warn({ event: 'auth.reset_throttled', email });
+      return;
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { email }, select: { id: true, email: true, fullName: true } });
+    if (!user) {
+      this.logger.log({ event: 'auth.reset_unknown_email' });
+      return;
+    }
+
+    const token = randomBytes(32).toString('base64url');
+    await this.prisma.$transaction([
+      // Chỉ link mới nhất có hiệu lực
+      this.prisma.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } }),
+      this.prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: AuthService.hashToken(token),
+          expiresAt: new Date(Date.now() + RESET_TOKEN_MINUTES * 60_000),
+        },
+      }),
+    ]);
+    const link = `${this.appUrl}/reset-password?token=${token}`;
+    await this.mail.send(passwordResetMail(user.email, user.fullName, link, RESET_TOKEN_MINUTES));
+    this.metrics.authEvents.inc({ event: 'reset_requested' });
+    this.logger.log({ event: 'auth.reset_requested', userId: user.id });
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<void> {
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash: AuthService.hashToken(dto.token) },
+      include: { user: { select: { id: true, email: true, fullName: true } } },
+    });
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new BadRequestException('Reset link is invalid or has expired');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    // Đánh dấu đã dùng bằng UPDATE có điều kiện → 2 request cùng token song song chỉ 1 cái thành công
+    const consumed = await this.prisma.$transaction(async (tx) => {
+      const marked = await tx.passwordResetToken.updateMany({ where: { id: record.id, usedAt: null }, data: { usedAt: new Date() } });
+      if (marked.count !== 1) return false;
+      await tx.user.update({ where: { id: record.userId }, data: { passwordHash } });
+      await tx.passwordResetToken.deleteMany({ where: { userId: record.userId, usedAt: null } });
+      return true;
+    });
+    if (!consumed) throw new BadRequestException('Reset link is invalid or has expired');
+
+    await this.afterPasswordChange(record.user);
+    this.metrics.authEvents.inc({ event: 'reset_completed' });
+    this.logger.log({ event: 'auth.reset_completed', userId: record.userId });
+  }
+
+  /** Đổi mật khẩu khi đang đăng nhập; tài khoản Google/Facebook chưa có mật khẩu được đặt mới không cần mật khẩu cũ */
+  async changePassword(userId: string, dto: ChangePasswordDto): Promise<AuthResponse> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.passwordHash) {
+      const valid = dto.currentPassword ? await bcrypt.compare(dto.currentPassword, user.passwordHash) : false;
+      if (!valid) throw new BadRequestException('Current password is incorrect');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS) },
+    });
+    await this.afterPasswordChange(updated);
+    this.logger.log({ event: 'auth.password_changed', userId });
+    // Token mới có iat ≥ mốc đổi mật khẩu → phiên hiện tại tiếp tục đăng nhập, mọi phiên cũ bị đăng xuất
+    return this.issue(updated);
+  }
+
+  private async afterPasswordChange(user: Pick<User, 'id' | 'email' | 'fullName'>): Promise<void> {
+    await this.redis.client
+      .multi()
+      .set(AuthService.passwordChangedKey(user.id), String(Math.floor(Date.now() / 1000)), 'EX', PASSWORD_CHANGED_TTL_SECONDS)
+      .del(AuthService.failedKey(user.email))
+      .exec();
+    await this.mail.send(passwordChangedMail(user.email, user.fullName));
+  }
+
+  async profile(userId: string): Promise<AccountProfile> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, fullName: true, role: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        avatarUrl: true,
+        passwordHash: true,
+        createdAt: true,
+        oauthAccounts: { select: { provider: true } },
+      },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    const { passwordHash, oauthAccounts, ...rest } = user;
+    return { ...rest, hasPassword: passwordHash !== null, providers: oauthAccounts.map((a) => a.provider) };
   }
 
-  private async issue(user: User): Promise<AuthResponse> {
+  async issue(user: Pick<User, 'id' | 'email' | 'fullName' | 'role' | 'avatarUrl'>): Promise<AuthResponse> {
     const claims: JwtClaims = { sub: user.id, email: user.email, role: user.role };
     const accessToken = await this.jwt.signAsync(claims, { jwtid: randomUUID() });
     const { exp } = this.jwt.decode<{ exp: number }>(accessToken);
-    return {
-      accessToken,
-      expiresAt: new Date(exp * 1000).toISOString(),
-      user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
-    };
+    const profile: UserProfile = { id: user.id, email: user.email, fullName: user.fullName, role: user.role, avatarUrl: user.avatarUrl };
+    return { accessToken, expiresAt: new Date(exp * 1000).toISOString(), user: profile };
   }
 }

@@ -41,6 +41,13 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  readonly reviewsTotal = new Counter({
+    name: 'shop_reviews_total',
+    help: 'Product reviews written / deleted',
+    labelNames: ['action', 'rating'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({ app: 'home-shopping-backend' });
     collectDefaultMetrics({ register: this.registry });
