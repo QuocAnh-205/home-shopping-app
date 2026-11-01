@@ -163,6 +163,8 @@ const MESSAGE_VI: [RegExp, (m: RegExpMatchArray) => string][] = [
   [/^Invalid date of birth$/, () => 'Ngày sinh không hợp lệ'],
   [/^You can save at most (\d+) addresses$/, (m) => `Bạn chỉ lưu được tối đa ${m[1]} địa chỉ`],
   [/^Address not found$/, () => 'Không tìm thấy địa chỉ'],
+  [/^Confirmation email does not match$/, () => 'Email xác nhận không khớp với email tài khoản'],
+  [/^Admin accounts cannot be deleted/, () => 'Không thể tự xóa tài khoản quản trị viên'],
   [/^Only JPEG, PNG or WEBP images are allowed$/, () => 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP'],
   [/^File too large$/, () => 'Ảnh vượt quá dung lượng cho phép'],
   [/^File content does not match/, () => 'Tệp không phải ảnh hợp lệ'],

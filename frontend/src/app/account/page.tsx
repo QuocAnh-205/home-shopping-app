@@ -19,7 +19,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { AddressTab } from '@/components/account/AddressTab';
 import { ProfileTab } from '@/components/account/ProfileTab';
-import { LinkedTab, PasswordTab } from '@/components/account/SecurityTabs';
+import { DeleteAccountCard, LinkedTab, PasswordTab } from '@/components/account/SecurityTabs';
 import { RequireAuth } from '@/components/RequireAuth';
 import { OAUTH_ERROR_VI, apiFetch, logout } from '@/lib/client-api';
 import { formatDay, initials, type AccountProfile } from '@/lib/types';
@@ -134,6 +134,7 @@ function AccountContent() {
         {tab === 'profile' && <ProfileTab key={profile.id} profile={profile} onSaved={setProfile} />}
         {tab === 'address' && <AddressTab />}
         {tab === 'password' && <PasswordTab profile={profile} onChanged={load} />}
+        {tab === 'password' && <DeleteAccountCard profile={profile} />}
         {tab === 'linked' && <LinkedTab profile={profile} onError={setError} />}
       </div>
     </div>

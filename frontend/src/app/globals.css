@@ -3083,12 +3083,10 @@ select.input {
   cursor: not-allowed;
 }
 
-.btn-google .svg-inline--fa {
-  color: #ea4335;
-}
-
-.btn-facebook .svg-inline--fa {
-  color: #1877f2;
+.social-logo {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
 }
 
 .divider-text {
@@ -3202,16 +3200,10 @@ select.input {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  color: #fff;
+  background: #fff;
+  border: 1px solid var(--border);
 }
 
-.provider-google {
-  background: #ea4335;
-}
-
-.provider-facebook {
-  background: #1877f2;
-}
 
 .user-link {
   display: inline-flex;
@@ -4664,4 +4656,73 @@ button.acc-nav-group:hover,
   .steps {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------------- Trang pháp lý (Chính sách bảo mật / Điều khoản / Xóa dữ liệu) ---------------- */
+.legal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 860px;
+  margin: 8px auto 0;
+}
+
+.legal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.legal-body {
+  padding: clamp(22px, 4vw, 40px);
+  line-height: 1.75;
+}
+
+.legal-body h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.legal-body h2 {
+  margin: 28px 0 8px;
+  font-size: 1.15rem;
+}
+
+.legal-body ul,
+.legal-body ol {
+  padding-left: 22px;
+}
+
+.legal-body li + li {
+  margin-top: 6px;
+}
+
+.legal-body a {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.legal-body code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  font-size: 0.88em;
+}
+
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.footer-legal a:hover {
+  color: var(--primary);
+}
+
+.danger-zone {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.danger-zone .acc-head h2 {
+  color: var(--danger);
 }

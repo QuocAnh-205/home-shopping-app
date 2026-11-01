@@ -1,6 +1,6 @@
 import { AddressType } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { VN_PHONE_RE } from '../auth/auth.dto';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value);
@@ -54,4 +54,17 @@ export class AddressDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+}
+
+/** Xóa tài khoản: gõ lại đúng email; tài khoản có mật khẩu phải nhập mật khẩu hiện tại */
+export class DeleteAccountDto {
+  @IsEmail()
+  @MaxLength(254)
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  confirmEmail: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(72)
+  password?: string;
 }

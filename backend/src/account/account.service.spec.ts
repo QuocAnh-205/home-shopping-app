@@ -1,6 +1,9 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProductsService } from '../products/products.service';
+import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
 import { AccountService, MAX_ADDRESSES } from './account.service';
 
@@ -8,19 +11,30 @@ describe('AccountService', () => {
   const userId = '7f0c2f4e-1b1a-4d3e-9a51-3c4f7e1d2a10';
   const tx = {
     $queryRaw: jest.fn(),
-    address: { count: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    $executeRaw: jest.fn(),
+    review: { findMany: jest.fn(), deleteMany: jest.fn() },
+    oAuthAccount: { deleteMany: jest.fn() },
+    passwordResetToken: { deleteMany: jest.fn() },
+    newsletterSubscriber: { deleteMany: jest.fn() },
+    user: { update: jest.fn() },
+    address: { count: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
   };
   const prisma = {
-    user: { update: jest.fn() },
+    user: { update: jest.fn(), findUnique: jest.fn() },
     address: { findMany: jest.fn() },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
   const auth = { profile: jest.fn() };
   const storage = { uploadAvatar: jest.fn() };
+  const multi = { del: jest.fn().mockReturnThis(), set: jest.fn().mockReturnThis(), exec: jest.fn() };
+  const redis = { client: { multi: jest.fn(() => multi) } };
+  const products = { invalidateCache: jest.fn() };
   const service = new AccountService(
     prisma as unknown as PrismaService,
     auth as unknown as AuthService,
     storage as unknown as StorageService,
+    redis as unknown as RedisService,
+    products as unknown as ProductsService,
   );
   const dto = { fullName: 'Nguyễn Văn A', phone: '0901234567', province: 'Đà Nẵng', district: 'Hải Châu', ward: 'Hải Châu 1', street: '12 Bạch Đằng' };
 
@@ -82,6 +96,45 @@ describe('AccountService', () => {
 
       expect(tx.address.delete).toHaveBeenCalledWith({ where: { id: 'a1' } });
       expect(tx.address.update).toHaveBeenCalledWith({ where: { id: 'next' }, data: { isDefault: true } });
+    });
+  });
+
+  describe('deleteAccount', () => {
+    const email = 'lan@shop.test';
+    const passwordHash = bcrypt.hashSync('Correct123', 4);
+
+    it('requires the exact email and the current password', async () => {
+      prisma.user.findUnique.mockResolvedValue({ email, role: 'CUSTOMER', passwordHash });
+
+      await expect(service.deleteAccount(userId, { confirmEmail: 'other@shop.test', password: 'Correct123' })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.deleteAccount(userId, { confirmEmail: email, password: 'Wrong1234' })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.deleteAccount(userId, { confirmEmail: email })).rejects.toBeInstanceOf(BadRequestException);
+      expect(tx.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete admin accounts', async () => {
+      prisma.user.findUnique.mockResolvedValue({ email, role: 'ADMIN', passwordHash });
+
+      await expect(service.deleteAccount(userId, { confirmEmail: email, password: 'Correct123' })).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('anonymises the user, removes personal data and revokes every session', async () => {
+      prisma.user.findUnique.mockResolvedValue({ email, role: 'CUSTOMER', passwordHash: null });
+      tx.review.findMany.mockResolvedValue([{ productId: 'p1' }, { productId: 'p1' }]);
+
+      await service.deleteAccount(userId, { confirmEmail: email });
+
+      expect(tx.review.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(tx.address.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+      expect(tx.oAuthAccount.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+      expect(tx.newsletterSubscriber.deleteMany).toHaveBeenCalledWith({ where: { email } });
+      expect(tx.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ email: `deleted-${userId}@deleted.invalid`, passwordHash: null, phone: null }) }),
+      );
+      expect(multi.set).toHaveBeenCalledWith(`auth:pwd_changed:${userId}`, expect.any(String), 'EX', expect.any(Number));
+      expect(multi.del).toHaveBeenCalledWith(`cart:${userId}`);
+      expect(products.invalidateCache).toHaveBeenCalled();
     });
   });
 });

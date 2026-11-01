@@ -1,11 +1,15 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Address, Prisma } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Address, Prisma, Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import { UpdateProfileDto } from '../auth/auth.dto';
 import { AuthService } from '../auth/auth.service';
+import { CartService } from '../cart/cart.service';
 import { AccountProfile } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProductsService } from '../products/products.service';
+import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
-import { AddressDto } from './account.dto';
+import { AddressDto, DeleteAccountDto } from './account.dto';
 
 export const MAX_ADDRESSES = 10;
 const MIN_AGE_YEARS = 10;
@@ -35,6 +39,8 @@ export class AccountService {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly storage: StorageService,
+    private readonly redis: RedisService,
+    private readonly products: ProductsService,
   ) {}
 
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<AccountProfile> {
@@ -121,5 +127,59 @@ export class AccountService {
       }
     });
     return this.listAddresses(userId);
+  }
+
+  /**
+   * Xóa tài khoản (yêu cầu của Google/Facebook về quyền xóa dữ liệu người dùng).
+   * Đơn hàng là chứng từ kế toán nên được GIỮ nhưng ẩn danh hóa: xóa hồ sơ, địa chỉ, liên kết mạng xã hội,
+   * đánh giá, token đặt lại mật khẩu, đăng ký bản tin, giỏ hàng; đổi email/họ tên → không còn nhận dạng được.
+   * Mọi phiên đăng nhập hiện có bị thu hồi ngay.
+   */
+  async deleteAccount(userId: string, dto: DeleteAccountDto): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, role: true, passwordHash: true } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role === Role.ADMIN) throw new ForbiddenException('Admin accounts cannot be deleted from the account page');
+    if (dto.confirmEmail !== user.email) throw new BadRequestException('Confirmation email does not match');
+    if (user.passwordHash && !(dto.password && (await bcrypt.compare(dto.password, user.passwordHash)))) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const reviewed = await tx.review.findMany({ where: { userId }, select: { productId: true } });
+      await tx.review.deleteMany({ where: { userId } });
+      const ids = [...new Set(reviewed.map((r) => r.productId))];
+      if (ids.length) {
+        await tx.$executeRaw`
+          UPDATE products p
+          SET rating_avg = COALESCE((SELECT ROUND(AVG(r.rating)::numeric, 2) FROM reviews r WHERE r.product_id = p.id), 0),
+              rating_count = (SELECT COUNT(*)::int FROM reviews r WHERE r.product_id = p.id)
+          WHERE p.id = ANY(${ids}::uuid[])`;
+      }
+      await tx.address.deleteMany({ where: { userId } });
+      await tx.oAuthAccount.deleteMany({ where: { userId } });
+      await tx.passwordResetToken.deleteMany({ where: { userId } });
+      await tx.newsletterSubscriber.deleteMany({ where: { email: user.email } });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          email: `deleted-${userId}@deleted.invalid`,
+          fullName: 'Tài khoản đã xóa',
+          passwordHash: null,
+          avatarUrl: null,
+          phone: null,
+          gender: null,
+          dateOfBirth: null,
+        },
+      });
+    });
+
+    // +1 giây: token cấp trong cùng giây hiện tại cũng bị coi là cũ
+    await this.redis.client
+      .multi()
+      .del(CartService.key(userId))
+      .set(AuthService.passwordChangedKey(userId), String(Math.floor(Date.now() / 1000) + 1), 'EX', 30 * 24 * 3600)
+      .exec();
+    await this.products.invalidateCache();
+    this.logger.log({ event: 'account.deleted', userId });
   }
 }

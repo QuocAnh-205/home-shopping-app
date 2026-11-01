@@ -121,32 +121,61 @@ Backend tự chạy migration + seed: **200 sản phẩm, 7 danh mục, 5 tài k
 
 Kiểm tra: `/api/health` · Swagger: `/api/docs` · `/api/products/summary` · `/api/metrics` bị Nginx chặn (404) từ bên ngoài.
 
-### Bật đăng nhập Google / Facebook
+### Bật đăng nhập / đăng ký bằng Google & Facebook (cho MỌI tài khoản, giống Shopee)
 
-Nút **Google, Facebook** luôn hiển thị ở cuối form đăng nhập & đăng ký; tài khoản mới tự tạo ở lần đăng nhập đầu tiên. Cần tạo **Client ID/Secret** một lần (chưa có thì bấm nút sẽ quay lại trang đăng nhập kèm hướng dẫn):
+**Cách hoạt động:** bấm nút → chuyển sang trang của Google/Facebook → **Google luôn hiện màn hình "Chọn tài khoản"** (`prompt=select_account`) với mọi tài khoản Google đã đăng nhập trên trình duyệt, kèm "Sử dụng một tài khoản khác"; Facebook hiện "Tiếp tục dưới tên …" hoặc form đăng nhập Facebook → quay về web. Lần đầu sẽ **tự tạo tài khoản** (đăng ký); email trùng tài khoản có sẵn (đã xác minh) thì **liên kết** thay vì tạo trùng.
 
-1. **Google**: [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → *Create credentials* → *OAuth client ID* → *Web application*
-   → *Authorized redirect URI*: `http://localhost:8088/api/auth/oauth/google/callback` (production: `https://13-214-14-196.sslip.io/api/auth/oauth/google/callback`).
-2. **Facebook**: [Meta for Developers](https://developers.facebook.com/apps) → tạo app *Consumer* → thêm *Facebook Login*
-   → *Valid OAuth Redirect URIs*: `.../api/auth/oauth/facebook/callback`. Quyền: `email`, `public_profile`.
-3. Chạy lại stack kèm biến môi trường:
+> Nếu bấm nút mà bị đưa về trang đăng nhập với thông báo *"Máy chủ chưa được kết nối với Google/Facebook"* → server **chưa có Client ID/Secret** (lỗi `not_configured`). Google/Facebook chỉ cho phép ứng dụng đã đăng ký → chủ dự án phải tạo 1 lần theo các bước dưới. Không phải lỗi code.
 
-```powershell
-$env:LOCAL_HTTP_PORT=8088
-$env:GOOGLE_CLIENT_ID="xxx.apps.googleusercontent.com"; $env:GOOGLE_CLIENT_SECRET="..."
-$env:FACEBOOK_APP_ID="..."; $env:FACEBOOK_APP_SECRET="..."
-docker compose -f docker-compose.local.yml up -d backend
-```
+**URL cần khai báo** (thay domain nếu khác):
 
-Production: thêm các biến trên vào `~/.homeshop/prod.env` rồi cập nhật secret `PROD_ENV_FILE`. Email trùng tài khoản có sẵn (đã xác minh) sẽ được **liên kết** thay vì tạo trùng.
+| Mục | Production | Local |
+|---|---|---|
+| Trang chủ | `https://13-214-14-196.sslip.io` | `http://localhost:8088` |
+| Redirect URI Google | `https://13-214-14-196.sslip.io/api/auth/oauth/google/callback` | `http://localhost:8088/api/auth/oauth/google/callback` |
+| Redirect URI Facebook | `https://13-214-14-196.sslip.io/api/auth/oauth/facebook/callback` | (Facebook bắt buộc HTTPS → test trên production) |
+| Chính sách bảo mật | `https://13-214-14-196.sslip.io/privacy` | |
+| Điều khoản | `https://13-214-14-196.sslip.io/terms` | |
+| Hướng dẫn xóa dữ liệu | `https://13-214-14-196.sslip.io/data-deletion` | |
+
+**1. Google** ([Google Cloud Console](https://console.cloud.google.com/))
+1. Tạo project → *APIs & Services* → **OAuth consent screen** (Google Auth Platform): User type **External**, tên app *Home Shopping*, email hỗ trợ, logo (tùy chọn), *App domain*: điền 3 URL Trang chủ / Chính sách bảo mật / Điều khoản ở bảng trên. Scopes: chỉ `openid`, `email`, `profile` (không cần Google xét duyệt).
+2. **Audience → Publish app** (chuyển *Testing* → *In production*). ⚠️ Ở chế độ *Testing* chỉ các email trong danh sách *Test users* đăng nhập được → đây là lý do "không phải tài khoản Google nào cũng vào được".
+3. **Credentials → Create credentials → OAuth client ID → Web application** → *Authorized redirect URIs*: thêm 2 Redirect URI Google ở bảng trên → lấy **Client ID** và **Client secret**.
+
+**2. Facebook** ([Meta for Developers](https://developers.facebook.com/apps))
+1. *Create app* → use case **Authenticate and request data from users with Facebook Login** → loại *Consumer*.
+2. *Facebook Login → Settings* → **Valid OAuth Redirect URIs**: Redirect URI Facebook ở bảng trên (bật *Client OAuth login*, *Web OAuth login*, *Enforce HTTPS*).
+3. *App settings → Basic*: điền **Privacy Policy URL**, **Terms of Service URL**, **User data deletion → Data deletion instructions URL** (bảng trên), App domain `13-214-14-196.sslip.io`, chọn category, icon 1024×1024 → lấy **App ID** và **App secret**.
+4. Quyền `email` và `public_profile`: mặc định có sẵn (Standard access).
+5. Chuyển app sang **Live** (công tắc *App Mode* / *Publish*). ⚠️ Ở chế độ *Development* chỉ tài khoản có vai trò trong app (admin/developer/tester) đăng nhập được.
+
+**3. Nạp vào server** (giá trị bí mật: tự dán, không commit Git)
+- **Production:** thêm 4 dòng vào `~/.homeshop/prod.env`
+  ```
+  GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+  GOOGLE_CLIENT_SECRET=...
+  FACEBOOK_APP_ID=...
+  FACEBOOK_APP_SECRET=...
+  ```
+  rồi cập nhật secret `PROD_ENV_FILE` và deploy lại (hoặc chép `.env` lên `/opt/homeshop/.env` rồi chạy `bash scripts/deploy.sh $(cat .deploy/current_tag)`).
+- **Local:**
+  ```powershell
+  $env:LOCAL_HTTP_PORT=8088
+  $env:GOOGLE_CLIENT_ID="xxx.apps.googleusercontent.com"; $env:GOOGLE_CLIENT_SECRET="..."
+  docker compose -f docker-compose.local.yml up -d backend
+  ```
+- Kiểm tra: `curl https://13-214-14-196.sslip.io/api/auth/oauth/providers` → `{"google":true,"facebook":true}`.
+
+**Quyền riêng tư:** web có sẵn trang [Chính sách bảo mật](frontend/src/app/privacy/page.tsx), [Điều khoản](frontend/src/app/terms/page.tsx), [Xóa dữ liệu](frontend/src/app/data-deletion/page.tsx) và chức năng **tự xóa tài khoản** (Tài khoản của tôi → Đổi mật khẩu → Xóa tài khoản; API `DELETE /api/account`): xóa hồ sơ, địa chỉ, đánh giá, liên kết Google/Facebook, thu hồi mọi phiên; đơn hàng giữ lại ở dạng ẩn danh.
 
 ### Chạy test
 
 ```bash
 cd backend && npm ci && npx prisma generate
-npm test                     # 87 unit test (Jest)
+npm test                     # 90 unit test (Jest)
 npm run test:cov             # kèm coverage
-# 30 E2E test cần Postgres + Redis thật (ví dụ container tạm):
+# 31 E2E test cần Postgres + Redis thật (ví dụ container tạm):
 docker run -d --rm --name e2e-pg -e POSTGRES_USER=e2e -e POSTGRES_PASSWORD=e2epass -e POSTGRES_DB=e2e -p 127.0.0.1:55432:5432 postgres:16-alpine
 docker run -d --rm --name e2e-redis -p 127.0.0.1:56379:6379 redis:7-alpine
 export DATABASE_URL="postgresql://e2e:e2epass@127.0.0.1:55432/e2e?schema=public" REDIS_URL="redis://127.0.0.1:56379/0" JWT_SECRET="ci-only-secret-ci-only-secret-0123456789"
@@ -154,7 +183,7 @@ npx prisma migrate deploy && npm run test:e2e
 cd ../frontend && npm ci && npm run lint && npm run typecheck && npm run build
 ```
 
-E2E bao phủ: mua đồng thời món cuối (không oversell), idempotency, RBAC, thu hồi token, khóa tài khoản, đánh giá, quên/đổi mật khẩu, OAuth, **hồ sơ, ảnh đại diện, sổ địa chỉ (cách ly giữa người dùng)**, **lọc theo giá & thống kê cửa hàng**, metrics.
+E2E bao phủ: mua đồng thời món cuối (không oversell), idempotency, RBAC, thu hồi token, khóa tài khoản, đánh giá, quên/đổi mật khẩu, OAuth, **hồ sơ, ảnh đại diện, sổ địa chỉ (cách ly giữa người dùng), tự xóa tài khoản**, **lọc theo giá & thống kê cửa hàng**, metrics.
 
 ---
 
@@ -305,11 +334,13 @@ ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 | `54a7415` | Production tự seed; email Let's Encrypt tùy chọn; sửa mô tả rule Security Group |
 | `98b0bf4` | `SKIP_PULL=1` cho deploy thủ công bằng image nạp sẵn |
 | `3584c1e` | Gia cố lần deploy đầu: TLS bootstrap, Alertmanager không bắt buộc Discord, `.env` có ngoặc kép |
+| `ed167d0` | Sửa lỗi ảnh sản phẩm "dính" che nội dung trên mobile/tablet |
+| (mới) | Logo Google 4 màu & Facebook chính thức; Google luôn hiện màn hình chọn tài khoản, Facebook hỏi lại quyền email; trang Chính sách bảo mật / Điều khoản / Xóa dữ liệu; chức năng tự xóa tài khoản; hướng dẫn công khai ứng dụng Google/Facebook |
 | (hạ tầng) | Terraform tạo EC2 riêng, **deploy production thành công** tại https://13-214-14-196.sslip.io; cấu hình biến/secret không nhạy cảm trên GitHub |
 
 **Database migrations:** `20261001000000_init` → `20261101000000_search_admin_indexes` → `20261102000000_reviews_oauth_sale` → `20261103000000_account_profile_addresses` (SĐT, giới tính, ngày sinh, bảng `addresses`, 1 địa chỉ mặc định/người dùng).
 
-**API mới gần đây:** `PATCH /api/account/profile` · `POST /api/account/avatar` · `GET/POST /api/account/addresses` · `PUT/DELETE /api/account/addresses/:id` · `POST /api/account/addresses/:id/default` · `GET /api/products?minPrice=&maxPrice=` · `GET /api/products/summary` · `GET /api/media/avatars/:userId/:file`.
+**API mới gần đây:** `DELETE /api/account` · `PATCH /api/account/profile` · `POST /api/account/avatar` · `GET/POST /api/account/addresses` · `PUT/DELETE /api/account/addresses/:id` · `POST /api/account/addresses/:id/default` · `GET /api/products?minPrice=&maxPrice=` · `GET /api/products/summary` · `GET /api/media/avatars/:userId/:file`.
 
 **Việc còn lại (tùy chọn):** thêm secrets Docker Hub/SSH/`PROD_ENV_FILE` để CD tự động; cấu hình `SMTP_URL` (Amazon SES) để gửi email thật; Google/Facebook OAuth cho production; Discord/Telegram để nhận cảnh báo; dùng tên miền riêng; chuyển Terraform state lên S3 backend.
 

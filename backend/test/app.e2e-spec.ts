@@ -423,6 +423,29 @@ describe('Home Shopping API (e2e)', () => {
     });
   });
 
+  it('a customer can delete their own account: personal data removed, orders kept anonymised, sessions revoked', async () => {
+    const carol = await register('carol');
+    const email = `carol-${run}@e2e.test`;
+    await http()
+      .post('/api/account/addresses')
+      .set(auth(carol.token))
+      .send({ fullName: 'Carol', phone: '0912345678', province: 'Huế', district: 'TP Huế', ward: 'Phú Hội', street: '1 Lê Lợi' })
+      .expect(201);
+
+    await http().delete('/api/account').set(auth(carol.token)).send({ confirmEmail: 'wrong@e2e.test', password }).expect(400);
+    await http().delete('/api/account').set(auth(carol.token)).send({ confirmEmail: email, password: 'Wrong12345' }).expect(400);
+    await http().delete('/api/account').set(auth(adminToken)).send({ confirmEmail: `admin-${run}@e2e.test`, password }).expect(403);
+
+    await http().delete('/api/account').set(auth(carol.token)).send({ confirmEmail: email, password }).expect(204);
+    await http().get('/api/auth/me').set(auth(carol.token)).expect(401);
+    await http().post('/api/auth/login').send({ email, password }).expect(401);
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: carol.id }, include: { addresses: true } });
+    expect(row.email).toBe(`deleted-${carol.id}@deleted.invalid`);
+    expect(row.passwordHash).toBeNull();
+    expect(row.addresses).toHaveLength(0);
+  });
+
   it('filters products by price range and exposes a public store summary', async () => {
     const inRange = await http().get('/api/products').query({ category: `e2e-${run}`, minPrice: 400000, maxPrice: 500000 }).expect(200);
     expect(inRange.body.items.map((p: { id: string }) => p.id)).toContain(productId);

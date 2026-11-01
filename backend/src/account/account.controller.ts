@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -22,7 +23,7 @@ import { UpdateProfileDto } from '../auth/auth.dto';
 import { AccountProfile, AuthenticatedRequest } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { StorageService } from '../storage/storage.service';
-import { AddressDto } from './account.dto';
+import { AddressDto, DeleteAccountDto } from './account.dto';
 import { AccountService, AddressView } from './account.service';
 
 /** Ảnh đại diện tối đa 1 MB (giống Shopee) */
@@ -34,6 +35,14 @@ export const AVATAR_MAX_BYTES = 1024 * 1024;
 @Controller('account')
 export class AccountController {
   constructor(private readonly account: AccountService) {}
+
+  /** Xóa tài khoản của chính mình (ẩn danh hóa, thu hồi mọi phiên đăng nhập) */
+  @Delete()
+  @HttpCode(204)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  deleteAccount(@Req() req: AuthenticatedRequest, @Body() dto: DeleteAccountDto): Promise<void> {
+    return this.account.deleteAccount(req.user.sub, dto);
+  }
 
   @Patch('profile')
   updateProfile(@Req() req: AuthenticatedRequest, @Body() dto: UpdateProfileDto): Promise<AccountProfile> {

@@ -120,7 +120,11 @@ export class OAuthService {
     if (cfg.pkce) {
       params.set('code_challenge', createHash('sha256').update(verifier).digest('base64url'));
       params.set('code_challenge_method', 'S256');
+      // Luôn hiện màn hình "Chọn tài khoản" của Google (như Shopee), kể cả khi trình duyệt chỉ có 1 tài khoản
       params.set('prompt', 'select_account');
+    } else {
+      // Facebook: nếu người dùng từng bỏ chọn quyền email thì hỏi lại thay vì báo lỗi thiếu email
+      params.set('auth_type', 'rerequest');
     }
     return { state, url: `${cfg.authorizeUrl}?${params.toString()}` };
   }

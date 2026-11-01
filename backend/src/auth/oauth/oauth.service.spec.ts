@@ -38,6 +38,8 @@ describe('OAuthService', () => {
     expect(u.origin + u.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
     expect(u.searchParams.get('state')).toBe(state);
     expect(u.searchParams.get('code_challenge_method')).toBe('S256');
+    // Màn hình chọn tài khoản Google luôn hiện (cho phép chọn bất kỳ tài khoản nào đã đăng nhập trên trình duyệt)
+    expect(u.searchParams.get('prompt')).toBe('select_account');
     expect(u.searchParams.get('redirect_uri')).toBe('https://shop.test/api/auth/oauth/google/callback');
     const stored = JSON.parse(redisClient.set.mock.calls[0][1]);
     expect(stored).toMatchObject({ provider: 'google', next: '/cart', linkUserId: null });
