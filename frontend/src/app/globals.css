@@ -1228,9 +1228,10 @@ select.input {
   align-items: start;
 }
 
+/* Mặc định cuộn theo trang (mobile/tablet 1 cột); relative để badge "-%" định vị theo khung ảnh.
+   Chỉ "dính" khi ảnh và thông tin nằm 2 cột cạnh nhau (xem media query trong "Product detail v3"). */
 .gallery {
-  position: sticky;
-  top: calc(var(--header-h) + 16px);
+  position: relative;
   border-radius: var(--r-xl);
   overflow: hidden;
   aspect-ratio: 4 / 3;
@@ -2230,7 +2231,6 @@ select.input {
     grid-template-columns: 1fr;
   }
 
-  .gallery,
   .checkout {
     position: static;
   }
@@ -2609,8 +2609,11 @@ select.input {
 }
 
 /* ---------------- Product detail v3 ---------------- */
-.gallery {
-  position: sticky;
+@media (min-width: 901px) {
+  .gallery {
+    position: sticky;
+    top: calc(var(--header-h) + 16px);
+  }
 }
 
 .gallery-badge {
