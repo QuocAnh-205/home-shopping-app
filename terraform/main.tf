@@ -378,13 +378,17 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Chỉ workflow chạy trên nhánh main hoặc environment production của đúng repo mới assume được
+    # Chỉ workflow chạy trên nhánh main hoặc environment production của đúng repo mới assume được.
+    # Repo bật "immutable subject" (mặc định với repo mới) gửi sub dạng repo:owner@<id>/repo@<id>:...
+    # → chấp nhận cả 2 dạng, dạng immutable khai báo qua var.github_oidc_sub_prefix.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_repository}:ref:refs/heads/main",
-        "repo:${var.github_repository}:environment:production",
+        for pair in setproduct(
+          compact(["repo:${var.github_repository}", var.github_oidc_sub_prefix]),
+          ["ref:refs/heads/main", "environment:production"],
+        ) : "${pair[0]}:${pair[1]}"
       ]
     }
   }

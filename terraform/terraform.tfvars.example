@@ -19,3 +19,4 @@ backup_retention_days = 30
 
 github_repository           = "your-github-username/home-shopping-app"
 create_github_oidc_provider = true
+github_oidc_sub_prefix      = "" # repo mới: gh api repos/<owner>/<repo>/actions/oidc/customization/sub → sub_claim_prefix

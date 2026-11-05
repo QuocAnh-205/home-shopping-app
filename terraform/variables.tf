@@ -109,6 +109,17 @@ variable "github_repository" {
   }
 }
 
+variable "github_oidc_sub_prefix" {
+  description = "Tiền tố sub OIDC dạng immutable (gh api repos/<owner>/<repo>/actions/oidc/customization/sub → sub_claim_prefix). Để trống nếu repo dùng sub dạng cũ."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.github_oidc_sub_prefix == "" || can(regex("^repo:[^:*]+$", var.github_oidc_sub_prefix))
+    error_message = "github_oidc_sub_prefix phải có dạng repo:owner@<id>/repo@<id> (không chứa ':' hay '*' phía sau)."
+  }
+}
+
 variable "create_github_oidc_provider" {
   description = "Tạo OIDC provider token.actions.githubusercontent.com (mỗi account chỉ có 1; đặt false nếu đã tồn tại)"
   type        = bool
