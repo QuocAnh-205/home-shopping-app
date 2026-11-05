@@ -106,13 +106,16 @@ Backend tự chạy migration + seed: **200 sản phẩm, 7 danh mục, 5 tài k
 > Đổi email sẽ tạo tài khoản mới; muốn làm sạch DB local: `docker compose -f docker-compose.local.yml down -v` rồi `up` lại.
 > Cờ bật dữ liệu demo: `SEED_DEMO_DATA: "true"` trong [`docker-compose.local.yml`](docker-compose.local.yml).
 
-| Vai trò | Email | Mật khẩu | Dùng để kiểm tra |
-|---|---|---|---|
-| **Quản trị viên** | `admin@homeshop.local` | `Admin12345` | `/admin`: tổng quan, đơn hàng, sản phẩm, danh mục, người dùng, đánh giá, bản tin, nhật ký |
-| Khách hàng | `khach@homeshop.local` | `Khach12345` | Giỏ hàng, đặt hàng, đánh giá, tài khoản |
-| Khách hàng | `lan.nguyen@homeshop.local` | `Khach12345` | Mỗi khách chỉ thấy **giỏ hàng / đơn hàng / đánh giá / địa chỉ của riêng mình** |
-| Khách hàng | `minh.tran@homeshop.local` | `Khach12345` | Thử đặt đơn ở 2 tài khoản rồi đối chiếu trang "Đơn hàng" |
-| Khách hàng | `huong.le@homeshop.local` | `Khach12345` | Khách vào `/admin` → bị chặn 403 |
+| Vai trò | Email | Mật khẩu | Local (`localhost:8088`) | Production (`13-214-14-196.sslip.io`) | Dùng để kiểm tra |
+|---|---|---|---|---|---|
+| **Quản trị viên (local)** | `admin@homeshop.local` | `Admin12345` | ✅ | ❌ **không có** (mật khẩu công khai trên GitHub → không bao giờ đưa lên web thật) | `/admin` ở bản local |
+| **Quản trị viên (production)** | `quanly@homeshop.vn` | `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env` (bí mật) | ❌ | ✅ | `/admin`: tổng quan, đơn hàng, sản phẩm, danh mục, người dùng, đánh giá, bản tin, nhật ký |
+| Khách hàng | `khach@homeshop.local` | `Khach12345` | ✅ | ✅ (`SEED_DEMO_CUSTOMERS=true`) | Giỏ hàng, đặt hàng, đánh giá, tài khoản |
+| Khách hàng | `lan.nguyen@homeshop.local` | `Khach12345` | ✅ | ✅ | Mỗi khách chỉ thấy **giỏ hàng / đơn hàng / đánh giá / địa chỉ của riêng mình** |
+| Khách hàng | `minh.tran@homeshop.local` | `Khach12345` | ✅ | ✅ | Thử đặt đơn ở 2 tài khoản rồi đối chiếu trang "Đơn hàng" |
+| Khách hàng | `huong.le@homeshop.local` | `Khach12345` | ✅ | ✅ | Khách vào `/admin` → bị chặn 403 |
+
+> Nhập `admin@homeshop.local` trên production sẽ báo *"Email hoặc mật khẩu không đúng"* – đúng thiết kế, vì tài khoản đó không tồn tại ở production.
 
 **Kịch bản kiểm tra phân quyền:** đăng nhập `lan.nguyen` → thêm giỏ & đặt hàng → đăng xuất → đăng nhập `minh.tran`: giỏ hàng trống, không thấy đơn của Lan; truy cập trực tiếp `/orders/<id đơn của Lan>` → "không tìm thấy". Đăng nhập `admin` → thấy đơn của Lan ở tab Đơn hàng.
 

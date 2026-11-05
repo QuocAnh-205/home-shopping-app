@@ -131,6 +131,8 @@ services:
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       SEED_SAMPLE_REVIEWS: ${SEED_SAMPLE_REVIEWS:-false}
+      # true = tạo sẵn các tài khoản KHÁCH demo (backend/prisma/data/demo-accounts.js) để người xem đăng nhập thử
+      SEED_DEMO_CUSTOMERS: ${SEED_DEMO_CUSTOMERS:-false}
     # Backend là service DUY NHẤT nằm ở cả 2 mạng: nhận request từ Nginx và gọi DB/Redis
     networks:
       - frontend-net

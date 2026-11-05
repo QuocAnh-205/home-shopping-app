@@ -6,6 +6,7 @@
  * ============================================================
  * Chỉ được tạo khi biến môi trường SEED_DEMO_DATA=true (đã bật sẵn trong docker-compose.local.yml).
  * Production KHÔNG bật cờ này → không có tài khoản mặc định nào.
+ * Production có thể bật SEED_DEMO_CUSTOMERS=true → chỉ tạo các tài khoản CUSTOMER bên dưới (admin demo không bao giờ lên production).
  *
  * - Đổi email / họ tên / mật khẩu / vai trò tùy ý rồi khởi động lại backend:
  *     docker compose -f docker-compose.local.yml up -d --build backend

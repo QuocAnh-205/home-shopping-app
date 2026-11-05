@@ -7,6 +7,8 @@
  *   Sản phẩm đã có: cập nhật nội dung, giá, ảnh; GIỮ NGUYÊN tồn kho & số đã bán (dữ liệu vận hành thật).
  * - SEED_DEMO_DATA=true (chỉ môi trường demo/local): tạo tài khoản trong prisma/data/demo-accounts.js
  *   (SỬA TÀI KHOẢN DEMO Ở FILE ĐÓ), đánh giá mẫu (mọi sản phẩm 3–6 đánh giá, người đánh giá trong prisma/data/reviews.js) và lịch sử đơn hàng 60 ngày cho dashboard quản trị.
+ * - SEED_DEMO_CUSTOMERS=true (dùng được ở production): chỉ tạo các tài khoản KHÁCH trong demo-accounts.js,
+ *   không tạo admin demo (admin production lấy từ SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD, mật khẩu bí mật).
  * - Production: không bật SEED_DEMO_DATA → không có tài khoản mặc định. SEED_SAMPLE_REVIEWS=true chỉ thêm đánh giá mẫu
  *   (người viết không có mật khẩu, không đăng nhập được). Có thể tạo 1 admin đầu tiên
  *   bằng SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (chỉ tạo nếu chưa tồn tại, không ghi đè mật khẩu).
@@ -231,6 +233,12 @@ async function main() {
       create: { email: adminEmail, fullName: 'Quản trị viên', role: Role.ADMIN, passwordHash: await bcrypt.hash(process.env.SEED_ADMIN_PASSWORD, 12) },
     });
     console.log(`  admin ${adminEmail}`);
+  }
+
+  // Production demo: chỉ tạo các tài khoản KHÁCH trong demo-accounts.js (không tạo admin mật khẩu công khai,
+  // không tạo đơn hàng giả) để giảng viên/người xem đăng nhập thử được ngay
+  if (process.env.SEED_DEMO_CUSTOMERS === 'true' && process.env.SEED_DEMO_DATA !== 'true') {
+    for (const a of demoAccounts.filter((x) => x.role === 'CUSTOMER')) await upsertDemoAccount(a);
   }
 
   if (process.env.SEED_DEMO_DATA === 'true') {
