@@ -189,7 +189,7 @@ E2E bao phủ: mua đồng thời món cuối (không oversell), idempotency, RB
 
 ## 2. Triển khai production lên AWS
 
-### 2.0. Hiện trạng (đã triển khai 01/11/2026)
+### 2.0. Hiện trạng (triển khai lần đầu 01/11/2026 · CI/CD tự động từ 05/11/2026)
 
 | Hạng mục | Giá trị |
 |---|---|
@@ -203,6 +203,8 @@ E2E bao phủ: mua đồng thời món cuối (không oversell), idempotency, RB
 | Admin web | email `SEED_ADMIN_EMAIL` / mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env` |
 | Dữ liệu | 200 sản phẩm + ~900 đánh giá mẫu (người viết không đăng nhập được); **không có** tài khoản demo mật khẩu công khai |
 | Container | 6 ứng dụng (nginx, frontend, backend, postgres, redis, certbot) + 9 giám sát |
+| CI/CD | **Tự động hoàn toàn**: push `main` → test → build → quét → deploy. Lần chạy xanh gần nhất: [#42001069726](https://github.com/QuocAnh-205/home-shopping-app/actions/runs/42001069726) (05/11/2026, cả 7 job ✅), production chạy commit `958f141` |
+| Docker Hub | `anhquocnguyen2005/home-shopping-backend`, `anhquocnguyen2005/home-shopping-frontend` (tag = commit SHA + `latest`) |
 | Chi phí ước tính | ~25–28 USD/tháng (EC2, EBS, IPv4 công khai, CloudWatch) |
 
 Máy `luxe-server` (dự án khác) trong cùng tài khoản **không bị ảnh hưởng**: Home Shopping chạy trong VPC riêng.
@@ -223,6 +225,7 @@ terraform apply tfplan
 terraform output
 ```
 - Tài khoản đã có GitHub OIDC provider → đặt `create_github_oidc_provider = false`.
+- Repo bật **immutable subject** (mặc định với repo mới) → đặt `github_oidc_sub_prefix` bằng `sub_claim_prefix` lấy từ `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (repo này: `repo:QuocAnh-205@189313150/home-shopping-app@1440229410`). Thiếu dòng này thì job Deploy báo `Not authorized to perform sts:AssumeRoleWithWebIdentity`.
 - Không cài Terraform? Chạy bằng Docker: `docker run --rm --env-file aws.env -v "$PWD:/w" -w /w/terraform hashicorp/terraform:1.9.8 plan` (với `aws.env` sinh từ `aws configure export-credentials --format env-no-export`, xóa ngay sau khi dùng).
 - EC2 tự bootstrap (swap, Docker, sysctl, UFW, fail2ban, unattended-upgrades, cron backup) trong ~5 phút: `ssh ... 'tail -f /var/log/user-data.log'`.
 
@@ -250,34 +253,36 @@ Tạo từ [.env.example](.env.example) (khuyến nghị lưu ở `~/.homeshop/p
 | Secret | `AWS_DEPLOY_ROLE_ARN` | `terraform output -raw github_deploy_role_arn` | ✅ đã đặt |
 | Secret | `AWS_SECURITY_GROUP_ID` | `terraform output -raw security_group_id` | ✅ đã đặt |
 | Environment | `production` | (nên bật *Required reviewers*) | ✅ đã tạo |
-| Variable | `DOCKERHUB_USERNAME` | username Docker Hub | ⏳ cần làm |
-| Secret | `DOCKERHUB_TOKEN` | Docker Hub access token (Read & Write) | ⏳ cần làm |
-| Secret | `EC2_SSH_PRIVATE_KEY` | `gh secret set EC2_SSH_PRIVATE_KEY < ~/.ssh/homeshop_ed25519` | ⏳ cần làm |
-| Secret | `EC2_SSH_KNOWN_HOSTS` | `gh secret set EC2_SSH_KNOWN_HOSTS < ~/.homeshop/known_hosts` | ⏳ cần làm |
-| Secret | `PROD_ENV_FILE` | `gh secret set PROD_ENV_FILE < ~/.homeshop/prod.env` | ⏳ cần làm |
+| Variable | `DOCKERHUB_USERNAME` | username Docker Hub | ✅ đã đặt (05/11) |
+| Secret | `DOCKERHUB_TOKEN` | Docker Hub access token (Read & Write) | ✅ đã đặt (05/11) |
+| Secret | `EC2_SSH_PRIVATE_KEY` | `gh secret set EC2_SSH_PRIVATE_KEY < ~/.ssh/homeshop_ed25519` | ✅ đã đặt (05/11) |
+| Secret | `EC2_SSH_KNOWN_HOSTS` | `gh secret set EC2_SSH_KNOWN_HOSTS < ~/.homeshop/known_hosts` | ✅ đã đặt (05/11) |
+| Secret | `PROD_ENV_FILE` | `gh secret set PROD_ENV_FILE < ~/.homeshop/prod.env` | ✅ đã đặt (05/11) |
 | Secret/Variable | `SONAR_TOKEN`, `SONAR_ORGANIZATION`, `SONAR_PROJECT_KEY` | SonarCloud | tùy chọn |
 | Secret | `DISCORD_WEBHOOK_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Thông báo | tùy chọn |
 
 > Thêm `-R QuocAnh-205/home-shopping-app` vào các lệnh `gh` nếu chạy ngoài thư mục repo.
 
-**Nạp 5 mục "cần làm" bằng 1 lệnh** (Git Bash, tại thư mục repo):
+**Nạp (hoặc nạp lại) 5 secret Docker Hub/SSH/env bằng 1 lệnh** (Git Bash, tại thư mục repo):
 
 ```bash
 DOCKERHUB_USERNAME=<user> DOCKERHUB_TOKEN=<token> bash scripts/setup-github-secrets.sh
 ```
 
+Sửa `~/.homeshop/prod.env` (vd. thêm Google/Facebook OAuth) → chạy lại lệnh trên để cập nhật `PROD_ENV_FILE` rồi push/chạy lại pipeline. Đổi token Docker Hub: `gh secret set DOCKERHUB_TOKEN` (lệnh tự hỏi giá trị).
+
 Thiếu mục nào thì pipeline dừng ngay ở bước *"Kiểm tra cấu hình Docker Hub"* / *"Kiểm tra secrets deploy"* kèm tên mục còn thiếu.
 
 ### 2.5. Deploy
 
-**Tự động (sau khi đủ secrets):**
+**Tự động (đang dùng):**
 ```bash
-git push origin main
+git push origin main                              # hoặc chạy tay: gh workflow run production-cicd.yml --ref main
 ```
 Pipeline: **(1a Security & Quality ‖ 1b Integration Test ‖ 1c IaC Scan) → 2 Build/Scan/Push → 3 Deploy → 4 Notify**.
 Deploy trên EC2 (`scripts/deploy.sh`): pull image → migrate → **seed idempotent** → rolling update từng service (không gián đoạn) → cấp/gia hạn TLS → health check sau 30s → **tự rollback** nếu lỗi. Pull request chỉ chạy 3 job kiểm tra.
 
-**Thủ công (khi chưa có Docker Hub, cách đã dùng cho lần deploy đầu):**
+**Thủ công (dự phòng khi GitHub Actions/Docker Hub gặp sự cố; cách đã dùng cho lần deploy đầu):**
 ```bash
 T=$(git rev-parse HEAD)
 docker build -t homeshop/home-shopping-backend:$T backend
@@ -325,7 +330,10 @@ ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 | Nginx restart liên tục, xin cert thất bại | Nginx kẹt vòng restart khi chưa có cert | Ép recreate + chờ chạy; lỗi thì fallback cert tự ký |
 | Monitoring không lên | Alertmanager bắt buộc Discord & không đọc được file 640 | Discord tùy chọn, file 644 (thư mục vẫn 750) |
 | `aws login` lỗi `expecting a Windows console` | Chưa đặt region nên CLI hỏi tương tác | `aws configure set region ap-southeast-1` |
-| Job Build đỏ ở "Login Docker Hub" | Chưa có `DOCKERHUB_USERNAME/TOKEN` | Thêm secrets (mục 2.4) |
+| Job Build đỏ ở "Login Docker Hub" (`Username and password required`) | Chưa có `DOCKERHUB_USERNAME/TOKEN` | Thêm secrets (mục 2.4); pipeline giờ có bước kiểm tra báo rõ mục thiếu |
+| Job Build báo `trivy: command not found` (exit 127) | Bước SARIF chạy `if: always()` dù build chưa xong → che mất lỗi thật | Chỉ chạy khi `steps.build.outcome == 'success'` |
+| Job Deploy: `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Repo dùng OIDC immutable subject (`repo:owner@id/repo@id:...`), trust policy chỉ có dạng cũ | Biến Terraform `github_oidc_sub_prefix`, apply role `homeshop-prod-github-deploy` |
+| Người ngoài đăng nhập `admin@homeshop.local` trên production báo sai mật khẩu | Đó là tài khoản demo, chỉ seed khi `SEED_DEMO_DATA=true` (local) | Đúng thiết kế: production dùng `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` |
 
 ---
 
@@ -343,14 +351,18 @@ ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 | `98b0bf4` | `SKIP_PULL=1` cho deploy thủ công bằng image nạp sẵn |
 | `3584c1e` | Gia cố lần deploy đầu: TLS bootstrap, Alertmanager không bắt buộc Discord, `.env` có ngoặc kép |
 | `ed167d0` | Sửa lỗi ảnh sản phẩm "dính" che nội dung trên mobile/tablet |
-| (mới) | Logo Google 4 màu & Facebook chính thức; Google luôn hiện màn hình chọn tài khoản, Facebook hỏi lại quyền email; trang Chính sách bảo mật / Điều khoản / Xóa dữ liệu; chức năng tự xóa tài khoản; hướng dẫn công khai ứng dụng Google/Facebook |
+| `0f0f6f8` | Logo Google 4 màu & Facebook chính thức; Google luôn hiện màn hình chọn tài khoản, Facebook hỏi lại quyền email; trang Chính sách bảo mật / Điều khoản / Xóa dữ liệu; chức năng tự xóa tài khoản; hướng dẫn công khai ứng dụng Google/Facebook |
+| `58b5b0a` | E2E: tên người dùng riêng cho test xóa tài khoản (tránh trùng email) |
 | (hạ tầng) | Terraform tạo EC2 riêng, **deploy production thành công** tại https://13-214-14-196.sslip.io; cấu hình biến/secret không nhạy cảm trên GitHub |
+| `3a3b932` | Google/Facebook chưa cấu hình: nút chỉ hiện dòng nhắc nhẹ, bỏ khung lỗi đỏ |
+| `af2f79c` | CI: bước kiểm tra secrets trước build/deploy, `scripts/setup-github-secrets.sh`, bỏ lỗi trivy 127 gây nhiễu |
+| `958f141` | IaC: OIDC trust policy chấp nhận sub dạng immutable → **CD tự động chạy thành công lần đầu** (05/11/2026) |
 
 **Database migrations:** `20261001000000_init` → `20261101000000_search_admin_indexes` → `20261102000000_reviews_oauth_sale` → `20261103000000_account_profile_addresses` (SĐT, giới tính, ngày sinh, bảng `addresses`, 1 địa chỉ mặc định/người dùng).
 
 **API mới gần đây:** `DELETE /api/account` · `PATCH /api/account/profile` · `POST /api/account/avatar` · `GET/POST /api/account/addresses` · `PUT/DELETE /api/account/addresses/:id` · `POST /api/account/addresses/:id/default` · `GET /api/products?minPrice=&maxPrice=` · `GET /api/products/summary` · `GET /api/media/avatars/:userId/:file`.
 
-**Việc còn lại (tùy chọn):** thêm secrets Docker Hub/SSH/`PROD_ENV_FILE` để CD tự động; cấu hình `SMTP_URL` (Amazon SES) để gửi email thật; Google/Facebook OAuth cho production; Discord/Telegram để nhận cảnh báo; dùng tên miền riêng; chuyển Terraform state lên S3 backend.
+**Việc còn lại (tùy chọn):** đổi token Docker Hub định kỳ; bật *Required reviewers* cho environment `production`; nâng `qs`/`postcss` (npm audit báo mức không critical); cấu hình `SMTP_URL` (Amazon SES) để gửi email thật; Google/Facebook OAuth cho production; Discord/Telegram để nhận cảnh báo; dùng tên miền riêng; chuyển Terraform state lên S3 backend.
 
 ---
 
