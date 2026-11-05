@@ -25,7 +25,7 @@ export class CategoriesService {
 
     const rows = await this.prisma.category.findMany({
       orderBy: { id: 'asc' },
-      include: { _count: { select: { products: true } } },
+      include: { _count: { select: { products: { where: { isActive: true } } } } },
     });
     const result = rows.map((c) => ({ id: c.id, name: c.name, slug: c.slug, productCount: c._count.products }));
     await this.redis.setJson(CACHE_KEY, result, 300);

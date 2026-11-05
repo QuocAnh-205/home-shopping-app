@@ -84,6 +84,9 @@ const REVENUE = Prisma.sql`o.status::text = ANY(${REVENUE_STATUSES as string[]})
 const LOCAL_DAY = Prisma.sql`(o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`;
 const TODAY = Prisma.sql`(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`;
 
+/** Không tính tài khoản khách đã tự xóa (được giữ lại ẩn danh để không mất lịch sử đơn) */
+const ACTIVE_ACCOUNT: Prisma.UserWhereInput = { NOT: { email: { endsWith: '@deleted.invalid' } } };
+
 const dec = (v: Prisma.Decimal | string | number | null | undefined) => new Prisma.Decimal(v ?? 0).toFixed(2);
 
 @Injectable()
@@ -102,9 +105,9 @@ export class AdminService {
       await Promise.all([
         this.kpiRow(),
         this.prisma.order.groupBy({ by: ['status'], _count: { _all: true } }),
-        this.prisma.user.count({ where: { role: Role.CUSTOMER } }),
-        this.prisma.user.count({ where: { role: Role.CUSTOMER, createdAt: { gte: since30 } } }),
-        this.prisma.user.count({ where: { role: Role.CUSTOMER, createdAt: { gte: since60, lt: since30 } } }),
+        this.prisma.user.count({ where: { role: Role.CUSTOMER, ...ACTIVE_ACCOUNT } }),
+        this.prisma.user.count({ where: { role: Role.CUSTOMER, ...ACTIVE_ACCOUNT, createdAt: { gte: since30 } } }),
+        this.prisma.user.count({ where: { role: Role.CUSTOMER, ...ACTIVE_ACCOUNT, createdAt: { gte: since60, lt: since30 } } }),
         this.prisma.product.count(),
         this.prisma.product.count({ where: { stock: { lte: 0 } } }),
         this.revenueDaily(30),

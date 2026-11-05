@@ -1,14 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import {
-  BadRequestException,
-  ConflictException,
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { User } from '@prisma/client';
@@ -244,6 +235,13 @@ export class AuthService {
   }
 
   async issue(user: Pick<User, 'id' | 'email' | 'fullName' | 'role' | 'avatarUrl'>): Promise<AuthResponse> {
+    // Mọi đường cấp token (mật khẩu, Google/Facebook, đăng ký) đều đi qua đây → chặn tài khoản bị admin khóa tại 1 chỗ
+    const status = await this.prisma.user.findUnique({ where: { id: user.id }, select: { lockedAt: true } });
+    if (status?.lockedAt) {
+      this.metrics.authEvents.inc({ event: 'blocked_locked' });
+      this.logger.warn({ event: 'auth.blocked_locked', userId: user.id });
+      throw new ForbiddenException('Account is locked');
+    }
     const claims: JwtClaims = { sub: user.id, email: user.email, role: user.role };
     const accessToken = await this.jwt.signAsync(claims, { jwtid: randomUUID() });
     const { exp } = this.jwt.decode<{ exp: number }>(accessToken);

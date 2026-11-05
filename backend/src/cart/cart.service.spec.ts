@@ -29,7 +29,7 @@ describe('CartService', () => {
   it('computes totals with decimal precision', async () => {
     redisClient.hgetall.mockResolvedValue({ [productId]: '3' });
     prisma.product.findMany.mockResolvedValue([
-      { id: productId, name: 'Nồi chiên', slug: 'noi-chien', price: new Prisma.Decimal('1890000.10'), stock: 10, imageKey: '/images/products/noi-chien.webp' },
+      { id: productId, name: 'Nồi chiên', slug: 'noi-chien', price: new Prisma.Decimal('1890000.10'), stock: 10, imageKey: '/images/products/noi-chien.webp', isActive: true },
     ]);
 
     const cart = await service.get(userId);
@@ -50,7 +50,7 @@ describe('CartService', () => {
   });
 
   it('rejects quantity above available stock', async () => {
-    prisma.product.findUnique.mockResolvedValue({ stock: 2 });
+    prisma.product.findUnique.mockResolvedValue({ stock: 2, isActive: true });
 
     await expect(service.upsertItem(userId, productId, 5)).rejects.toBeInstanceOf(BadRequestException);
     expect(redisClient.multi).not.toHaveBeenCalled();
@@ -62,8 +62,28 @@ describe('CartService', () => {
     await expect(service.upsertItem(userId, productId, 1)).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('rejects products hidden by an admin', async () => {
+    prisma.product.findUnique.mockResolvedValue({ stock: 10, isActive: false });
+
+    await expect(service.upsertItem(userId, productId, 1)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('marks hidden products unavailable and prunes deleted ones', async () => {
+    const deletedId = 'c0ffee00-55a1-4b8e-8f3e-0c1f2a3b4c5d';
+    redisClient.hgetall.mockResolvedValue({ [productId]: '1', [deletedId]: '2' });
+    prisma.product.findMany.mockResolvedValue([
+      { id: productId, name: 'Ấm đun', slug: 'am-dun', price: new Prisma.Decimal('100000'), stock: 10, imageKey: null, isActive: false },
+    ]);
+
+    const cart = await service.get(userId);
+
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0].available).toBe(false);
+    expect(redisClient.hdel).toHaveBeenCalledWith(`cart:${userId}`, deletedId);
+  });
+
   it('stores item with sliding TTL', async () => {
-    prisma.product.findUnique.mockResolvedValue({ stock: 10 });
+    prisma.product.findUnique.mockResolvedValue({ stock: 10, isActive: true });
     redisClient.hexists.mockResolvedValue(0);
     redisClient.hlen.mockResolvedValue(0);
     redisClient.hgetall.mockResolvedValue({});

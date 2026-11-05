@@ -4738,3 +4738,230 @@ button.acc-nav-group:hover,
 .danger-zone .acc-head h2 {
   color: var(--danger);
 }
+
+/* ---------------- Admin v2: người dùng, danh mục, bản tin, nhật ký ---------------- */
+.admin-tabs {
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+}
+
+.admin-tabs .tab {
+  white-space: nowrap;
+}
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.stat-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+}
+
+.stat-tile strong {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+button.stat-tile {
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+button.stat-tile:hover {
+  border-color: var(--border-strong);
+}
+
+.stat-tile.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.admin-toolbar .grow {
+  flex: 1 1 260px;
+}
+
+.admin-toolbar .grow .input {
+  width: 100%;
+}
+
+.admin-toolbar select.input {
+  width: auto;
+}
+
+.date-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.admin-summary,
+.admin-total {
+  margin: 0 0 10px;
+}
+
+.admin-total {
+  margin-top: 12px;
+  text-align: right;
+}
+
+.avatar-sm {
+  width: 36px;
+  height: 36px;
+  font-size: 0.85rem;
+}
+
+.badge-violet {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+.badge-muted {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+.row-click {
+  cursor: pointer;
+}
+
+.row-click:hover td,
+.row-click:focus-visible td {
+  background: var(--surface-2);
+}
+
+.row-muted td {
+  opacity: 0.6;
+}
+
+.table-compact td,
+.table-compact th {
+  padding: 8px 10px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.dialog-wide {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.dialog-body {
+  margin: 16px 0;
+  overflow: auto;
+}
+
+.btn-armed {
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
+}
+
+.user-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.user-hero .avatar {
+  width: 56px;
+  height: 56px;
+  font-size: 1.2rem;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--r-md, 12px);
+  background: var(--surface-2);
+}
+
+.detail-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-title {
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.plain-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cat-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cat-form .input {
+  flex: 1 1 200px;
+}
+
+.order-detail {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(320px, 1.4fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.thumb-md {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-3);
+  flex-shrink: 0;
+}
+
+.code-block {
+  max-height: 260px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--surface-3);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 760px) {
+  .order-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-toolbar select.input,
+  .admin-toolbar .btn {
+    flex: 1 1 140px;
+  }
+}

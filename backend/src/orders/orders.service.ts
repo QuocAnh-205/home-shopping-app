@@ -4,7 +4,8 @@ import { CartService } from '../cart/cart.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
-import { CreateOrderDto, ListOrdersQuery } from './orders.dto';
+import type { AdminListOrdersQuery } from '../admin/admin.dto';
+import { CreateOrderDto } from './orders.dto';
 
 const orderInclude = {
   items: { include: { product: { select: { name: true, slug: true } } }, orderBy: { id: 'asc' } },
@@ -12,7 +13,7 @@ const orderInclude = {
 
 const adminOrderInclude = {
   ...orderInclude,
-  user: { select: { id: true, email: true, fullName: true } },
+  user: { select: { id: true, email: true, fullName: true, phone: true } },
 } satisfies Prisma.OrderInclude;
 
 export type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
@@ -76,11 +77,11 @@ export class OrdersService {
         async (tx) => {
           // Sắp xếp theo id để mọi transaction khóa row theo cùng thứ tự → tránh deadlock
           const products = await tx.product.findMany({
-            where: { id: { in: [...cart.keys()] } },
+            where: { id: { in: [...cart.keys()] }, isActive: true },
             select: { id: true, price: true },
             orderBy: { id: 'asc' },
           });
-          if (products.length !== cart.size) throw new NotFoundException('Some products no longer exist');
+          if (products.length !== cart.size) throw new BadRequestException('Some products in your cart are no longer available');
 
           let total = new Prisma.Decimal(0);
           for (const p of products) {
@@ -156,9 +157,36 @@ export class OrdersService {
     return this.getMine(userId, id);
   }
 
-  async listAll(query: ListOrdersQuery): Promise<OrderPage> {
-    const where: Prisma.OrderWhereInput = query.status ? { status: query.status } : {};
-    const [items, total] = await this.prisma.$transaction([
+  /** Bộ lọc dùng chung cho danh sách & xuất CSV của admin */
+  private async adminWhere(query: AdminListOrdersQuery): Promise<Prisma.OrderWhereInput> {
+    const and: Prisma.OrderWhereInput[] = [];
+    if (query.status) and.push({ status: query.status });
+    if (query.userId) and.push({ userId: query.userId });
+    // Ngày theo giờ Việt Nam (UTC+7), bao gồm cả ngày kết thúc
+    if (query.from) and.push({ createdAt: { gte: new Date(`${query.from}T00:00:00+07:00`) } });
+    if (query.to) and.push({ createdAt: { lt: new Date(new Date(`${query.to}T00:00:00+07:00`).getTime() + 86_400_000) } });
+    const q = query.q?.replace(/^#/, '').trim();
+    if (q) {
+      const or: Prisma.OrderWhereInput[] = [
+        { user: { email: { contains: q, mode: 'insensitive' } } },
+        { user: { fullName: { contains: q, mode: 'insensitive' } } },
+        { phone: { contains: q.replace(/[\s.-]/g, '') } },
+        { shippingAddress: { contains: q, mode: 'insensitive' } },
+      ];
+      // Mã đơn rút gọn (8 ký tự đầu của UUID) hiển thị trên giao diện → tìm theo tiền tố
+      if (/^[0-9a-f-]{4,36}$/i.test(q)) {
+        const ids = await this.prisma.$queryRaw<{ id: string }[]>`
+          SELECT id FROM orders WHERE id::text LIKE ${q.toLowerCase() + '%'} LIMIT 100`;
+        if (ids.length) or.push({ id: { in: ids.map((r) => r.id) } });
+      }
+      and.push({ OR: or });
+    }
+    return and.length ? { AND: and } : {};
+  }
+
+  async listAll(query: AdminListOrdersQuery): Promise<OrderPage & { summary: { count: number; amount: string } }> {
+    const where = await this.adminWhere(query);
+    const [items, total, agg] = await this.prisma.$transaction([
       this.prisma.order.findMany({
         where,
         include: adminOrderInclude,
@@ -167,8 +195,27 @@ export class OrdersService {
         take: query.limit,
       }),
       this.prisma.order.count({ where }),
+      this.prisma.order.aggregate({ where, _sum: { totalAmount: true } }),
     ]);
-    return { items, page: query.page, limit: query.limit, total, totalPages: Math.max(1, Math.ceil(total / query.limit)) };
+    return {
+      items,
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+      summary: { count: total, amount: (agg._sum.totalAmount ?? new Prisma.Decimal(0)).toFixed(2) },
+    };
+  }
+
+  async adminDetail(id: string): Promise<AdminOrder> {
+    const order = await this.prisma.order.findUnique({ where: { id }, include: adminOrderInclude });
+    if (!order) throw new NotFoundException('Order not found');
+    return order;
+  }
+
+  /** Xuất tối đa 10.000 đơn theo bộ lọc hiện tại */
+  async adminExport(query: AdminListOrdersQuery): Promise<AdminOrder[]> {
+    return this.prisma.order.findMany({ where: await this.adminWhere(query), include: adminOrderInclude, orderBy: { createdAt: 'desc' }, take: 10_000 });
   }
 
   async updateStatus(id: string, next: OrderStatus, actorId: string): Promise<AdminOrder> {

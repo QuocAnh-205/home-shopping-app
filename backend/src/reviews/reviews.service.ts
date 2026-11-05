@@ -111,7 +111,7 @@ export class ReviewsService {
   /** Đánh giá tích cực mới nhất cho mục "Khách hàng nói gì" ở trang chủ */
   async latest(limit = 6): Promise<LatestReview[]> {
     const rows = await this.prisma.review.findMany({
-      where: { rating: { gte: 4 } },
+      where: { rating: { gte: 4 }, product: { isActive: true } },
       select: { ...reviewSelect, product: { select: { name: true, slug: true, imageKey: true } } },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -124,17 +124,46 @@ export class ReviewsService {
     );
   }
 
-  async adminList(page: number, limit: number): Promise<{ items: (ReviewView & { product: { name: string; slug: string } })[]; total: number }> {
-    const [items, total] = await this.prisma.$transaction([
+  async adminList(query: { page: number; limit: number; rating?: number; verified?: boolean; q?: string }): Promise<{
+    items: (ReviewView & { product: { name: string; slug: string }; userEmail: string })[];
+    total: number;
+  }> {
+    const where: Prisma.ReviewWhereInput = {
+      ...(query.rating ? { rating: query.rating } : {}),
+      ...(query.verified !== undefined ? { verifiedPurchase: query.verified } : {}),
+      ...(query.q
+        ? {
+            OR: [
+              { comment: { contains: query.q, mode: 'insensitive' } },
+              { product: { name: { contains: query.q, mode: 'insensitive' } } },
+              { user: { fullName: { contains: query.q, mode: 'insensitive' } } },
+              { user: { email: { contains: query.q, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
+    const [rows, total] = await this.prisma.$transaction([
       this.prisma.review.findMany({
-        select: { ...reviewSelect, product: { select: { name: true, slug: true } } },
+        where,
+        select: { ...reviewSelect, product: { select: { name: true, slug: true } }, user: { select: { ...reviewSelect.user.select, email: true } } },
         orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
       }),
-      this.prisma.review.count(),
+      this.prisma.review.count({ where }),
     ]);
-    return { items, total };
+    return { items: rows.map(({ user: { email, ...user }, ...r }) => ({ ...r, user, userEmail: email })), total };
+  }
+
+  /** Gỡ đánh giá (admin) – trả về thông tin để ghi nhật ký */
+  async removeByIdWithInfo(id: string, actorId: string): Promise<{ productName: string; author: string; rating: number }> {
+    const review = await this.prisma.review.findUnique({
+      where: { id },
+      select: { productId: true, rating: true, product: { select: { name: true } }, user: { select: { email: true } } },
+    });
+    if (!review) throw new NotFoundException('Review not found');
+    await this.remove({ id }, review.productId, `admin:${actorId}`);
+    return { productName: review.product.name, author: review.user.email, rating: review.rating };
   }
 
   private async remove(filter: { id?: string; userId?: string }, productId: string, actor: string): Promise<void> {

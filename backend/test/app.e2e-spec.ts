@@ -66,7 +66,7 @@ describe('Home Shopping API (e2e)', () => {
     if (prisma) {
       await prisma.order.deleteMany({ where: { userId: { in: created.userIds } } });
       await prisma.product.deleteMany({ where: { id: { in: created.productIds } } });
-      await prisma.category.deleteMany({ where: { id: created.categoryId } });
+      await prisma.category.deleteMany({ where: { OR: [{ id: created.categoryId }, { slug: { startsWith: `e2e-cat-${run}` } }] } });
       await prisma.user.deleteMany({ where: { id: { in: created.userIds } } });
       await prisma.newsletterSubscriber.deleteMany({ where: { email: { endsWith: `${run}@e2e.test` } } });
     }
@@ -468,6 +468,113 @@ describe('Home Shopping API (e2e)', () => {
   it('media endpoint only serves server-generated paths', async () => {
     await http().get('/api/media/products/..%2F..%2Fetc/passwd').expect(404);
     await http().get(`/api/media/products/${productId}/${randomUUID()}.webp`).expect(404);
+  });
+
+  describe('admin management (users, catalog, orders, audit log)', () => {
+    let carol: { token: string; id: string };
+    const carolEmail = () => `mgmt-${run}@e2e.test`;
+    const relogin = async () => {
+      await new Promise((r) => setTimeout(r, 1100));
+      return (await http().post('/api/auth/login').send({ email: carolEmail(), password }).expect(200)).body.accessToken as string;
+    };
+
+    beforeAll(async () => {
+      carol = await register('mgmt');
+    });
+
+    it('lists and searches users with counts; customers are forbidden', async () => {
+      const res = await http().get(`/api/admin/users?q=${encodeURIComponent(carolEmail())}`).set(auth(adminToken)).expect(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.items[0]).toMatchObject({ id: carol.id, role: 'CUSTOMER', orderCount: 0, totalSpent: '0.00' });
+      expect(res.body.counts.admins).toBeGreaterThanOrEqual(1);
+      await http().get('/api/admin/users').set(auth(carol.token)).expect(403);
+    });
+
+    it('locking revokes sessions and blocks login (403); unlocking restores access', async () => {
+      await http().post(`/api/admin/users/${carol.id}/lock`).set(auth(adminToken)).send({ reason: 'e2e' }).expect(200);
+      await http().get('/api/auth/me').set(auth(carol.token)).expect(401);
+      const blocked = await http().post('/api/auth/login').send({ email: carolEmail(), password }).expect(403);
+      expect(blocked.body.message).toBe('Account is locked');
+
+      await http().post(`/api/admin/users/${carol.id}/unlock`).set(auth(adminToken)).expect(200);
+      carol.token = await relogin();
+    });
+
+    it('promoting to admin forces re-login; admins cannot demote or lock themselves', async () => {
+      await http().patch(`/api/admin/users/${carol.id}/role`).set(auth(adminToken)).send({ role: 'ADMIN' }).expect(200);
+      await http().get('/api/auth/me').set(auth(carol.token)).expect(401);
+      const carolAdmin = await relogin();
+      await http().get('/api/admin/stats').set(auth(carolAdmin)).expect(200);
+      await http().patch(`/api/admin/users/${carol.id}/role`).set(auth(carolAdmin)).send({ role: 'CUSTOMER' }).expect(400);
+      await http().post(`/api/admin/users/${carol.id}/lock`).set(auth(carolAdmin)).send({}).expect(400);
+      await http().patch(`/api/admin/users/${carol.id}/role`).set(auth(adminToken)).send({ role: 'CUSTOMER' }).expect(200);
+      carol.token = await relogin();
+    });
+
+    it('category CRUD: duplicate slug -> 409, non-empty category cannot be deleted', async () => {
+      const slug = `e2e-cat-${run}`;
+      const cat = (await http().post('/api/admin/categories').set(auth(adminToken)).send({ name: `E2E Cat ${run}`, slug }).expect(201)).body;
+      await http().post('/api/admin/categories').set(auth(adminToken)).send({ name: `E2E Other ${run}`, slug }).expect(409);
+      await http().patch(`/api/admin/categories/${cat.id}`).set(auth(adminToken)).send({ name: `E2E Cat 2 ${run}`, slug: `${slug}-2` }).expect(200);
+      await http().delete(`/api/admin/categories/${created.categoryId}`).set(auth(adminToken)).expect(409);
+      await http().delete(`/api/admin/categories/${cat.id}`).set(auth(adminToken)).expect(204);
+    });
+
+    it('hidden products disappear from the store and cannot be ordered; never-ordered products can be deleted', async () => {
+      const product = (
+        await http()
+          .post('/api/products')
+          .set(auth(adminToken))
+          .send({ name: `E2E Hidden ${run}`, slug: `e2e-hidden-${run}`, description: 'x', price: '10000', stock: 5, categoryId: created.categoryId })
+          .expect(201)
+      ).body;
+      created.productIds.push(product.id);
+      await http().put('/api/cart/items').set(auth(carol.token)).send({ productId: product.id, quantity: 1 }).expect(200);
+
+      await http().patch(`/api/admin/products/${product.id}/active`).set(auth(adminToken)).send({ isActive: false }).expect(200);
+      await http().get(`/api/products/${product.slug}`).expect(404);
+      const list = await http().get(`/api/products?q=${encodeURIComponent(`E2E Hidden ${run}`)}`).expect(200);
+      expect(list.body.total).toBe(0);
+      const cart = await http().get('/api/cart').set(auth(carol.token)).expect(200);
+      expect(cart.body.items[0].available).toBe(false);
+      await http().post('/api/orders').set(auth(carol.token)).set('Idempotency-Key', randomUUID()).send(shipping).expect(400);
+
+      const adminList = await http().get(`/api/admin/products?status=hidden&q=e2e-hidden-${run}`).set(auth(adminToken)).expect(200);
+      expect(adminList.body.items.map((p: { id: string }) => p.id)).toContain(product.id);
+
+      await http().delete(`/api/admin/products/${product.id}`).set(auth(adminToken)).expect(204);
+      const after = await http().get('/api/cart').set(auth(carol.token)).expect(200);
+      expect(after.body.items).toHaveLength(0);
+    });
+
+    it('products that appear in orders cannot be deleted (409)', async () => {
+      await http().delete(`/api/admin/products/${productId}`).set(auth(adminToken)).expect(409);
+    });
+
+    it('finds orders by short id / customer email / date range and exports CSV', async () => {
+      await prisma.product.update({ where: { id: productId }, data: { stock: 5 } });
+      await http().put('/api/cart/items').set(auth(carol.token)).send({ productId, quantity: 1 }).expect(200);
+      const order = (await http().post('/api/orders').set(auth(carol.token)).set('Idempotency-Key', randomUUID()).send(shipping).expect(201)).body;
+
+      const byId = await http().get(`/api/admin/orders?q=${order.id.slice(0, 8)}`).set(auth(adminToken)).expect(200);
+      expect(byId.body.items.map((o: { id: string }) => o.id)).toContain(order.id);
+      const byEmail = await http().get(`/api/admin/orders?q=${encodeURIComponent(carolEmail())}`).set(auth(adminToken)).expect(200);
+      expect(byEmail.body.summary.count).toBe(1);
+      const old = await http().get('/api/admin/orders?from=2000-01-01&to=2000-01-31').set(auth(adminToken)).expect(200);
+      expect(old.body.total).toBe(0);
+
+      const csv = await http().get(`/api/admin/orders/export?q=${encodeURIComponent(carolEmail())}`).set(auth(adminToken)).expect(200);
+      expect(csv.headers['content-type']).toContain('text/csv');
+      expect(csv.text).toContain(order.id);
+    });
+
+    it('records every admin action in the audit log', async () => {
+      const res = await http().get('/api/admin/audit-logs?limit=100').set(auth(adminToken)).expect(200);
+      const actions = new Set(res.body.items.map((l: { action: string }) => l.action));
+      for (const a of ['user.lock', 'user.unlock', 'user.role', 'category.create', 'category.delete', 'product.hide', 'product.delete']) {
+        expect(actions).toContain(a);
+      }
+    });
   });
 
   it('exposes Prometheus metrics with business counters', async () => {

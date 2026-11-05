@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
+import type { AdminProductSort, ListAdminProductsQuery } from '../admin/admin.dto';
 import { CreateProductDto, ListProductsQuery, ProductSort, UpdateProductDto } from './products.dto';
 
 const productInclude = { category: { select: { id: true, name: true, slug: true } } } satisfies Prisma.ProductInclude;
@@ -32,6 +33,16 @@ const ORDER_BY: Record<ProductSort, Prisma.ProductOrderByWithRelationInput[]> = 
   price_asc: [{ price: 'asc' }, { id: 'asc' }],
   price_desc: [{ price: 'desc' }, { id: 'asc' }],
   name: [{ name: 'asc' }, { id: 'asc' }],
+  best_selling: [{ soldCount: 'desc' }, { id: 'asc' }],
+  top_rated: [{ ratingAvg: 'desc' }, { ratingCount: 'desc' }, { id: 'asc' }],
+};
+
+const ADMIN_ORDER_BY: Record<AdminProductSort, Prisma.ProductOrderByWithRelationInput[]> = {
+  name: [{ name: 'asc' }, { id: 'asc' }],
+  newest: [{ createdAt: 'desc' }, { id: 'asc' }],
+  price_asc: [{ price: 'asc' }, { id: 'asc' }],
+  price_desc: [{ price: 'desc' }, { id: 'asc' }],
+  stock_asc: [{ stock: 'asc' }, { name: 'asc' }],
   best_selling: [{ soldCount: 'desc' }, { id: 'asc' }],
   top_rated: [{ ratingAvg: 'desc' }, { ratingCount: 'desc' }, { id: 'asc' }],
 };
@@ -71,6 +82,7 @@ export class ProductsService {
     if (cached) return cached;
 
     const where: Prisma.ProductWhereInput = {
+      isActive: true,
       ...(query.category ? { category: { slug: query.category } } : {}),
       ...(q ? { name: { contains: q, mode: 'insensitive' } } : {}),
       ...(query.onSale ? { compareAtPrice: { not: null } } : {}),
@@ -108,8 +120,8 @@ export class ProductsService {
         { products: number; on_sale: number; sold: number; reviews: number; rating: string | null; customers: number }[]
       >`
         SELECT
-          (SELECT COUNT(*)::int FROM products) AS products,
-          (SELECT COUNT(*)::int FROM products WHERE compare_at_price IS NOT NULL) AS on_sale,
+          (SELECT COUNT(*)::int FROM products WHERE is_active) AS products,
+          (SELECT COUNT(*)::int FROM products WHERE is_active AND compare_at_price IS NOT NULL) AS on_sale,
           (SELECT COALESCE(SUM(sold_count), 0)::int FROM products) AS sold,
           (SELECT COUNT(*)::int FROM reviews) AS reviews,
           (SELECT ROUND(AVG(rating)::numeric, 2)::text FROM reviews) AS rating,
@@ -130,7 +142,7 @@ export class ProductsService {
     return this.cached(`${CACHE_PREFIX}:best:${limit}`, 300, async () =>
       this.toViews(
         await this.prisma.product.findMany({
-          where: { stock: { gt: 0 } },
+          where: { stock: { gt: 0 }, isActive: true },
           include: productInclude,
           orderBy: [{ soldCount: 'desc' }, { id: 'asc' }],
           take: limit,
@@ -144,7 +156,7 @@ export class ProductsService {
     return this.cached(`${CACHE_PREFIX}:deals:${limit}`, 300, async () => {
       const ids = await this.prisma.$queryRaw<{ id: string }[]>`
         SELECT id FROM products
-        WHERE compare_at_price IS NOT NULL AND stock > 0
+        WHERE compare_at_price IS NOT NULL AND stock > 0 AND is_active
         ORDER BY (compare_at_price - price) / compare_at_price DESC, sold_count DESC
         LIMIT ${limit}`;
       const rows = await this.prisma.product.findMany({ where: { id: { in: ids.map((r) => r.id) } }, include: productInclude });
@@ -159,15 +171,15 @@ export class ProductsService {
     if (cached) return cached;
 
     const row = await this.prisma.product.findUnique({ where: { slug }, include: productInclude });
-    if (!row) throw new NotFoundException('Product not found');
+    if (!row || !row.isActive) throw new NotFoundException('Product not found');
     const [view] = await this.toViews([row]);
     await this.redis.setJson(key, view, 120);
     return view;
   }
 
   async idBySlug(slug: string): Promise<string> {
-    const row = await this.prisma.product.findUnique({ where: { slug }, select: { id: true } });
-    if (!row) throw new NotFoundException('Product not found');
+    const row = await this.prisma.product.findUnique({ where: { slug }, select: { id: true, isActive: true } });
+    if (!row || !row.isActive) throw new NotFoundException('Product not found');
     return row.id;
   }
 
@@ -180,6 +192,66 @@ export class ProductsService {
       take: 20,
     });
     return this.toViews(rows);
+  }
+
+  /** Danh sách cho trang quản trị: gồm cả sản phẩm đang ẩn, lọc theo tồn kho/trạng thái, không cache */
+  async adminList(query: ListAdminProductsQuery): Promise<ProductPage & { counts: { all: number; active: number; hidden: number; out: number; low: number } }> {
+    const where: Prisma.ProductWhereInput = {
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.status === 'active' ? { isActive: true } : query.status === 'hidden' ? { isActive: false } : {}),
+      ...(query.stock === 'out' ? { stock: { lte: 0 } } : query.stock === 'low' ? { stock: { gt: 0, lte: 10 } } : query.stock === 'in' ? { stock: { gt: 0 } } : {}),
+      ...(query.onSale ? { compareAtPrice: { not: null } } : {}),
+      ...(query.q
+        ? { OR: [{ name: { contains: query.q, mode: 'insensitive' } }, { slug: { contains: query.q.toLowerCase() } }] }
+        : {}),
+    };
+    const [rows, total, all, active, out, low] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where,
+        include: productInclude,
+        orderBy: ADMIN_ORDER_BY[query.sort],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.product.count({ where }),
+      this.prisma.product.count(),
+      this.prisma.product.count({ where: { isActive: true } }),
+      this.prisma.product.count({ where: { stock: { lte: 0 } } }),
+      this.prisma.product.count({ where: { stock: { gt: 0, lte: 10 } } }),
+    ]);
+    return {
+      items: await this.toViews(rows),
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+      counts: { all, active, hidden: all - active, out, low },
+    };
+  }
+
+  /** Chi tiết theo id cho form sửa của admin (kể cả sản phẩm đang ẩn) */
+  async adminById(id: string): Promise<ProductView> {
+    const row = await this.prisma.product.findUnique({ where: { id }, include: productInclude });
+    if (!row) throw new NotFoundException('Product not found');
+    return (await this.toViews([row]))[0];
+  }
+
+  async setActive(id: string, isActive: boolean): Promise<ProductView> {
+    const exists = await this.prisma.product.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) throw new NotFoundException('Product not found');
+    const row = await this.prisma.product.update({ where: { id }, data: { isActive }, include: productInclude });
+    await this.invalidateCache();
+    return (await this.toViews([row]))[0];
+  }
+
+  /** Xóa hẳn chỉ khi chưa từng có trong đơn hàng (giữ lịch sử đơn); ngược lại phải ẩn */
+  async remove(id: string): Promise<{ name: string }> {
+    const product = await this.prisma.product.findUnique({ where: { id }, select: { name: true, _count: { select: { orderItems: true } } } });
+    if (!product) throw new NotFoundException('Product not found');
+    if (product._count.orderItems > 0) throw new ConflictException('Product already has orders, hide it instead');
+    await this.prisma.product.delete({ where: { id } });
+    await this.invalidateCache();
+    return { name: product.name };
   }
 
   async create(dto: CreateProductDto): Promise<ProductView> {

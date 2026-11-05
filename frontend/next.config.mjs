@@ -17,6 +17,10 @@ const nextConfig = {
   async rewrites() {
     return [{ source: '/favicon.ico', destination: '/favicon.svg' }];
   },
+  // Danh sách sản phẩm nằm ở trang chủ (lọc/tìm kiếm) → /products chuyển về đúng khu vực đó
+  async redirects() {
+    return [{ source: '/products', destination: '/#products', permanent: false }];
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

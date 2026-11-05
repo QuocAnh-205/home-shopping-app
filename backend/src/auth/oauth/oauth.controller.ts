@@ -96,6 +96,7 @@ export class OAuthController {
 
     try {
       const { user, next } = await this.oauth.complete(provider, code, state, readCookie(req, STATE_COOKIE));
+      if (user.lockedAt) return this.fail(res, 'account_locked');
       const loginCode = await this.oauth.createLoginCode(user.id);
       res.redirect(302, `${this.oauth.appUrl}/auth/callback?code=${loginCode}&next=${encodeURIComponent(next)}`);
     } catch (err) {

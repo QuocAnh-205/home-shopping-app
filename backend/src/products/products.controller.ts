@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -16,6 +17,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { memoryStorage } from 'multer';
+import { AuditService } from '../audit/audit.service';
+import { AuthenticatedRequest } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { StorageService } from '../storage/storage.service';
@@ -25,7 +28,10 @@ import { ProductPage, ProductView, ProductsService, StoreSummary } from './produ
 @ApiTags('products')
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly products: ProductsService) {}
+  constructor(
+    private readonly products: ProductsService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Get()
   list(@Query() query: ListProductsQuery): Promise<ProductPage> {
@@ -59,25 +65,50 @@ export class ProductsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  create(@Body() dto: CreateProductDto): Promise<ProductView> {
-    return this.products.create(dto);
+  async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateProductDto): Promise<ProductView> {
+    const product = await this.products.create(dto);
+    await this.audit.log({
+      actorId: req.user.sub,
+      action: 'product.create',
+      entityType: 'product',
+      entityId: product.id,
+      summary: `Tạo sản phẩm "${product.name}" – giá ${product.price}, tồn kho ${product.stock}`,
+    });
+    return product;
   }
 
   @Patch(':id')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProductDto): Promise<ProductView> {
+  async update(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProductDto): Promise<ProductView> {
     if (Object.keys(dto).length === 0) throw new BadRequestException('Nothing to update');
-    return this.products.update(id, dto);
+    const product = await this.products.update(id, dto);
+    await this.audit.log({
+      actorId: req.user.sub,
+      action: 'product.update',
+      entityType: 'product',
+      entityId: id,
+      summary: `Sửa sản phẩm "${product.name}" (${Object.keys(dto).join(', ')})`,
+      metadata: { changes: dto },
+    });
+    return product;
   }
 
   @Patch(':id/stock')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  updateStock(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStockDto): Promise<ProductView> {
-    return this.products.updateStock(id, dto.stock);
+  async updateStock(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStockDto): Promise<ProductView> {
+    const product = await this.products.updateStock(id, dto.stock);
+    await this.audit.log({
+      actorId: req.user.sub,
+      action: 'product.stock',
+      entityType: 'product',
+      entityId: id,
+      summary: `Cập nhật tồn kho "${product.name}" = ${dto.stock}`,
+    });
+    return product;
   }
 
   @Post(':id/image')
@@ -95,12 +126,18 @@ export class ProductsController {
           : cb(new BadRequestException('Only JPEG, PNG or WEBP images are allowed'), false),
     }),
   )
-  uploadImage(@Param('id', ParseUUIDPipe) id: string, @UploadedFile() file?: Express.Multer.File): Promise<ProductView> {
+  async uploadImage(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ): Promise<ProductView> {
     if (!file) throw new BadRequestException('File is required');
     // Content-Type do client tự khai → xác minh lại bằng magic bytes để chặn file độc đổi đuôi
     if (!StorageService.matchesSignature(file.buffer, file.mimetype)) {
       throw new BadRequestException('File content does not match its declared image type');
     }
-    return this.products.attachImage(id, file.buffer, file.mimetype);
+    const product = await this.products.attachImage(id, file.buffer, file.mimetype);
+    await this.audit.log({ actorId: req.user.sub, action: 'product.image', entityType: 'product', entityId: id, summary: `Đổi ảnh sản phẩm "${product.name}"` });
+    return product;
   }
 }

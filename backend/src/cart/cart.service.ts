@@ -52,9 +52,13 @@ export class CartService {
 
     const products = await this.prisma.product.findMany({
       where: { id: { in: [...raw.keys()] } },
-      select: { id: true, name: true, slug: true, price: true, stock: true, imageKey: true },
+      select: { id: true, name: true, slug: true, price: true, stock: true, imageKey: true, isActive: true },
       orderBy: { name: 'asc' },
     });
+
+    // Sản phẩm đã bị admin xóa hẳn: dọn khỏi giỏ để khách không bị kẹt khi đặt hàng
+    const missing = [...raw.keys()].filter((id) => !products.some((p) => p.id === id));
+    if (missing.length > 0) await this.redis.client.hdel(CartService.key(userId), ...missing);
 
     let total = new Prisma.Decimal(0);
     let totalItems = 0;
@@ -72,7 +76,8 @@ export class CartService {
           unitPrice: p.price.toFixed(2),
           quantity,
           lineTotal: lineTotal.toFixed(2),
-          available: p.stock >= quantity,
+          // Sản phẩm admin đã ẩn: vẫn hiện trong giỏ để khách thấy và tự xóa, nhưng không đặt được
+          available: p.isActive && p.stock >= quantity,
         };
       }),
     );
@@ -81,8 +86,8 @@ export class CartService {
   }
 
   async upsertItem(userId: string, productId: string, quantity: number): Promise<CartView> {
-    const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { stock: true } });
-    if (!product) throw new NotFoundException('Product not found');
+    const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { stock: true, isActive: true } });
+    if (!product || !product.isActive) throw new NotFoundException('Product not found');
     if (product.stock < quantity) throw new BadRequestException(`Only ${product.stock} items left in stock`);
 
     const key = CartService.key(userId);

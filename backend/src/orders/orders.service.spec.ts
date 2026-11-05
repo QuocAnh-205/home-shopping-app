@@ -89,12 +89,13 @@ describe('OrdersService', () => {
       expect(cart.clear).not.toHaveBeenCalled();
     });
 
-    it('rejects when a product in the cart was removed', async () => {
+    it('rejects when a product in the cart was removed or hidden', async () => {
       prisma.order.findUnique.mockResolvedValue(null);
       cart.getRaw.mockResolvedValue(new Map([[productId, 1]]));
       tx.product.findMany.mockResolvedValue([]);
 
-      await expect(service.create(userId, replayUuid, dto)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.create(userId, replayUuid, dto)).rejects.toBeInstanceOf(BadRequestException);
+      expect(tx.product.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ isActive: true }) }));
     });
   });
 
