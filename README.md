@@ -204,10 +204,11 @@ E2E bao phủ: mua đồng thời món cuối (không oversell), idempotency, RB
 | S3 | `homeshop-prod-assets-906457821730` (ảnh upload + backup) |
 | IAM | `homeshop-prod-ec2-role` (EC2 → S3, không access key) · `homeshop-prod-github-deploy` (GitHub OIDC) |
 | Grafana | http://13.214.14.196:3001 (user `admin`, mật khẩu `GRAFANA_ADMIN_PASSWORD` trong `~/.homeshop/prod.env`) |
-| Admin web | email `SEED_ADMIN_EMAIL` / mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env` |
-| Dữ liệu | 200 sản phẩm + ~900 đánh giá mẫu (người viết không đăng nhập được); **không có** tài khoản demo mật khẩu công khai |
+| Admin web | `/admin` (8 tab: Tổng quan, Đơn hàng, Sản phẩm, Danh mục, Người dùng, Đánh giá, Bản tin, Nhật ký) · đăng nhập `quanly@homeshop.vn` / mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env` (bí mật) |
+| Tài khoản khách demo | `khach@`, `lan.nguyen@`, `minh.tran@`, `huong.le@homeshop.local` / `Khach12345` (bật bằng `SEED_DEMO_CUSTOMERS=true`; **không** có admin demo trên production) |
+| Dữ liệu | 200 sản phẩm + ~900 đánh giá mẫu (người viết không đăng nhập được); chỉ 4 tài khoản **khách** demo, không có admin mật khẩu công khai |
 | Container | 6 ứng dụng (nginx, frontend, backend, postgres, redis, certbot) + 9 giám sát |
-| CI/CD | **Tự động hoàn toàn**: push `main` → test → build → quét → deploy (~6 phút). Lần chạy xanh gần nhất: [#42078341186](https://github.com/QuocAnh-205/home-shopping-app/actions/runs/42078341186) (06/11/2026, cả 7 job ✅, sau khi backend chuyển private), production chạy commit `301e265` |
+| CI/CD | **Tự động hoàn toàn**: push `main` → test → build → quét → deploy (~6 phút). Lần chạy xanh gần nhất: [#42095022662](https://github.com/QuocAnh-205/home-shopping-app/actions/runs/42095022662) (06/11/2026, cả 7 job ✅, tự chạy khi push), production chạy commit `a07fa0c` (trang admin v2 + tài khoản khách demo) |
 | Docker Hub | 🔒 `anhquocnguyen2005/home-shopping-backend` (**private**) · `anhquocnguyen2005/home-shopping-frontend` (public) · tag = commit SHA + `latest` · gói Personal miễn phí chỉ có 1 repo private (xem mục 2.6) |
 | Chi phí ước tính | ~25–28 USD/tháng (EC2, EBS, IPv4 công khai, CloudWatch) |
 
@@ -376,7 +377,8 @@ ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 | `af2f79c` | CI: bước kiểm tra secrets trước build/deploy, `scripts/setup-github-secrets.sh`, bỏ lỗi trivy 127 gây nhiễu |
 | `958f141` | IaC: OIDC trust policy chấp nhận sub dạng immutable → **CD tự động chạy thành công lần đầu** (05/11/2026) |
 | `301e265` | Nâng `qs` 6.17.1 (backend) và `postcss` 8.5.32 (frontend) qua `overrides` → frontend 0 lỗ hổng |
-| (admin v2) | **Trang quản trị đầy đủ**: 8 tab (thêm Danh mục, Người dùng, Bản tin, Nhật ký), khóa tài khoản, ẩn/xóa sản phẩm, tìm kiếm & xuất CSV đơn hàng; bảng `admin_audit_logs`; +10 unit test, +8 e2e; `/products` chuyển về trang chủ; tài khoản khách đã tự xóa không còn tính là người dùng hoạt động |
+| `6368107` | **Trang quản trị đầy đủ**: 8 tab (thêm Danh mục, Người dùng, Bản tin, Nhật ký), khóa tài khoản, ẩn/xóa sản phẩm, tìm kiếm & xuất CSV đơn hàng; bảng `admin_audit_logs`; +10 unit test, +8 e2e; `/products` chuyển về trang chủ; tài khoản khách đã tự xóa không còn tính là người dùng hoạt động |
+| `a07fa0c` | `SEED_DEMO_CUSTOMERS`: production có sẵn 4 tài khoản khách demo để giảng viên đăng nhập thử; admin demo không bao giờ lên production |
 | (Docker Hub) | Repo image backend chuyển **private** (06/11/2026), pipeline deploy vẫn xanh |
 
 **Database migrations:** `20261001000000_init` → `20261101000000_search_admin_indexes` → `20261102000000_reviews_oauth_sale` → `20261103000000_account_profile_addresses` (SĐT, giới tính, ngày sinh, bảng `addresses`, 1 địa chỉ mặc định/người dùng) → `20261106000000_admin_management` (`users.locked_at/locked_reason`, `products.is_active`, bảng `admin_audit_logs`; chỉ thêm cột/bảng nên bản cũ vẫn chạy được).

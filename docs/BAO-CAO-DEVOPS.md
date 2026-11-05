@@ -14,7 +14,7 @@
 3. [Nhật ký triển khai: đã làm những gì](#3-nhật-ký-triển-khai-đã-làm-những-gì)
 4. [Giải thích từng thành phần DevOps](#4-giải-thích-từng-thành-phần-devops)
 5. [Kịch bản demo 10 phút](#5-kịch-bản-demo-10-phút)
-6. [Bộ câu hỏi vấn đáp & cách trả lời](#6-bộ-câu-hỏi-vấn-đáp--cách-trả-lời)
+6. [Bộ câu hỏi vấn đáp & cách trả lời (có nhóm câu hỏi về trang quản trị)](#6-bộ-câu-hỏi-vấn-đáp--cách-trả-lời)
 7. [Điểm yếu đã biết & hướng phát triển](#7-điểm-yếu-đã-biết--hướng-phát-triển)
 8. [Checklist trước buổi báo cáo](#8-checklist-trước-buổi-báo-cáo)
 9. [Bảng thuật ngữ](#9-bảng-thuật-ngữ)
@@ -30,6 +30,7 @@
 > - **Bảo mật "shift-left":** Gitleaks quét secret, npm audit, Trivy quét image và IaC, Hadolint, ShellCheck; không lưu AWS access key nào trên GitHub nhờ **OIDC**.
 > - **Container hóa:** Docker multi-stage, chạy non-root, filesystem read-only, image lưu trên **Docker Hub** (repo backend để private), gắn tag theo commit SHA để rollback chính xác.
 > - **Vận hành:** Prometheus + Grafana + Loki + Alertmanager giám sát metrics, logs và cảnh báo; backup database hằng ngày lên S3 có kiểm tra toàn vẹn.
+> - **Trang quản trị 8 khu vực** (đơn hàng, sản phẩm, danh mục, người dùng, đánh giá, bản tin, nhật ký thao tác), có phân quyền, khóa tài khoản và **nhật ký kiểm toán** mọi thao tác của admin.
 >
 > Production đang chạy tại **https://13-214-14-196.sslip.io**, phiên bản đang chạy được trả về ở `/api/health` khớp với commit mới nhất trên GitHub."
 
@@ -53,8 +54,8 @@
 ```
  PLAN/CODE        BUILD            TEST              RELEASE           DEPLOY            OPERATE / MONITOR
  ─────────        ─────            ────              ───────           ──────            ─────────────────
- Git, GitHub      Docker           Jest unit (90)    Docker Hub        GitHub Actions    Prometheus, Grafana
- PR template      multi-stage      Jest e2e (31)     tag = SHA         OIDC → AWS        Loki + Promtail
+ Git, GitHub      Docker           Jest unit (100)   Docker Hub        GitHub Actions    Prometheus, Grafana
+ PR template      multi-stage      Jest e2e (39)     tag = SHA         OIDC → AWS        Loki + Promtail
  Dependabot       Buildx + cache   Postgres/Redis    + latest          SSH + deploy.sh   Alertmanager
  ESLint, tsc                       thật (service)                      rolling update    node/cAdvisor/pg/redis exporter
                                    Gitleaks, audit                     auto-rollback     CloudWatch auto-recover
@@ -110,7 +111,7 @@ Sơ đồ chi tiết (Mermaid, hiển thị đẹp trên GitHub): [ARCHITECTURE.
 1. Khởi tạo monorepo: `backend/` (NestJS), `frontend/` (Next.js), `nginx/`, `terraform/`, `monitoring/`, `scripts/`.
 2. Viết **Dockerfile multi-stage** cho backend và frontend (chạy user 1001, có `HEALTHCHECK`).
 3. Viết `docker-compose.local.yml` để chạy toàn bộ stack trên máy (cổng 8088 do cổng 80 bị dự án khác chiếm) và `docker-compose.prod.yml` cho production (tách mạng `frontend-net`/`backend-net`, `read_only`, `cap_drop`).
-4. Viết test: **90 unit test** (10 test suite) và **31 test e2e** chạy trên Postgres + Redis thật.
+4. Viết test: ban đầu 90 unit test + 31 test e2e; sau khi làm trang quản trị (Giai đoạn 6) là **100 unit test** (11 test suite) và **39 test e2e** chạy trên Postgres + Redis thật.
 
 ### Giai đoạn 2 – Hạ tầng bằng Terraform (01/11/2026)
 1. Viết `terraform/main.tf` khoảng 30 tài nguyên: VPC, subnet, route table, Security Group, EC2, Elastic IP, S3 (+ mã hóa, versioning, lifecycle), IAM role cho EC2, IAM role cho GitHub OIDC, CloudWatch alarm tự phục hồi.
@@ -138,10 +139,22 @@ Kết quả: run **#42001069726** xanh cả 7 job, `/api/health` trả `version:
 2. **Docker Hub private:** chuyển repo `home-shopping-backend` sang **private**. Gói miễn phí chỉ có 1 repo private nên frontend để public: code JS frontend vốn được trình duyệt tải về công khai. Chạy lại pipeline (#42078341186) để chứng minh EC2 vẫn pull được image private nhờ `docker login` bằng token. Gọi API Docker Hub khi chưa đăng nhập trả **404**, tức người ngoài không thấy repo.
 3. **UX:** nút Google/Facebook khi server chưa có Client ID/Secret chỉ hiện một dòng nhắc nhẹ thay cho khung lỗi đỏ (đọc trạng thái từ `GET /api/auth/oauth/providers`).
 
+### Giai đoạn 6 – Trang quản trị đầy đủ & tài khoản demo (06/11/2026)
+1. **Kiểm thử toàn bộ web trước khi làm:** viết script gọi API thật qua Nginx (32 kịch bản: đăng ký, đăng nhập, giỏ hàng, đặt hàng idempotent, đánh giá, sổ địa chỉ, đổi mật khẩu, phân quyền, header bảo mật). Phát hiện và sửa:
+   - `/products` trả 404 → chuyển hướng về khu vực sản phẩm ở trang chủ (`redirects()` trong `next.config.mjs`);
+   - tài khoản khách đã tự xóa vẫn hiện "Hoạt động" và bị tính vào số khách trên Dashboard → tách thành trạng thái "Đã tự xóa";
+   - sản phẩm bị xóa còn nằm trong giỏ Redis làm khách không đặt hàng được → giỏ tự dọn.
+2. **Trang quản trị từ 4 lên 8 tab** (chi tiết ở mục 4.15): người dùng, danh mục, bản tin, nhật ký thao tác là mới; đơn hàng, sản phẩm, đánh giá được viết lại với tìm kiếm, bộ lọc, xuất CSV.
+3. **Database migration expand-only** `20261106000000_admin_management`: chỉ *thêm* `users.locked_at`, `users.locked_reason`, `products.is_active` và bảng `admin_audit_logs` → bản cũ vẫn chạy được trong lúc rolling update. Kiểm tra `prisma migrate diff --exit-code` trước khi commit: *No difference detected*.
+4. **Test:** +10 unit test (quy tắc an toàn khi đổi quyền/khóa, chống CSV injection), +8 e2e trên DB thật, script API admin 22 kịch bản, bấm thử trên trình duyệt (khóa tài khoản, sửa sản phẩm, xem nhật ký).
+5. **Sự cố khi test – rate limit chặn chính script test:** chạy 2 script liên tiếp → Nginx trả **429** vì vượt 10 lần đăng nhập/phút/IP và 15 request/giây cho API. Đây là bằng chứng cơ chế chống brute-force hoạt động; xử lý bằng cách giãn nhịp script, không nới rate limit.
+6. **Sự cố khi demo – "nhập đúng tài khoản admin mà báo sai":** người dùng nhập `admin@homeshop.local` (tài khoản demo chỉ có ở local) trên production. Kiểm tra log deploy thấy seed in `admin quanly@homeshop.vn` → admin production tồn tại, chỉ là dùng nhầm tài khoản. Cách xử lý: thêm cờ `SEED_DEMO_CUSTOMERS=true` để production có sẵn **4 tài khoản khách demo**, còn **admin demo mật khẩu công khai không bao giờ lên production** (commit `a07fa0c`). Cập nhật secret `PROD_ENV_FILE` → push → pipeline tự deploy → đăng nhập thử khách demo thành công.
+
 ### Bằng chứng nên mở khi báo cáo
-- GitHub → tab **Actions**: các run xanh `#42001069726`, `#42075996582` (push tự động), `#42078341186`.
+- GitHub → tab **Actions**: các run xanh `#42001069726`, `#42075996582` (push tự động), `#42078341186`, `#42091887978` (trang admin v2), `#42095022662` (tài khoản khách demo).
 - `curl https://13-214-14-196.sslip.io/api/health` → trường `version` = SHA commit mới nhất.
-- Docker Hub: các tag `301e265`, `958f141`, `latest`; repo backend có nhãn Private.
+- Docker Hub: các tag `a07fa0c`, `0aa412e`, `301e265`, `latest`; repo backend có nhãn Private.
+- Trang `/admin` → tab **Nhật ký**: mọi thao tác quản trị có ghi người thực hiện và thời gian.
 - `git log --oneline`: các commit theo chuẩn Conventional Commits (`feat:`, `fix:`, `ci:`, `docs:`).
 
 ---
@@ -190,7 +203,7 @@ Kích hoạt khi: `push` lên `main` (bỏ qua nếu chỉ sửa `*.md`/`docs/`)
 | Job | Chạy gì | Mục đích |
 |---|---|---|
 | **1a · Security & Code Quality** | Gitleaks (quét secret toàn bộ lịch sử) → `npm ci` → `prisma generate` → typecheck → **unit test + coverage** → ESLint + typecheck frontend → `npm audit --omit=dev --audit-level=critical` → upload coverage → SonarCloud (nếu có token) | Phát hiện lỗi code, lộ secret, thư viện có lỗ hổng nghiêm trọng |
-| **1b · Integration Test** | Service containers **Postgres 16 + Redis 7 thật** → `prisma migrate deploy` (giống production) → **kiểm tra schema drift** → seed chạy 2 lần (kiểm tra idempotent) → **31 test e2e** | Chứng minh code chạy đúng trên DB thật: mua đồng thời, idempotency, RBAC, thu hồi token, khóa tài khoản |
+| **1b · Integration Test** | Service containers **Postgres 16 + Redis 7 thật** → `prisma migrate deploy` (giống production) → **kiểm tra schema drift** → seed chạy 2 lần (kiểm tra idempotent) → **39 test e2e** | Chứng minh code chạy đúng trên DB thật: mua đồng thời, idempotency, RBAC, thu hồi token, khóa tài khoản, các chức năng quản trị (khóa người dùng, ẩn/xóa sản phẩm, nhật ký) |
 | **1c · IaC & Config Scan** | Hadolint, `terraform fmt -check` + `validate`, **Trivy config** (Terraform + Dockerfile), ShellCheck, `promtool check`, `docker compose config` | "Hạ tầng là code thì cũng phải được test" |
 
 - 3 job chạy **song song** để rút ngắn thời gian; job 2 chỉ chạy khi cả 3 đều pass (`needs:`).
@@ -289,6 +302,40 @@ Kích hoạt khi: `push` lên `main` (bỏ qua nếu chỉ sửa `*.md`/`docs/`)
 ### 4.14. Thông báo
 Job 4 luôn chạy (`if: always()`). Nó tổng hợp kết quả từng job thành trạng thái (✅ thành công / ⚠️ đã rollback / ❌ lỗi ở job nào / 🔍 PR passed) và gửi Discord embed + Telegram nếu có webhook, đồng thời ghi tóm tắt lên trang run của GitHub.
 
+### 4.15. Trang quản trị (`/admin`) & phân quyền
+
+| Tab | Chức năng chính | Ghi chú kỹ thuật |
+|---|---|---|
+| Tổng quan | Doanh thu hôm nay/30 ngày so với kỳ trước, biểu đồ, cơ cấu đơn, top bán chạy, sắp hết hàng | 1 câu SQL quét bảng `orders` bằng `FILTER`; ngày theo giờ Việt Nam |
+| Đơn hàng | Tìm theo **mã rút gọn**/email/tên/SĐT/địa chỉ, lọc trạng thái + **khoảng ngày**, tổng giá trị theo bộ lọc, chi tiết, chuyển trạng thái, **xuất CSV** | State machine + optimistic concurrency (2 admin bấm cùng lúc → 1 người nhận 409) |
+| Sản phẩm | Lọc danh mục/tồn kho/giảm giá/đang ẩn, 7 kiểu sắp xếp, thêm/sửa đầy đủ (thông số, đổi ảnh), sửa tồn kho tại chỗ, **ẩn/hiện**, xóa | Đã có trong đơn → **không cho xóa** (409), phải ẩn để giữ lịch sử đơn; sản phẩm ẩn bị lọc khỏi cửa hàng, giỏ hàng và đặt hàng |
+| Danh mục | Thêm/sửa/xóa, thống kê sản phẩm, tồn kho, đã bán | Còn sản phẩm → không cho xóa; trùng slug → 409 |
+| Người dùng | Tìm/lọc, chi tiết (địa chỉ, tổng chi tiêu, đơn, đánh giá), **cấp/hạ quyền**, **khóa/mở khóa** kèm lý do, **đăng xuất mọi thiết bị**, CSV | Xem bên dưới |
+| Đánh giá | Tìm, lọc số sao / đã mua, gỡ vi phạm | Gỡ xong tính lại điểm trung bình trong transaction |
+| Bản tin | Danh sách email đăng ký, tìm, xóa, CSV | |
+| Nhật ký | Ai làm gì, lúc nào, dữ liệu trước/sau | Bảng `admin_audit_logs` + log JSON lên Loki |
+
+**Quy tắc an toàn khi quản lý người dùng** (`backend/src/admin/admin-users.service.ts`):
+- Admin **không tự hạ quyền, không tự khóa** mình; hệ thống luôn còn **ít nhất 1 admin đang hoạt động**, tránh tự khóa cửa hệ thống.
+- Đổi quyền hoặc khóa tài khoản → **thu hồi mọi JWT đã cấp** (ghi mốc thời gian vào Redis, guard từ chối token cấp trước mốc). Lý do: quyền nằm trong JWT, không thu hồi thì token cũ vẫn mang quyền cũ.
+- Khóa được chặn tại **một điểm duy nhất** là hàm cấp token `AuthService.issue()`, nên mọi đường đăng nhập (mật khẩu, Google, Facebook, đăng ký) đều bị chặn; callback OAuth còn trả mã lỗi `account_locked` để giao diện báo rõ.
+- Mở khóa xóa luôn bộ đếm đăng nhập sai để người dùng vào lại được ngay.
+- File CSV xuất ra có BOM UTF-8 (Excel hiển thị đúng tiếng Việt) và **chống CSV injection**: ô bắt đầu bằng `= + - @` được thêm dấu `'` để Excel không chạy như công thức.
+
+**Phân quyền (RBAC) nhiều lớp:**
+- Giao diện: `RequireAuth role="ADMIN"`.
+- API: `JwtAuthGuard` + `RolesGuard` với `@Roles(Role.ADMIN)` trên toàn bộ controller `/api/admin/*`. Khách gọi → 403, không có token → 401.
+- Kiểm chứng bằng e2e và smoke test trên production (gọi API admin không token → 401).
+
+**Tài khoản:**
+
+| Môi trường | Admin | Khách |
+|---|---|---|
+| Local | `admin@homeshop.local` / `Admin12345` | `khach@`, `lan.nguyen@`, `minh.tran@`, `huong.le@homeshop.local` / `Khach12345` |
+| Production | `quanly@homeshop.vn`, mật khẩu bí mật trong `prod.env` → GitHub Secret `PROD_ENV_FILE` | 4 tài khoản khách như trên (`SEED_DEMO_CUSTOMERS=true`) |
+
+Admin demo **không** có trên production vì mật khẩu `Admin12345` nằm công khai trong code trên GitHub.
+
 ---
 
 ## 5. Kịch bản demo 10 phút
@@ -304,6 +351,7 @@ Job 4 luôn chạy (`if: always()`). Nó tổng hợp kết quả từng job th�
 | 7–8 | Docker Hub: tag mới vừa xuất hiện; repo backend có nhãn Private | "Image gắn tag theo SHA để rollback chính xác" |
 | 8–9 | Refresh website thấy thay đổi; `/api/health` hiện SHA mới | "Không có downtime trong lúc deploy" |
 | 9–10 | Grafana: dashboard CPU/RAM/request; hoặc mở log Loki lọc `service="backend"` | "Giám sát và cảnh báo khi có sự cố" |
+| +2 (nếu còn thời gian) | `/admin` → tab **Người dùng**: khóa `huong.le@homeshop.local` → mở tab ẩn danh đăng nhập tài khoản đó → bị chặn → mở khóa → tab **Nhật ký** hiện đủ 2 thao tác | "Phân quyền nhiều lớp, khóa là thu hồi mọi phiên, mọi thao tác admin đều được kiểm toán" |
 
 **Demo nâng cao (nếu thầy yêu cầu):**
 - **Rollback:**
@@ -591,7 +639,7 @@ Quét image (lỗ hổng OS + thư viện + secret) và quét cấu hình (Terra
 Vẫn được báo trong log và Dependabot mở PR. Ví dụ: em đã chủ động vá `postcss` (high) và `qs` (moderate) bằng `overrides`, test lại rồi deploy. Còn 5 lỗ hổng moderate ở `@nestjs/core`/`file-type` cần nâng major nên để làm riêng có kiểm thử kỹ.
 
 **I4. `overrides` trong package.json là gì? Rủi ro?**
-Ép phiên bản dependency gián tiếp (ví dụ `express` ghim `qs ~6.14`). Rủi ro: thư viện cha có thể không tương thích bản mới, nên em chạy unit test (90), build và smoke test API trước khi push.
+Ép phiên bản dependency gián tiếp (ví dụ `express` ghim `qs ~6.14`). Rủi ro: thư viện cha có thể không tương thích bản mới, nên em chạy unit test (lúc đó 90), build và smoke test API trước khi push.
 
 **I5. `.trivyignore` có phải "giấu lỗi" không?**
 Không: mỗi ngoại lệ ghi rõ lý do và biện pháp bù, nằm trong Git nên phải qua review, minh bạch.
@@ -602,7 +650,7 @@ Gitleaks quét **lịch sử Git** (cả commit cũ); Trivy secret quét **nội
 ### J. Testing trong pipeline
 
 **J1 ⭐. Em có những loại test nào?**
-90 unit test (Jest, mock DB) cho logic thuần; 31 e2e test trên Postgres 16 + Redis 7 thật trong CI; kiểm tra schema drift; seed idempotent; lint + typecheck.
+100 unit test (Jest, mock DB) cho logic thuần; 39 e2e test trên Postgres 16 + Redis 7 thật trong CI (trong đó 8 test cho trang quản trị); kiểm tra schema drift; seed idempotent; lint + typecheck.
 
 **J2. Vì sao cần e2e trên DB thật khi đã có unit test?**
 Unit test mock DB không phát hiện được lỗi transaction, khóa dòng, ràng buộc. Test quan trọng: 2 người mua cùng lúc món cuối cùng → đúng 1 người thành công (201), người kia 409, tồn kho = 0.
@@ -685,7 +733,39 @@ Tách DB sang RDS Multi-AZ, Redis sang ElastiCache, chạy app trên ECS/EKS sau
 **M10. Điểm nào em tâm đắc nhất?**
 Gợi ý chọn 1 trong 3: (1) rolling update + auto-rollback trên 1 máy; (2) không có AWS key nào trên GitHub nhờ OIDC, port 22 mở theo phút; (3) test e2e mua đồng thời chạy trên DB thật trong CI.
 
-### N. Câu hỏi nhanh (trả lời 1 câu)
+### N. Trang quản trị & phân quyền
+
+**N1 ⭐. Phân quyền admin và khách được kiểm tra ở đâu? Giấu nút trên giao diện là đủ chưa?**
+Chưa đủ: giao diện chỉ là lớp tiện dụng. Chốt chặn thật ở API: `JwtAuthGuard` xác thực token, `RolesGuard` + `@Roles(Role.ADMIN)` kiểm tra quyền cho toàn bộ `/api/admin/*`. Khách gọi thẳng API vẫn nhận 403; có e2e test kiểm chứng.
+
+**N2 ⭐. Đổi quyền hoặc khóa tài khoản thì token đang dùng xử lý thế nào? JWT là stateless mà?**
+Ghi mốc `auth:pwd_changed:{userId}` vào Redis; guard từ chối mọi token có `iat` trước mốc đó → người dùng bị đăng xuất ngay trên mọi thiết bị. Khóa thì không cấp được token mới nữa vì `AuthService.issue()` kiểm tra `locked_at`.
+
+**N3. Vì sao không cho admin tự khóa / tự hạ quyền mình?**
+Tránh mất quyền quản trị (lockout). Hệ thống luôn giữ ≥ 1 admin đang hoạt động; có unit test cho quy tắc này.
+
+**N4 ⭐. Nhật ký thao tác (audit log) để làm gì? Lưu ở đâu?**
+Truy vết "ai làm gì, lúc nào" khi có tranh chấp hoặc sự cố (ví dụ đơn bị hủy, giá bị sửa). Lưu 2 nơi: bảng `admin_audit_logs` (tra cứu trong trang Admin) và log JSON lên Loki. Ghi nhật ký lỗi **không** làm hỏng thao tác chính.
+
+**N5. Vì sao sản phẩm đã bán không xóa được mà phải "ẩn"?**
+Đơn hàng cũ tham chiếu sản phẩm (khóa ngoại); xóa sẽ mất lịch sử bán hàng và số liệu doanh thu. "Ẩn" (`is_active = false`) gỡ khỏi cửa hàng, giỏ hàng và đặt hàng nhưng giữ dữ liệu.
+
+**N6 ⭐. Thêm cột vào database khi web đang chạy có làm gián đoạn không?**
+Không: migration theo kiểu **expand-only** (chỉ thêm cột có giá trị mặc định và thêm bảng), chạy trước khi đổi code. Bản cũ không biết cột mới nhưng vẫn chạy bình thường trong lúc rolling update; CI kiểm tra schema drift trước khi deploy.
+
+**N7. Xuất CSV có rủi ro bảo mật gì?**
+**CSV injection**: ô bắt đầu bằng `=`, `+`, `-`, `@` có thể bị Excel chạy như công thức. Em thêm dấu `'` phía trước, có unit test; file có BOM UTF-8 để hiển thị đúng tiếng Việt. API xuất file cũng yêu cầu quyền admin.
+
+**N8 ⭐. Vì sao trên production không có tài khoản `admin@homeshop.local`?**
+Mật khẩu của nó nằm công khai trong code trên GitHub. Production chỉ tạo sẵn tài khoản **khách** demo (`SEED_DEMO_CUSTOMERS=true`); admin production dùng mật khẩu bí mật nạp qua GitHub Secret `PROD_ENV_FILE`. Đây là nguyên tắc "không có credential mặc định" trên môi trường thật.
+
+**N9. Khách tự xóa tài khoản thì đơn hàng của họ ra sao? Admin có thấy không?**
+Thông tin cá nhân bị ẩn danh hóa, đơn hàng giữ lại để đối soát. Trang Người dùng tách riêng các tài khoản này thành trạng thái "Đã tự xóa", không tính vào số khách và không cho khóa hay đổi quyền.
+
+**N10. Tìm đơn theo mã rút gọn `#6BCDD3FB` làm thế nào khi cột id là UUID?**
+Prisma không hỗ trợ tìm theo tiền tố trên kiểu UUID, nên em dùng SQL tham số hóa `id::text LIKE $1 || '%'` (giới hạn 100 kết quả) rồi lọc tiếp bằng Prisma. Có test cho cả dạng `#mã` và `mã`.
+
+### O. Câu hỏi nhanh (trả lời 1 câu)
 
 | Câu hỏi | Trả lời |
 |---|---|
@@ -728,6 +808,8 @@ Gợi ý chọn 1 trong 3: (1) rolling update + auto-rollback trên 1 máy; (2) 
 | Chưa có tracing | Khó truy vết độ trễ giữa các tầng | OpenTelemetry + Tempo/Jaeger |
 | RPO 24 giờ | Có thể mất tối đa 1 ngày dữ liệu | WAL archiving / RDS PITR |
 | Đăng nhập Google/Facebook, gửi email thật chưa bật trên production | Tính năng chờ cấu hình | Tạo OAuth client, cấu hình SES |
+| Admin chỉ có 1 vai trò (toàn quyền), chưa có 2FA | Lộ mật khẩu admin là lộ toàn bộ quyền quản trị | Thêm vai trò chi tiết (nhân viên kho, CSKH), 2FA TOTP cho admin |
+| Nhật ký thao tác chưa có hạn lưu trữ | Bảng `admin_audit_logs` tăng dần | Cron xóa hoặc chuyển bản ghi > 1 năm sang S3 |
 
 ---
 
@@ -736,7 +818,8 @@ Gợi ý chọn 1 trong 3: (1) rolling update + auto-rollback trên 1 máy; (2) 
 **Một ngày trước:**
 - [ ] `curl https://13-214-14-196.sslip.io/api/health` trả `ok`, version = commit mới nhất.
 - [ ] Tab Actions: run gần nhất xanh cả 7 job.
-- [ ] Đăng nhập được admin production (tài khoản trong `~/.homeshop/prod.env`), không thử sai nhiều lần vì có khóa tài khoản.
+- [ ] Đăng nhập được admin production `quanly@homeshop.vn` (mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env`; **không** dùng `admin@homeshop.local`, tài khoản đó chỉ có ở local). Không thử sai nhiều lần vì có khóa tài khoản và rate limit.
+- [ ] Đăng nhập thử 1 tài khoản khách demo (`khach@homeshop.local` / `Khach12345`); nếu đã demo khóa tài khoản thì nhớ mở khóa lại.
 - [ ] Grafana mở được từ IP hiện tại. Đổi mạng (Wi-Fi trường) thì IP thay đổi, phải thêm IP vào `ssh_allowed_cidrs`/`grafana_allowed_cidrs` và `terraform apply` trước.
 - [ ] Chuẩn bị sẵn một thay đổi nhỏ để demo push.
 - [ ] Quay video demo dự phòng.
