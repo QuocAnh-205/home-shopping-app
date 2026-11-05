@@ -133,7 +133,7 @@ export function Footer() {
         </div>
 
         <div className="footer-bottom">
-          <span>© {new Date().getFullYear()} Home Shopping App bản quyền của Nguyễn Quốc Anh.</span>
+          <span>© {new Date().getFullYear()} Home Shopping App bản quyền của Nguyễn Quốc Anh & Tâm.</span>
           <nav className="footer-legal" aria-label="Chính sách">
             <Link href="/privacy">Chính sách bảo mật</Link>
             <Link href="/terms">Điều khoản sử dụng</Link>
