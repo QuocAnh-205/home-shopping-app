@@ -267,6 +267,19 @@ jobs:
             echo "image=${FRONTEND_IMAGE}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Kiểm tra cấu hình Docker Hub
+        env:
+          DH_USER: ${{ vars.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          missing=""
+          [ -n "$DH_USER" ] || missing="$missing variable:DOCKERHUB_USERNAME"
+          [ -n "$DH_TOKEN" ] || missing="$missing secret:DOCKERHUB_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error::Thiếu cấu hình GitHub Actions:$missing → chạy scripts/setup-github-secrets.sh (xem README mục 2.4)"
+            exit 1
+          fi
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -277,6 +290,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build image (load vào runner để scan trước khi push)
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.service }}
@@ -305,7 +319,8 @@ jobs:
           scanners: vuln,secret
 
       - name: Trivy - xuất báo cáo SARIF (HIGH + CRITICAL) cho tab Security
-        if: always()
+        # Chỉ chạy khi đã build được image (nếu login/build lỗi thì trivy chưa được cài → lỗi 127 gây nhiễu)
+        if: always() && steps.build.outcome == 'success'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.meta.outputs.image }}:${{ github.sha }}
@@ -317,7 +332,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Upload SARIF
-        if: always()
+        if: always() && steps.build.outcome == 'success'
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -362,6 +377,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Kiểm tra secrets deploy
+        env:
+          C_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          C_SG: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          C_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          C_ENV: ${{ secrets.PROD_ENV_FILE }}
+          C_HOST: ${{ vars.EC2_HOST }}
+          C_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          missing=""
+          [ -n "$C_ROLE" ] || missing="$missing secret:AWS_DEPLOY_ROLE_ARN"
+          [ -n "$C_SG" ] || missing="$missing secret:AWS_SECURITY_GROUP_ID"
+          [ -n "$C_KEY" ] || missing="$missing secret:EC2_SSH_PRIVATE_KEY"
+          [ -n "$C_ENV" ] || missing="$missing secret:PROD_ENV_FILE"
+          [ -n "$C_HOST" ] || missing="$missing variable:EC2_HOST"
+          [ -n "$C_REGION" ] || missing="$missing variable:AWS_REGION"
+          if [ -n "$missing" ]; then
+            echo "::error::Thiếu cấu hình GitHub Actions:$missing → chạy scripts/setup-github-secrets.sh (xem README mục 2.4)"
+            exit 1
+          fi
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
