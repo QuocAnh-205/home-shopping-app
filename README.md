@@ -125,7 +125,7 @@ Kiểm tra: `/api/health` · Swagger: `/api/docs` · `/api/products/summary` · 
 
 **Cách hoạt động:** bấm nút → chuyển sang trang của Google/Facebook → **Google luôn hiện màn hình "Chọn tài khoản"** (`prompt=select_account`) với mọi tài khoản Google đã đăng nhập trên trình duyệt, kèm "Sử dụng một tài khoản khác"; Facebook hiện "Tiếp tục dưới tên …" hoặc form đăng nhập Facebook → quay về web. Lần đầu sẽ **tự tạo tài khoản** (đăng ký); email trùng tài khoản có sẵn (đã xác minh) thì **liên kết** thay vì tạo trùng.
 
-> Nếu bấm nút mà bị đưa về trang đăng nhập với thông báo *"Máy chủ chưa được kết nối với Google/Facebook"* → server **chưa có Client ID/Secret** (lỗi `not_configured`). Google/Facebook chỉ cho phép ứng dụng đã đăng ký → chủ dự án phải tạo 1 lần theo các bước dưới. Không phải lỗi code.
+> Nếu bấm nút mà chỉ hiện dòng nhắc *"Đăng nhập bằng Google/Facebook sẽ sớm được hỗ trợ…"* (không chuyển trang) → server **chưa có Client ID/Secret** (lỗi `not_configured`). Google/Facebook chỉ cho phép ứng dụng đã đăng ký → chủ dự án phải tạo 1 lần theo các bước dưới. Không phải lỗi code.
 
 **URL cần khai báo** (thay domain nếu khác):
 
@@ -259,6 +259,14 @@ Tạo từ [.env.example](.env.example) (khuyến nghị lưu ở `~/.homeshop/p
 | Secret | `DISCORD_WEBHOOK_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Thông báo | tùy chọn |
 
 > Thêm `-R QuocAnh-205/home-shopping-app` vào các lệnh `gh` nếu chạy ngoài thư mục repo.
+
+**Nạp 5 mục "cần làm" bằng 1 lệnh** (Git Bash, tại thư mục repo):
+
+```bash
+DOCKERHUB_USERNAME=<user> DOCKERHUB_TOKEN=<token> bash scripts/setup-github-secrets.sh
+```
+
+Thiếu mục nào thì pipeline dừng ngay ở bước *"Kiểm tra cấu hình Docker Hub"* / *"Kiểm tra secrets deploy"* kèm tên mục còn thiếu.
 
 ### 2.5. Deploy
 

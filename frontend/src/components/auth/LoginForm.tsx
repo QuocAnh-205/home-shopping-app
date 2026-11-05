@@ -95,7 +95,7 @@ export function LoginForm() {
           </Link>
         </div>
         {error && (
-          <p className="alert" role="alert">
+          <p className={`alert${error === OAUTH_ERROR_VI.not_configured ? ' alert-info' : ''}`} role="alert">
             <FontAwesomeIcon icon={faTriangleExclamation} /> {error}
           </p>
         )}

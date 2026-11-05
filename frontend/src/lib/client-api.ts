@@ -174,7 +174,7 @@ const MESSAGE_VI: [RegExp, (m: RegExpMatchArray) => string][] = [
 
 /** Mã lỗi OAuth (từ ?oauth_error=) → thông điệp tiếng Việt */
 export const OAUTH_ERROR_VI: Record<string, string> = {
-  not_configured: 'Máy chủ chưa được kết nối với Google/Facebook (thiếu Client ID & Secret). Bạn vẫn có thể đăng nhập bằng email; quản trị viên xem hướng dẫn bật trong README.',
+  not_configured: 'Đăng nhập bằng Google/Facebook sẽ sớm được hỗ trợ. Hiện bạn vui lòng dùng email và mật khẩu.',
   access_denied: 'Bạn đã hủy đăng nhập.',
   invalid_state: 'Phiên đăng nhập đã hết hạn, vui lòng thử lại.',
   email_required: 'Tài khoản mạng xã hội chưa chia sẻ email. Vui lòng cấp quyền email hoặc đăng ký bằng email.',

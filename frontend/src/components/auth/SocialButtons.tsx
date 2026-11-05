@@ -1,3 +1,7 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
 /** Logo "G" 4 màu chính thức của Google (theo Google Sign-In branding guidelines) */
 export function GoogleLogo() {
   return (
@@ -28,22 +32,53 @@ const PROVIDERS = [
   { id: 'facebook', label: 'Facebook', Logo: FacebookLogo },
 ] as const;
 
+type ProviderId = (typeof PROVIDERS)[number]['id'];
+
 /**
- * Nút đăng nhập/đăng ký bằng Google, Facebook – luôn bấm được.
+ * Nút đăng nhập/đăng ký bằng Google, Facebook – luôn hiển thị và bấm được.
  * Điều hướng toàn trang tới backend (OAuth Authorization Code): không dùng popup/SDK của bên thứ 3
  * → không cần nới lỏng CSP, token không đi qua JavaScript của nhà cung cấp.
- * Google luôn hiện màn hình chọn tài khoản (prompt=select_account); tài khoản mới được tạo tự động
- * ở lần đăng nhập đầu tiên (đăng ký = đăng nhập lần đầu).
+ * Nếu server chưa cấu hình Client ID/Secret cho nhà cung cấp (GET /api/auth/oauth/providers),
+ * bấm nút chỉ hiện một dòng nhắc nhẹ thay vì đưa người dùng qua trang lỗi.
  */
 export function SocialButtons({ mode, next }: { mode: 'login' | 'register'; next: string }) {
   const verb = mode === 'login' ? 'Đăng nhập' : 'Đăng ký';
+  const [enabled, setEnabled] = useState<Partial<Record<ProviderId, boolean>>>({});
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/auth/oauth/providers', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => alive && data && setEnabled(data))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <div className="social">
       {PROVIDERS.map(({ id, label, Logo }) => (
-        <a key={id} className={`btn-social btn-${id}`} href={`/api/auth/oauth/${id}?next=${encodeURIComponent(next)}`}>
+        <a
+          key={id}
+          className={`btn-social btn-${id}`}
+          href={`/api/auth/oauth/${id}?next=${encodeURIComponent(next)}`}
+          onClick={(e) => {
+            if (enabled[id] === false) {
+              e.preventDefault();
+              setNotice(`${verb} bằng ${label} sẽ sớm được hỗ trợ. Hiện bạn vui lòng dùng email và mật khẩu.`);
+            }
+          }}
+        >
           <Logo /> {verb} bằng {label}
         </a>
       ))}
+      {notice && (
+        <small className="social-note" role="status">
+          {notice}
+        </small>
+      )}
     </div>
   );
 }
