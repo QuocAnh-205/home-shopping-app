@@ -24,7 +24,7 @@
 | Lớp | Biện pháp | Ở đâu |
 |---|---|---|
 | Source code | Gitleaks quét toàn bộ lịch sử commit, chặn pipeline; `.gitignore` chặn `.env`, `*.tfvars` | `.gitleaks.toml`, Job 1 |
-| CI/CD | Không có AWS access key: GitHub **OIDC** assume role chỉ có quyền thêm/xóa rule SG của đúng 1 SG; trust policy giới hạn `repo:<owner>/<repo>:ref:refs/heads/main` | `terraform/main.tf` (github_deploy) |
+| CI/CD | Không có AWS access key: GitHub **OIDC** assume role chỉ có quyền thêm/xóa rule SG của đúng 1 SG; trust policy giới hạn `repo:<owner>/<repo>:ref:refs/heads/main` / `:environment:production` (và dạng immutable `repo:owner@<id>/repo@<id>:...`) | `terraform/main.tf` (github_deploy) |
 | Truyền secret | `.env` đẩy qua **stdin** SSH với `umask 077`, không xuất hiện trong process list/log; commit message truyền qua `env:` để chống **script injection** | `production-cicd.yml` |
 | Runtime AWS | EC2 dùng **Instance Profile**, credentials tạm thời tự xoay vòng qua **IMDSv2** (`http_tokens=required` chống SSRF đánh cắp credentials) | `aws_instance.app.metadata_options` |
 | IAM | Least privilege: chỉ `products/*` được xóa; `backups/*` chỉ Put/Get → **ransomware trên EC2 không xóa được backup**; bucket bật versioning | `ec2_s3` policy |
@@ -130,7 +130,7 @@ Hướng mở rộng: thêm rule vào chain `DOCKER-USER` hoặc đưa Grafana r
 - **Vì sao tag commit SHA mà vẫn có `latest`?** SHA bất biến → rollback/traceability chính xác; `latest` chỉ để tiện tham chiếu, deploy luôn dùng SHA.
 - **Trivy `ignore-unfixed`?** Chỉ chặn lỗ hổng CRITICAL **đã có bản vá** (có hành động được); lỗ hổng chưa có bản vá vẫn được báo trong SARIF ở tab Security.
 - **Vì sao Redis `volatile-lru` + AOF?** Chỉ evict key có TTL (cache, cart 7 ngày), AOF `everysec` để restart không mất giỏ hàng (mất tối đa 1 giây dữ liệu).
-- **Vì sao swap 4GB, `vm.swappiness=10`?** t3.medium chỉ 4GB; swap là lưới an toàn chống OOM-kill khi đỉnh tải/pull image, swappiness thấp để kernel chỉ dùng swap khi thật cần.
+- **Vì sao swap 4GB, `vm.swappiness=10`?** Production chạy t3.small chỉ 2GB RAM (+ 9 container giám sát); swap là lưới an toàn chống OOM-kill khi đỉnh tải/pull image, swappiness thấp để kernel chỉ dùng swap khi thật cần.
 - **Không bật OCSP stapling?** Let's Encrypt đã ngừng dịch vụ OCSP (2025), cert mới không còn OCSP URL; bật sẽ chỉ sinh warning.
 - **Vì sao Trivy có `.trivyignore`?** Mỗi ngoại lệ ghi rõ lý do và kiểm soát bù (egress chỉ còn TCP 80/443; S3 dùng SSE-S3 thay vì KMS CMK vì chi phí). Ngoại lệ nằm trong Git nên phải qua review PR, không ai tắt cảnh báo âm thầm được.
 - **Tìm kiếm `ILIKE '%từ%'` có chậm không?** Có index **GIN pg_trgm** trên `products.name` (migration `20261101…`), Postgres dùng được index cho LIKE có `%` ở đầu.

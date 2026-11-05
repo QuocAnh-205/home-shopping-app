@@ -18,6 +18,7 @@ Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn pro
 
 📐 Sơ đồ kiến trúc, luồng CI/CD (Mermaid) và cây thư mục: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 🎓 Câu hỏi bảo vệ & cách trả lời: [docs/DEFENSE-QA.md](docs/DEFENSE-QA.md)
+📘 **Báo cáo DevOps toàn tập** (giải thích mọi thành phần, nhật ký triển khai, kịch bản demo, 100+ câu hỏi vấn đáp): [docs/BAO-CAO-DEVOPS.md](docs/BAO-CAO-DEVOPS.md)
 
 **Mục lục:** [Tính năng](#tính-năng) · [Dữ liệu lưu ở đâu](#dữ-liệu-được-lưu-ở-đâu) · [1. Chạy local](#1-chạy-demo-local-1-lệnh) · [2. Production trên AWS](#2-triển-khai-production-lên-aws) · [3. Vận hành](#3-vận-hành) · [4. Nhật ký cập nhật](#4-nhật-ký-cập-nhật) · [5. Hủy hạ tầng](#5-hủy-hạ-tầng-tránh-phát-sinh-chi-phí-sau-khi-chấm)
 
@@ -203,8 +204,8 @@ E2E bao phủ: mua đồng thời món cuối (không oversell), idempotency, RB
 | Admin web | email `SEED_ADMIN_EMAIL` / mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env` |
 | Dữ liệu | 200 sản phẩm + ~900 đánh giá mẫu (người viết không đăng nhập được); **không có** tài khoản demo mật khẩu công khai |
 | Container | 6 ứng dụng (nginx, frontend, backend, postgres, redis, certbot) + 9 giám sát |
-| CI/CD | **Tự động hoàn toàn**: push `main` → test → build → quét → deploy. Lần chạy xanh gần nhất: [#42001069726](https://github.com/QuocAnh-205/home-shopping-app/actions/runs/42001069726) (05/11/2026, cả 7 job ✅), production chạy commit `958f141` |
-| Docker Hub | `anhquocnguyen2005/home-shopping-backend`, `anhquocnguyen2005/home-shopping-frontend` (tag = commit SHA + `latest`) |
+| CI/CD | **Tự động hoàn toàn**: push `main` → test → build → quét → deploy (~6 phút). Lần chạy xanh gần nhất: [#42078341186](https://github.com/QuocAnh-205/home-shopping-app/actions/runs/42078341186) (06/11/2026, cả 7 job ✅, sau khi backend chuyển private), production chạy commit `301e265` |
+| Docker Hub | 🔒 `anhquocnguyen2005/home-shopping-backend` (**private**) · `anhquocnguyen2005/home-shopping-frontend` (public) · tag = commit SHA + `latest` · gói Personal miễn phí chỉ có 1 repo private (xem mục 2.6) |
 | Chi phí ước tính | ~25–28 USD/tháng (EC2, EBS, IPv4 công khai, CloudWatch) |
 
 Máy `luxe-server` (dự án khác) trong cùng tài khoản **không bị ảnh hưởng**: Home Shopping chạy trong VPC riêng.
@@ -293,6 +294,20 @@ docker save homeshop/home-shopping-backend:$T homeshop/home-shopping-frontend:$T
 ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 ```
 
+### 2.6. Docker Hub (registry image)
+
+**Vai trò:** kho trung gian giữa CI và server: `GitHub Actions --build+push--> Docker Hub --pull--> EC2`. EC2 (2 GB RAM) không phải tự build; chỉ chạy đúng image đã qua test + Trivy; rollback = pull lại tag SHA cũ trong vài giây.
+
+| Repo | Visibility | Lý do |
+|---|---|---|
+| `home-shopping-backend` | 🔒 **Private** (từ 06/11/2026) | Chứa logic nghiệp vụ, API, xác thực, Prisma schema → không cho người ngoài tải về |
+| `home-shopping-frontend` | Public | Gói Personal chỉ có **1 repo private**; JS frontend vốn được trình duyệt tải công khai nên để public không lộ thêm gì. Muốn private cả 2 → Docker Pro |
+
+- Image **không chứa secret** (mật khẩu DB, JWT… nằm ở `.env` trên EC2, nạp qua secret `PROD_ENV_FILE`); Gitleaks + Trivy `scanners: secret` kiểm tra mỗi lần build.
+- Repo private vẫn deploy được vì job Deploy chạy `docker login --password-stdin` trên EC2 bằng `DOCKERHUB_TOKEN` trước khi `deploy.sh` pull (đã kiểm chứng ở run #42078341186).
+- Kiểm tra từ bên ngoài: `curl -s -o /dev/null -w '%{http_code}' https://hub.docker.com/v2/repositories/anhquocnguyen2005/home-shopping-backend/` → `404` (người ngoài không thấy).
+- Đổi token: tạo token mới (Read & Write) trên Docker Hub → `gh secret set DOCKERHUB_TOKEN` → chạy lại pipeline → xóa token cũ.
+
 ---
 
 ## 3. Vận hành
@@ -357,12 +372,14 @@ ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 | `3a3b932` | Google/Facebook chưa cấu hình: nút chỉ hiện dòng nhắc nhẹ, bỏ khung lỗi đỏ |
 | `af2f79c` | CI: bước kiểm tra secrets trước build/deploy, `scripts/setup-github-secrets.sh`, bỏ lỗi trivy 127 gây nhiễu |
 | `958f141` | IaC: OIDC trust policy chấp nhận sub dạng immutable → **CD tự động chạy thành công lần đầu** (05/11/2026) |
+| `301e265` | Nâng `qs` 6.17.1 (backend) và `postcss` 8.5.32 (frontend) qua `overrides` → frontend 0 lỗ hổng |
+| (Docker Hub) | Repo image backend chuyển **private** (06/11/2026), pipeline deploy vẫn xanh |
 
 **Database migrations:** `20261001000000_init` → `20261101000000_search_admin_indexes` → `20261102000000_reviews_oauth_sale` → `20261103000000_account_profile_addresses` (SĐT, giới tính, ngày sinh, bảng `addresses`, 1 địa chỉ mặc định/người dùng).
 
 **API mới gần đây:** `DELETE /api/account` · `PATCH /api/account/profile` · `POST /api/account/avatar` · `GET/POST /api/account/addresses` · `PUT/DELETE /api/account/addresses/:id` · `POST /api/account/addresses/:id/default` · `GET /api/products?minPrice=&maxPrice=` · `GET /api/products/summary` · `GET /api/media/avatars/:userId/:file`.
 
-**Việc còn lại (tùy chọn):** đổi token Docker Hub định kỳ; bật *Required reviewers* cho environment `production`; nâng `qs`/`postcss` (npm audit báo mức không critical); cấu hình `SMTP_URL` (Amazon SES) để gửi email thật; Google/Facebook OAuth cho production; Discord/Telegram để nhận cảnh báo; dùng tên miền riêng; chuyển Terraform state lên S3 backend.
+**Việc còn lại (tùy chọn):** đổi token Docker Hub định kỳ; bật *Required reviewers* cho environment `production`; nâng `@nestjs/core` lên 12 và `file-type` (5 lỗ hổng moderate còn lại); cấu hình `SMTP_URL` (Amazon SES) để gửi email thật; Google/Facebook OAuth cho production; Discord/Telegram để nhận cảnh báo; dùng tên miền riêng; chuyển Terraform state lên S3 backend.
 
 ---
 
