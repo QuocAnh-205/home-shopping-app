@@ -260,10 +260,7 @@ jobs:
           docker compose -f docker-compose.local.yml config -q
           docker compose -f docker-compose.prod.yml --env-file .env.ci config -q
           docker compose -f monitoring/docker-compose.monitoring.yml --env-file .env.ci config -q
-          printf 'IMAGE_TAG=ci
-STAGING_URL=https://staging.ci
-STAGING_JWT_SECRET=x
-' > .env.staging.ci
+          { echo IMAGE_TAG=ci; echo STAGING_URL=https://staging.ci; echo STAGING_JWT_SECRET=x; } > .env.staging.ci
           docker compose -f docker-compose.staging.yml --env-file .env.ci --env-file .env.staging.ci config -q
 
   # ----------------------------------------------------------
