@@ -133,6 +133,7 @@ export interface OrderItem {
   /** Snapshot lúc đặt */
   productName: string;
   productSlug: string;
+  imageKey: string | null;
   product: { name: string; slug: string };
 }
 
@@ -151,6 +152,8 @@ export interface Order {
   paymentStatus: OrderPaymentStatus;
   paidAt: string | null;
   paymentExpiresAt: string | null;
+  /** Khách đã báo chuyển khoản (VietQR) */
+  transferClaimedAt: string | null;
   cancelReason: string | null;
   cancelledBy: ActorType | null;
   confirmedAt: string | null;
@@ -337,9 +340,9 @@ export const ORDER_FLOW: OrderStatus[] = ['PENDING', 'PROCESSING', 'SHIPPING', '
 
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   COD: 'Thanh toán khi nhận hàng',
-  VNPAY: 'VNPay (ATM / thẻ quốc tế / QR)',
+  VNPAY: 'VNPay-QR',
   MOMO: 'Ví MoMo',
-  VIETQR: 'Chuyển khoản ngân hàng (VietQR)',
+  VIETQR: 'Chuyển khoản ngân hàng',
 };
 
 export const PAYMENT_STATUS_LABEL: Record<OrderPaymentStatus, string> = {
@@ -474,10 +477,12 @@ export interface PaymentInfo {
   amount: number;
   status: PaymentStatus;
   payUrl: string | null;
-  qr: { bankBin: string; accountNo: string; accountName: string; amount: number; content: string; imageUrl: string } | null;
+  qr: { bankBin: string; bankName: string; accountNo: string; accountName: string; amount: number; content: string; imageUrl: string } | null;
   expiresAt: string;
   paidAt: string | null;
   failureReason: string | null;
   createdAt: string;
   sandbox: boolean;
+  /** Chuyển khoản quét mã VietQR (chờ cửa hàng đối soát) */
+  transfer: boolean;
 }

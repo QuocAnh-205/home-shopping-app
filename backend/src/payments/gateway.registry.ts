@@ -11,16 +11,19 @@ import { VnpayGateway } from './gateways/vnpay.gateway';
 type OnlineMethod = Exclude<PaymentMethod, 'COD'>;
 
 /**
- * Chọn cổng cho từng phương thức từ biến môi trường (khóa bí mật KHÔNG nằm trong repo):
- * - Có khóa thật → cổng thật (sandbox hay production tùy URL cấu hình)
- * - Không có khóa + PAYMENT_MOCK_ENABLED=true → cổng giả lập để demo
- * - Không có gì → phương thức hiện "chưa hỗ trợ" ở trang thanh toán
+ * Chọn cổng cho từng phương thức từ biến môi trường (khóa/tài khoản KHÔNG nằm trong repo). VNPay / MoMo, theo thứ tự:
+ * 1. Có khóa merchant thật → cổng thật (sandbox hay production tùy URL cấu hình)
+ * 2. Chưa có merchant nhưng có tài khoản nhận VietQR → khách quét mã VietQR của cửa hàng bằng app MoMo / app ngân hàng
+ *    (tiền vào thẳng tài khoản cửa hàng, cửa hàng đối soát rồi xác nhận)
+ * 3. PAYMENT_MOCK_ENABLED=true → cổng giả lập để demo
+ * 4. Không có gì → phương thức hiện "chưa hỗ trợ" ở trang thanh toán
  */
 @Injectable()
 export class PaymentGatewayRegistry {
   private readonly logger = new Logger(PaymentGatewayRegistry.name);
   private readonly real: Record<OnlineMethod, PaymentGateway>;
   private readonly mocks: Partial<Record<OnlineMethod, MockGateway>> = {};
+  private readonly qr: Partial<Record<OnlineMethod, VietQrGateway>> = {};
   readonly mockEnabled: boolean;
   readonly appUrl: string;
   readonly apiBaseUrl: string;
@@ -32,6 +35,7 @@ export class PaymentGatewayRegistry {
     this.apiBaseUrl = (get('PAYMENT_IPN_BASE_URL') || this.appUrl).replace(/\/+$/, '');
     this.mockEnabled = (get('PAYMENT_MOCK_ENABLED') || (get('NODE_ENV') === 'production' ? 'false' : 'true')) === 'true';
 
+    const qrCfg = { bankBin: get('VIETQR_BANK_BIN'), accountNo: get('VIETQR_ACCOUNT_NO'), accountName: get('VIETQR_ACCOUNT_NAME') };
     this.real = {
       VNPAY: new VnpayGateway({
         tmnCode: get('VNPAY_TMN_CODE'),
@@ -45,13 +49,18 @@ export class PaymentGatewayRegistry {
         secretKey: get('MOMO_SECRET_KEY'),
         endpoint: (get('MOMO_ENDPOINT') || 'https://test-payment.momo.vn').replace(/\/+$/, ''),
       }),
-      VIETQR: new VietQrGateway({ bankBin: get('VIETQR_BANK_BIN'), accountNo: get('VIETQR_ACCOUNT_NO'), accountName: get('VIETQR_ACCOUNT_NAME') }),
+      VIETQR: new VietQrGateway(qrCfg),
     };
+    if (this.real.VIETQR.configured) {
+      for (const m of [PaymentMethod.VNPAY, PaymentMethod.MOMO] as const) {
+        if (!this.real[m].configured) this.qr[m] = new VietQrGateway(qrCfg, m);
+      }
+    }
     if (this.mockEnabled) {
       // Khóa ký link giả lập suy ra từ JWT_SECRET (không cần thêm biến môi trường, không lộ JWT_SECRET)
       const secret = createHmac('sha256', get('JWT_SECRET')).update('payment-mock-v1').digest('hex');
       for (const m of [PaymentMethod.VNPAY, PaymentMethod.MOMO] as const) {
-        if (!this.real[m].configured) this.mocks[m] = new MockGateway(m, secret, this.appUrl);
+        if (!this.real[m].configured && !this.qr[m]) this.mocks[m] = new MockGateway(m, secret, this.appUrl);
       }
     }
     this.logger.log({
@@ -63,12 +72,12 @@ export class PaymentGatewayRegistry {
   }
 
   private mode(m: OnlineMethod): string {
-    return this.real[m].configured ? 'live' : this.mocks[m] ? 'mock' : 'off';
+    return this.real[m].configured ? 'live' : this.qr[m] ? 'vietqr' : this.mocks[m] ? 'mock' : 'off';
   }
 
   /** Cổng dùng để TẠO giao dịch mới cho phương thức */
   get(method: OnlineMethod): PaymentGateway {
-    return this.real[method].configured ? this.real[method] : (this.mocks[method] ?? this.real[method]);
+    return this.real[method].configured ? this.real[method] : (this.qr[method] ?? this.mocks[method] ?? this.real[method]);
   }
 
   /** Cổng giả lập (chỉ khi đang bật) – dùng cho endpoint /payments/mock/notify */
@@ -79,8 +88,10 @@ export class PaymentGatewayRegistry {
   /** Cổng đã tạo 1 giao dịch cụ thể (giao dịch tạo bằng giả lập thì hoàn tiền cũng bằng giả lập) */
   forPayment(payment: { method: PaymentMethod; rawCreate: unknown }): PaymentGateway | undefined {
     if (payment.method === PaymentMethod.COD) return undefined;
-    const isMock = Boolean((payment.rawCreate as { mock?: boolean } | null)?.mock);
-    return isMock ? this.mocks[payment.method] : this.real[payment.method];
+    const raw = payment.rawCreate as { mock?: boolean; transfer?: boolean } | null;
+    if (raw?.mock) return this.mocks[payment.method];
+    if (raw?.transfer) return this.qr[payment.method] ?? this.real.VIETQR;
+    return this.real[payment.method];
   }
 
   returnUrl(orderId: string): string {

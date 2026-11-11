@@ -322,6 +322,8 @@ model Order {
   paidAt          DateTime?          @map("paid_at")
   /// Đơn online chưa trả tiền: quá hạn này job nền tự hủy, hoàn tồn kho và voucher
   paymentExpiresAt DateTime?         @map("payment_expires_at")
+  /// Khách bấm "Tôi đã chuyển khoản" (VietQR): đơn được giữ thêm TRANSFER_CONFIRM_HOURS chờ cửa hàng đối soát
+  transferClaimedAt DateTime?        @map("transfer_claimed_at")
   cancelReason    String?            @map("cancel_reason") @db.VarChar(255)
   cancelledBy     ActorType?         @map("cancelled_by")
   confirmedAt     DateTime?          @map("confirmed_at")

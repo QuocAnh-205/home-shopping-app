@@ -171,6 +171,11 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
                       <td className="num price">{formatPrice(o.totalAmount)}</td>
                       <td>
                         <StatusBadge status={o.status} />
+                        {o.status === 'AWAITING_PAYMENT' && o.transferClaimedAt && (
+                          <div className="badge badge-ok" title="Khách báo đã chuyển khoản – đối soát sao kê rồi bấm Xác nhận đã nhận tiền">
+                            Khách báo đã CK
+                          </div>
+                        )}
                       </td>
                       <td className="actions">
                         {NEXT_STATUSES[o.status].map((next) => (

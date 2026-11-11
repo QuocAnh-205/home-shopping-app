@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ActorType, OrderPaymentStatus, OrderStatus, Payment, PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
 import { CheckoutService, PaymentMethodOption } from '../checkout/checkout.service';
 import { AppError, ErrorCode } from '../common/errors';
@@ -26,6 +27,8 @@ export interface PaymentView {
   createdAt: Date;
   /** Đang dùng cổng giả lập (sandbox nội bộ) */
   sandbox: boolean;
+  /** Chuyển khoản qua mã VietQR (MoMo / VNPay-QR / app ngân hàng): chờ cửa hàng đối soát */
+  transfer: boolean;
 }
 
 type ProcessResult =
@@ -43,6 +46,13 @@ const ACK: Record<ProcessResult['kind'], AckKind> = {
 
 const LABEL: Record<PaymentMethod, string> = { COD: 'COD', VNPAY: 'VNPay', MOMO: 'MoMo', VIETQR: 'chuyển khoản VietQR' };
 
+/** Nhãn khi VNPay / MoMo chạy ở chế độ quét mã VietQR của cửa hàng */
+const TRANSFER_LABEL: Record<'VNPAY' | 'MOMO' | 'VIETQR', string> = {
+  VIETQR: 'Chuyển khoản ngân hàng (mọi ngân hàng, quét mã VietQR)',
+  MOMO: 'Ví MoMo (quét mã QR bằng app MoMo)',
+  VNPAY: 'VNPay-QR (quét bằng app ngân hàng)',
+};
+
 @Injectable()
 export class PaymentsService implements OnModuleInit {
   private readonly logger = new Logger(PaymentsService.name);
@@ -54,7 +64,13 @@ export class PaymentsService implements OnModuleInit {
     private readonly checkout: CheckoutService,
     private readonly refunds: RefundsService,
     private readonly metrics: MetricsService,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.transferHoldHours = Number(config.get<string>('TRANSFER_CONFIRM_HOURS') ?? 24);
+  }
+
+  /** Giờ giữ hàng sau khi khách báo đã chuyển khoản (chờ cửa hàng đối soát) */
+  readonly transferHoldHours: number;
 
   onModuleInit(): void {
     this.checkout.setPaymentMethodsProvider(() => this.methods());
@@ -82,7 +98,7 @@ export class PaymentsService implements OnModuleInit {
       const gw = this.registry.get(m);
       return {
         method: m,
-        label: `${CheckoutService.paymentLabel(m)}${gw.mock ? ' – sandbox' : ''}`,
+        label: gw.transfer ? TRANSFER_LABEL[m] : `${CheckoutService.paymentLabel(m)}${gw.mock ? ' – sandbox' : ''}`,
         available: gw.configured,
         ...(gw.configured ? {} : { reason: 'Cửa hàng chưa kích hoạt phương thức này' }),
       };
@@ -103,6 +119,7 @@ export class PaymentsService implements OnModuleInit {
       failureReason: p.failureReason,
       createdAt: p.createdAt,
       sandbox: Boolean((p.rawCreate as { mock?: boolean } | null)?.mock),
+      transfer: Boolean((p.rawCreate as { transfer?: boolean } | null)?.transfer),
     };
   }
 
@@ -214,6 +231,52 @@ export class PaymentsService implements OnModuleInit {
     }
     const kind = await this.apply(method, notif, 'IPN', true);
     return gw.ack(kind);
+  }
+
+  /**
+   * Khách báo "Tôi đã chuyển khoản" (VietQR / MoMo / VNPay-QR quét mã của cửa hàng): không đổi trạng thái tiền
+   * (chỉ cửa hàng xác nhận sau khi thấy tiền về), nhưng gia hạn giữ hàng TRANSFER_CONFIRM_HOURS để đơn không bị
+   * job tự hủy khi cửa hàng chưa kịp đối soát. Gọi lại nhiều lần không gia hạn thêm.
+   */
+  async claimTransfer(userId: string, orderId: string): Promise<{ transferClaimedAt: Date; paymentExpiresAt: Date }> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, userId },
+      select: { status: true, paymentExpiresAt: true, transferClaimedAt: true },
+    });
+    if (!order) throw new AppError(ErrorCode.ORDER_NOT_FOUND, 'Không tìm thấy đơn hàng', HttpStatus.NOT_FOUND);
+    if (order.transferClaimedAt && order.paymentExpiresAt) return { transferClaimedAt: order.transferClaimedAt, paymentExpiresAt: order.paymentExpiresAt };
+    if (order.status !== OrderStatus.AWAITING_PAYMENT || !order.paymentExpiresAt || order.paymentExpiresAt <= new Date()) {
+      throw new AppError(ErrorCode.PAYMENT_NOT_ALLOWED, 'Đơn hàng không còn chờ thanh toán', HttpStatus.CONFLICT);
+    }
+    const payment = await this.prisma.payment.findFirst({
+      where: { orderId, status: PaymentStatus.PENDING, NOT: { qrData: { equals: Prisma.DbNull } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!payment) throw new AppError(ErrorCode.PAYMENT_NOT_ALLOWED, 'Đơn hàng chưa có mã chuyển khoản', HttpStatus.CONFLICT);
+
+    const now = new Date();
+    const until = new Date(now.getTime() + this.transferHoldHours * 3600_000);
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.order.updateMany({
+        where: { id: orderId, status: OrderStatus.AWAITING_PAYMENT, transferClaimedAt: null },
+        data: { transferClaimedAt: now, paymentExpiresAt: until },
+      });
+      if (updated.count !== 1) throw new AppError(ErrorCode.ORDER_CONCURRENT_UPDATE, 'Đơn hàng vừa được cập nhật, vui lòng tải lại', HttpStatus.CONFLICT);
+      await tx.payment.update({ where: { id: payment.id }, data: { expiresAt: until } });
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          fromStatus: OrderStatus.AWAITING_PAYMENT,
+          toStatus: OrderStatus.AWAITING_PAYMENT,
+          actorType: ActorType.CUSTOMER,
+          actorId: userId,
+          note: `Khách báo đã chuyển khoản (nội dung ${payment.txnRef}), chờ cửa hàng xác nhận`,
+        },
+      });
+    });
+    await this.event(payment.id, payment.method, 'CLAIM', true, 'claimed', { txnRef: payment.txnRef, amount: payment.amount });
+    this.logger.log({ event: 'payment.transfer_claimed', orderId, paymentId: payment.id, method: payment.method, amount: payment.amount, holdUntil: until });
+    return { transferClaimedAt: now, paymentExpiresAt: until };
   }
 
   /** Admin xác nhận đã nhận tiền (chuyển khoản VietQR đối soát theo sao kê) – đi qua cùng luồng với IPN */

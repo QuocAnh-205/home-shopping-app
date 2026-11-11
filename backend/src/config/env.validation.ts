@@ -43,7 +43,7 @@ export function validateEnv(config: Env): Env {
     if (set.length > 0 && set.length < group.length) errors.push(`${group.join(', ')} must be set together`);
   }
   if (config.VIETQR_BANK_BIN && !/^\d{6}$/.test(config.VIETQR_BANK_BIN)) errors.push('VIETQR_BANK_BIN must be a 6-digit Napas BIN (e.g. 970436)');
-  for (const key of ['PAYMENT_HOLD_MINUTES', 'ORDER_AUTO_COMPLETE_DAYS', 'RETURN_WINDOW_DAYS', 'SHIPPING_FREE_THRESHOLD', 'SHOP_PROVINCE_CODE']) {
+  for (const key of ['PAYMENT_HOLD_MINUTES', 'TRANSFER_CONFIRM_HOURS', 'ORDER_AUTO_COMPLETE_DAYS', 'RETURN_WINDOW_DAYS', 'SHIPPING_FREE_THRESHOLD', 'SHOP_PROVINCE_CODE']) {
     if (config[key] !== undefined && config[key] !== '' && !/^\d+$/.test(config[key]!)) errors.push(`${key} must be a non-negative integer`);
   }
   if (config.PAYMENT_MOCK_ENABLED && !['true', 'false'].includes(config.PAYMENT_MOCK_ENABLED)) errors.push('PAYMENT_MOCK_ENABLED must be true or false');

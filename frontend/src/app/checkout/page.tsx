@@ -19,6 +19,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LineItems } from '@/components/LineItems';
 import { RequireAuth } from '@/components/RequireAuth';
 import { ApiError, apiFetch, notifyCartChanged } from '@/lib/client-api';
 import {
@@ -250,32 +251,19 @@ function Checkout() {
           </div>
         </section>
 
-        <section className="panel table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Sản phẩm</th>
-                <th>Đơn giá</th>
-                <th>SL</th>
-                <th>Thành tiền</th>
-              </tr>
-            </thead>
-            <tbody>
-              {preview.items.map((i) => (
-                <tr key={i.productId}>
-                  <td>
-                    <Link className="link" href={`/products/${i.slug}`}>
-                      {i.name}
-                    </Link>
-                    {!i.available && <div className="badge badge-danger">{i.stock > 0 ? `Chỉ còn ${i.stock}` : 'Hết hàng'}</div>}
-                  </td>
-                  <td>{formatPrice(i.unitPrice)}</td>
-                  <td>×{i.quantity}</td>
-                  <td>{formatPrice(i.lineTotal)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <section className="panel">
+          <h2 className="panel-title">Sản phẩm ({preview.items.reduce((n, i) => n + i.quantity, 0)})</h2>
+          <LineItems
+            items={preview.items.map((i) => ({
+              key: i.productId,
+              name: i.name,
+              slug: i.slug,
+              imageUrl: i.imageUrl,
+              unitPrice: i.unitPrice,
+              quantity: i.quantity,
+              note: i.available ? null : i.stock > 0 ? `Chỉ còn ${i.stock}` : 'Hết hàng',
+            }))}
+          />
           <label className="field" style={{ marginTop: 12 }}>
             Lời nhắn cho shop
             <input className="input" maxLength={255} placeholder="Ví dụ: giao giờ hành chính" value={choice.note ?? ''} onChange={(e) => setChoice({ ...choice, note: e.target.value })} />

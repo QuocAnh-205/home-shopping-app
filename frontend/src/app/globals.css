@@ -1707,13 +1707,15 @@ select.input {
 
 .summary {
   display: grid;
-  grid-template-columns: 1fr auto;
+  /* nhãn rộng theo nội dung (không bị bóp xuống dòng), giá trị chiếm phần còn lại */
+  grid-template-columns: max-content minmax(0, 1fr);
   row-gap: 10px;
   margin: 0 0 20px;
 }
 
 .summary dt {
   color: var(--muted);
+  min-width: 0;
 }
 
 .summary dd {
@@ -1721,6 +1723,8 @@ select.input {
   padding-left: 16px;
   text-align: right;
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .summary .total {
@@ -5173,15 +5177,141 @@ button.stat-tile:hover {
 
 .vietqr {
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 16px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
-  margin-top: 16px;
+  margin: 12px 0;
 }
 
-@media (max-width: 640px) {
+.vietqr-code {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+}
+
+.vietqr-code img {
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  border-radius: var(--r-sm);
+  background: #fff;
+  padding: 6px;
+}
+
+.vietqr-info {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vietqr-steps {
+  margin: 0 0 4px;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+  font-size: 0.92rem;
+}
+
+.copy-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.copy-field > span:first-child {
+  white-space: nowrap;
+}
+
+.copy-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.pay-change {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@media (max-width: 720px) {
   .vietqr {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Danh sách sản phẩm dạng thẻ (trang thanh toán + chi tiết đơn) */
+.line-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.line-items li {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.line-items li:last-child {
+  border-bottom: 0;
+}
+
+.line-items img,
+.line-items-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.line-items-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.line-items-info .link {
+  overflow-wrap: anywhere;
+}
+
+.line-items-total {
+  white-space: nowrap;
+}
+
+.order-totals {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Thanh toán & đơn hàng trên điện thoại */
+@media (max-width: 720px) {
+  .pay-method {
+    align-items: flex-start;
+  }
+
+  .voucher-picker form.row {
+    flex-wrap: nowrap;
+  }
+
+  .voucher-picker form.row .input {
+    min-width: 0;
   }
 }
 

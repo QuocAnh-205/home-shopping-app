@@ -701,6 +701,40 @@ describe('Home Shopping API (e2e)', () => {
       expect(refunds.body.some((r: { orderId: string }) => r.orderId === order.id)).toBe(true);
     });
 
+    it('bank transfer: "I have transferred" keeps the order 24h, survives the expiry job, admin confirms after reconciling', async () => {
+      const order = await place(bobToken, 'VNPAY');
+      // Mã VietQR như khi cửa hàng cấu hình tài khoản nhận (VNPay/MoMo quét mã của cửa hàng)
+      const payment = await prisma.payment.create({
+        data: {
+          orderId: order.id,
+          method: 'VNPAY',
+          amount: order.totalAmount,
+          txnRef: `HSE2E${run.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
+          expiresAt: new Date(order.paymentExpiresAt),
+          qrData: { bankBin: '970422', bankName: 'MB Bank', accountNo: '0000000000', accountName: 'E2E', amount: order.totalAmount, content: 'x', imageUrl: 'x' },
+          rawCreate: { transfer: true },
+        },
+      });
+      await http().post(`/api/orders/${order.id}/payments/claim`).set(auth(aliceToken)).expect(404);
+      const claim = await http().post(`/api/orders/${order.id}/payments/claim`).set(auth(bobToken)).expect(200);
+      const hold = new Date(claim.body.paymentExpiresAt).getTime() - Date.now();
+      expect(hold).toBeGreaterThan(23 * 3600_000);
+      // Bấm lại không gia hạn thêm
+      const again = await http().post(`/api/orders/${order.id}/payments/claim`).set(auth(bobToken)).expect(200);
+      expect(again.body.paymentExpiresAt).toBe(claim.body.paymentExpiresAt);
+
+      // 15 phút giữ hàng gốc đã qua nhưng đơn vẫn được giữ vì khách đã báo chuyển khoản
+      await app.get(PaymentJobsService).runExpire(new Date(Date.now() + 60 * 60_000));
+      const waiting = await http().get(`/api/orders/${order.id}`).set(auth(bobToken)).expect(200);
+      expect(waiting.body).toMatchObject({ status: 'AWAITING_PAYMENT', transferClaimedAt: expect.any(String) });
+      expect(waiting.body.history.at(-1).note).toContain('Khách báo đã chuyển khoản');
+
+      await http().post(`/api/admin/payments/${payment.id}/confirm`).set(auth(adminToken)).send({ note: 'Đã thấy tiền về MB' }).expect(200);
+      const paid = await http().get(`/api/orders/${order.id}`).set(auth(bobToken)).expect(200);
+      expect(paid.body).toMatchObject({ status: 'PENDING', paymentStatus: 'PAID' });
+      await http().post(`/api/orders/${order.id}/payments/claim`).set(auth(bobToken)).expect(409);
+    });
+
     it('admins can confirm a transfer manually (VietQR reconciliation path)', async () => {
       const order = await place(aliceToken, 'VNPAY');
       const payment = await pay(aliceToken, order.id);

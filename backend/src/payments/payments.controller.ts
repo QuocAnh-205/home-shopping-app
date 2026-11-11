@@ -58,6 +58,16 @@ export class PaymentsController {
     return this.payments.start(req.user.sub, id, dto.method, (req as unknown as Request).ip ?? '127.0.0.1');
   }
 
+  /** "Tôi đã chuyển khoản": gia hạn giữ hàng chờ cửa hàng đối soát (không tự xác nhận tiền) */
+  @Post('orders/:id/payments/claim')
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  claim(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.payments.claimTransfer(req.user.sub, id);
+  }
+
   @Get('orders/:id/payments')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)

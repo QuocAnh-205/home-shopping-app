@@ -17,6 +17,7 @@ export interface CreatePaymentInput {
 
 export interface VietQrData {
   bankBin: string;
+  bankName: string;
   accountNo: string;
   accountName: string;
   amount: number;
@@ -72,6 +73,8 @@ export interface PaymentGateway {
   readonly configured: boolean;
   /** Cổng giả lập (sandbox nội bộ) khi chưa có khóa thật */
   readonly mock?: boolean;
+  /** Chuyển khoản qua mã VietQR: không có IPN, cửa hàng đối soát rồi xác nhận */
+  readonly transfer?: boolean;
   /** Có hoàn tiền tự động qua API không (VietQR: không → hoàn tay) */
   readonly supportsRefund: boolean;
   create(input: CreatePaymentInput): Promise<CreatePaymentResult>;

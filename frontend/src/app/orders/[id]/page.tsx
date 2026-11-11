@@ -19,6 +19,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, use, useCallback, useEffect, useState } from 'react';
+import { LineItems } from '@/components/LineItems';
 import { PaymentPanel } from '@/components/PaymentPanel';
 import { RequireAuth } from '@/components/RequireAuth';
 import { ReturnPanel } from '@/components/ReturnPanel';
@@ -158,57 +159,38 @@ function OrderDetail({ id }: { id: string }) {
 
       <div className="cart-layout">
         <div className="stack">
-          <div className="panel table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Sản phẩm</th>
-                  <th>Đơn giá</th>
-                  <th>SL</th>
-                  <th>Thành tiền</th>
-                </tr>
-              </thead>
-              <tbody>
-                {order.items.map((i) => (
-                  <tr key={i.id}>
-                    <td>
-                      <Link className="link" href={`/products/${i.productSlug}`}>
-                        {i.productName}
-                      </Link>
-                    </td>
-                    <td>{formatPrice(i.unitPrice)}</td>
-                    <td>×{i.quantity}</td>
-                    <td>{formatPrice(i.unitPrice * i.quantity)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={3}>Tổng tiền hàng</td>
-                  <td>{formatPrice(order.subtotal || subtotal)}</td>
-                </tr>
-                <tr>
-                  <td colSpan={3}>Phí vận chuyển</td>
-                  <td>{formatPrice(order.shippingFee)}</td>
-                </tr>
-                {order.shippingDiscount > 0 && (
-                  <tr>
-                    <td colSpan={3}>Giảm phí vận chuyển{order.shippingVoucherCode && ` (${order.shippingVoucherCode})`}</td>
-                    <td className="ok">−{formatPrice(order.shippingDiscount)}</td>
-                  </tr>
-                )}
-                {order.discountAmount > 0 && (
-                  <tr>
-                    <td colSpan={3}>Voucher {order.voucherCode}</td>
-                    <td className="ok">−{formatPrice(order.discountAmount)}</td>
-                  </tr>
-                )}
-                <tr>
-                  <td colSpan={3}>Tổng cộng</td>
-                  <td className="price">{formatPrice(order.totalAmount)}</td>
-                </tr>
-              </tfoot>
-            </table>
+          <div className="panel">
+            <LineItems
+              items={order.items.map((i) => ({
+                key: i.id,
+                name: i.productName,
+                slug: i.productSlug,
+                // Ảnh snapshot lúc đặt: ảnh tĩnh /images/... hiển thị trực tiếp
+                imageUrl: i.imageKey?.startsWith('/images/') ? i.imageKey : null,
+                unitPrice: i.unitPrice,
+                quantity: i.quantity,
+              }))}
+            />
+            <dl className="summary order-totals">
+              <dt>Tổng tiền hàng</dt>
+              <dd>{formatPrice(order.subtotal || subtotal)}</dd>
+              <dt>Phí vận chuyển</dt>
+              <dd>{formatPrice(order.shippingFee)}</dd>
+              {order.shippingDiscount > 0 && (
+                <>
+                  <dt>Giảm phí vận chuyển{order.shippingVoucherCode && ` (${order.shippingVoucherCode})`}</dt>
+                  <dd className="ok">−{formatPrice(order.shippingDiscount)}</dd>
+                </>
+              )}
+              {order.discountAmount > 0 && (
+                <>
+                  <dt>Voucher {order.voucherCode}</dt>
+                  <dd className="ok">−{formatPrice(order.discountAmount)}</dd>
+                </>
+              )}
+              <dt className="total">Tổng cộng</dt>
+              <dd className="total price">{formatPrice(order.totalAmount)}</dd>
+            </dl>
           </div>
 
           <ReturnPanel order={order} onChanged={load} />
