@@ -78,6 +78,13 @@ describe('Home Shopping API (e2e)', () => {
     expect(res.body.checks).toEqual({ database: 'up', redis: 'up' });
   });
 
+  it('errors carry a stable code alongside the message', async () => {
+    const res = await http().post('/api/auth/register').send({ email: 'not-an-email', password: 'x', fullName: 'A' }).expect(400);
+    expect(res.body).toMatchObject({ statusCode: 400, code: 'VALIDATION_ERROR' });
+    const missing = await http().get('/api/products/khong-ton-tai-xyz').expect(404);
+    expect(missing.body.code).toBe('NOT_FOUND');
+  });
+
   it('sets security headers and request id', async () => {
     const res = await http().get('/api/health').set('X-Request-Id', `e2e-${run}`);
     expect(res.headers['x-request-id']).toBe(`e2e-${run}`);
@@ -113,7 +120,7 @@ describe('Home Shopping API (e2e)', () => {
       .expect(201);
     productId = res.body.id;
     created.productIds.push(productId);
-    expect(res.body.price).toBe('450000.00');
+    expect(res.body.price).toBe(450000);
     expect(res.body.category.slug).toBe(`e2e-${run}`);
 
     const search = await http().get('/api/products').query({ q: `e2e ${run}` }).expect(200);
@@ -485,7 +492,7 @@ describe('Home Shopping API (e2e)', () => {
     it('lists and searches users with counts; customers are forbidden', async () => {
       const res = await http().get(`/api/admin/users?q=${encodeURIComponent(carolEmail())}`).set(auth(adminToken)).expect(200);
       expect(res.body.total).toBe(1);
-      expect(res.body.items[0]).toMatchObject({ id: carol.id, role: 'CUSTOMER', orderCount: 0, totalSpent: '0.00' });
+      expect(res.body.items[0]).toMatchObject({ id: carol.id, role: 'CUSTOMER', orderCount: 0, totalSpent: 0 });
       expect(res.body.counts.admins).toBeGreaterThanOrEqual(1);
       await http().get('/api/admin/users').set(auth(carol.token)).expect(403);
     });

@@ -13,7 +13,7 @@
  *   (người viết không có mật khẩu, không đăng nhập được). Có thể tạo 1 admin đầu tiên
  *   bằng SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (chỉ tạo nếu chưa tồn tại, không ghi đè mật khẩu).
  */
-const { PrismaClient, Prisma, Role } = require('@prisma/client');
+const { PrismaClient, Role } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { categories, products } = require('./data/catalog');
 const { demoAccounts } = require('./data/demo-accounts');
@@ -62,8 +62,8 @@ function toProductData(p, categoryId) {
     description: story ? `${p.summary}\n\n${story}` : p.summary,
     highlights: p.features,
     specs: p.specs,
-    price: new Prisma.Decimal(p.price),
-    compareAtPrice: p.compare ? new Prisma.Decimal(p.compare) : null,
+    price: p.price,
+    compareAtPrice: p.compare ?? null,
     imageKey: `/images/products/${p.slug}.webp`,
     isHot: Boolean(p.hot),
     categoryId,
@@ -112,7 +112,7 @@ async function seedOrders(customers) {
       lines.set(product.id, { product, quantity: 1 + ((h >>> (k * 7)) % 2) });
     }
     const items = [...lines.values()].map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price }));
-    const total = items.reduce((sum, it) => sum.add(it.unitPrice.mul(it.quantity)), new Prisma.Decimal(0));
+    const total = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
 
     await prisma.order.create({
       data: {

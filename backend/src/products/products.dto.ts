@@ -16,11 +16,11 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { toVnd } from '../common/money';
 
 export const PRODUCT_SORTS = ['newest', 'price_asc', 'price_desc', 'name', 'best_selling', 'top_rated'] as const;
 export type ProductSort = (typeof PRODUCT_SORTS)[number];
 
-const PRICE_RE = /^\d{1,10}(\.\d{1,2})?$/;
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 const toBool = ({ value }: { value: unknown }) => value === true || value === 'true' || value === '1';
 
@@ -91,14 +91,21 @@ export class CreateProductDto {
   @MaxLength(8000)
   description: string;
 
-  @Matches(PRICE_RE, { message: 'price must be a positive decimal with at most 2 fraction digits' })
-  price: string;
+  /** VND, số nguyên (chấp nhận cả chuỗi "199000" / "199000.00" từ form cũ) */
+  @Transform(toVnd)
+  @IsInt({ message: 'price must be an integer amount in VND' })
+  @Min(0)
+  @Max(2_000_000_000)
+  price: number;
 
   /** Giá gốc (gạch ngang) khi khuyến mãi; null để bỏ khuyến mãi. Phải lớn hơn price */
   @IsOptional()
   @ValidateIf((_, v) => v !== null)
-  @Matches(PRICE_RE, { message: 'compareAtPrice must be a positive decimal' })
-  compareAtPrice?: string | null;
+  @Transform(toVnd)
+  @IsInt({ message: 'compareAtPrice must be an integer amount in VND' })
+  @Min(1)
+  @Max(2_000_000_000)
+  compareAtPrice?: number | null;
 
   @IsInt()
   @Min(0)

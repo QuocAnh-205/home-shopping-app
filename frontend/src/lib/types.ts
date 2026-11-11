@@ -18,8 +18,8 @@ export interface Product {
   description: string;
   highlights: string[];
   specs: Record<string, string>;
-  price: string;
-  compareAtPrice: string | null;
+  price: number;
+  compareAtPrice: number | null;
   discountPercent: number;
   stock: number;
   soldCount: number;
@@ -101,30 +101,30 @@ export interface CartLine {
   name: string;
   slug: string;
   imageUrl: string | null;
-  unitPrice: string;
+  unitPrice: number;
   quantity: number;
-  lineTotal: string;
+  lineTotal: number;
   available: boolean;
 }
 
 export interface Cart {
   items: CartLine[];
   totalItems: number;
-  totalAmount: string;
+  totalAmount: number;
 }
 
 export interface OrderItem {
   id: number;
   productId: string;
   quantity: number;
-  unitPrice: string;
+  unitPrice: number;
   product: { name: string; slug: string };
 }
 
 export interface Order {
   id: string;
   status: OrderStatus;
-  totalAmount: string;
+  totalAmount: number;
   shippingAddress: string;
   phone: string;
   createdAt: string;
@@ -194,22 +194,22 @@ export interface AuthResponse {
 
 export interface DailyRevenue {
   day: string;
-  revenue: string;
+  revenue: number;
   orders: number;
 }
 
 export interface DashboardStats {
   kpis: {
-    revenueAll: string;
-    revenueToday: string;
-    revenueYesterday: string;
-    revenue30d: string;
-    revenuePrev30d: string;
+    revenueAll: number;
+    revenueToday: number;
+    revenueYesterday: number;
+    revenue30d: number;
+    revenuePrev30d: number;
     ordersToday: number;
     ordersYesterday: number;
     paidOrders30d: number;
     paidOrdersPrev30d: number;
-    avgOrderValue30d: string;
+    avgOrderValue30d: number;
     unitsSold30d: number;
     newCustomers30d: number;
     newCustomersPrev30d: number;
@@ -221,9 +221,9 @@ export interface DashboardStats {
   ordersByStatus: Record<OrderStatus, number>;
   totalOrders: number;
   revenueDaily: DailyRevenue[];
-  revenueByCategory: { slug: string; name: string; revenue: string; units: number }[];
-  topProducts: { productId: string; name: string; slug: string; imageUrl: string | null; quantity: number; revenue: string }[];
-  recentOrders: { id: string; customer: string; totalAmount: string; status: OrderStatus; createdAt: string; itemCount: number }[];
+  revenueByCategory: { slug: string; name: string; revenue: number; units: number }[];
+  topProducts: { productId: string; name: string; slug: string; imageUrl: string | null; quantity: number; revenue: number }[];
+  recentOrders: { id: string; customer: string; totalAmount: number; status: OrderStatus; createdAt: string; itemCount: number }[];
   reviews: { average: number; count: number; last30d: number; distribution: Record<'1' | '2' | '3' | '4' | '5', number> };
   lowStock: Product[];
   generatedAt: string;

@@ -1,5 +1,4 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
@@ -26,16 +25,16 @@ describe('CartService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('computes totals with decimal precision', async () => {
+  it('computes totals as integer VND', async () => {
     redisClient.hgetall.mockResolvedValue({ [productId]: '3' });
     prisma.product.findMany.mockResolvedValue([
-      { id: productId, name: 'Nồi chiên', slug: 'noi-chien', price: new Prisma.Decimal('1890000.10'), stock: 10, imageKey: '/images/products/noi-chien.webp', isActive: true },
+      { id: productId, name: 'Nồi chiên', slug: 'noi-chien', price: 1890000, stock: 10, imageKey: '/images/products/noi-chien.webp', isActive: true },
     ]);
 
     const cart = await service.get(userId);
 
     expect(cart.totalItems).toBe(3);
-    expect(cart.totalAmount).toBe('5670000.30');
+    expect(cart.totalAmount).toBe(5670000);
     expect(cart.items[0].available).toBe(true);
     expect(cart.items[0].imageUrl).toBe('/images/products/noi-chien.webp');
   });
@@ -45,7 +44,7 @@ describe('CartService', () => {
 
     const cart = await service.get(userId);
 
-    expect(cart).toEqual({ items: [], totalItems: 0, totalAmount: '0.00' });
+    expect(cart).toEqual({ items: [], totalItems: 0, totalAmount: 0 });
     expect(prisma.product.findMany).not.toHaveBeenCalled();
   });
 
@@ -72,7 +71,7 @@ describe('CartService', () => {
     const deletedId = 'c0ffee00-55a1-4b8e-8f3e-0c1f2a3b4c5d';
     redisClient.hgetall.mockResolvedValue({ [productId]: '1', [deletedId]: '2' });
     prisma.product.findMany.mockResolvedValue([
-      { id: productId, name: 'Ấm đun', slug: 'am-dun', price: new Prisma.Decimal('100000'), stock: 10, imageKey: null, isActive: false },
+      { id: productId, name: 'Ấm đun', slug: 'am-dun', price: 100000, stock: 10, imageKey: null, isActive: false },
     ]);
 
     const cart = await service.get(userId);

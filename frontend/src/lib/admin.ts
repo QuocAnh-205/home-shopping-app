@@ -16,7 +16,7 @@ export interface AdminUser {
   providers: string[];
   orderCount: number;
   reviewCount: number;
-  totalSpent: string;
+  totalSpent: number;
 }
 
 export interface UserCounts {
@@ -36,9 +36,9 @@ export interface AdminUserDetail extends AdminUser {
   gender: string | null;
   dateOfBirth: string | null;
   updatedAt: string;
-  stats: { completedOrders: number; cancelledOrders: number; pendingOrders: number; lastOrderAt: string | null; averageOrder: string };
+  stats: { completedOrders: number; cancelledOrders: number; pendingOrders: number; lastOrderAt: string | null; averageOrder: number };
   addresses: { id: string; fullName: string; phone: string; full: string; type: string; isDefault: boolean }[];
-  recentOrders: { id: string; status: AdminOrder['status']; totalAmount: string; createdAt: string; itemCount: number }[];
+  recentOrders: { id: string; status: AdminOrder['status']; totalAmount: number; createdAt: string; itemCount: number }[];
   recentReviews: { id: string; rating: number; comment: string; createdAt: string; product: { name: string; slug: string } }[];
 }
 
@@ -51,7 +51,7 @@ export interface AdminProductPage extends Page<AdminProduct> {
 }
 
 export interface AdminOrderPage extends Page<AdminOrder & { user: AdminOrder['user'] & { phone: string | null } }> {
-  summary: { count: number; amount: string };
+  summary: { count: number; amount: number };
 }
 
 export interface AdminCategory {

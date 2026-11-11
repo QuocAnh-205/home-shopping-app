@@ -83,7 +83,7 @@ export class OrdersService {
           });
           if (products.length !== cart.size) throw new BadRequestException('Some products in your cart are no longer available');
 
-          let total = new Prisma.Decimal(0);
+          let total = 0;
           for (const p of products) {
             const qty = cart.get(p.id)!;
             const updated = await tx.product.updateMany({
@@ -91,7 +91,7 @@ export class OrdersService {
               data: { stock: { decrement: qty }, soldCount: { increment: qty } },
             });
             if (updated.count !== 1) throw new OutOfStockError(p.id);
-            total = total.add(p.price.mul(qty));
+            total += p.price * qty;
           }
 
           return tx.order.create({
@@ -113,7 +113,7 @@ export class OrdersService {
 
       await Promise.all([this.cart.clear(userId), this.products.invalidateCache()]);
       this.metrics.ordersTotal.inc({ result: 'success' });
-      this.logger.log({ event: 'order.created', orderId: order.id, userId, total: order.totalAmount.toFixed(2) });
+      this.logger.log({ event: 'order.created', orderId: order.id, userId, total: order.totalAmount });
       return order;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -184,7 +184,7 @@ export class OrdersService {
     return and.length ? { AND: and } : {};
   }
 
-  async listAll(query: AdminListOrdersQuery): Promise<OrderPage & { summary: { count: number; amount: string } }> {
+  async listAll(query: AdminListOrdersQuery): Promise<OrderPage & { summary: { count: number; amount: number } }> {
     const where = await this.adminWhere(query);
     const [items, total, agg] = await this.prisma.$transaction([
       this.prisma.order.findMany({
@@ -203,7 +203,7 @@ export class OrdersService {
       limit: query.limit,
       total,
       totalPages: Math.max(1, Math.ceil(total / query.limit)),
-      summary: { count: total, amount: (agg._sum.totalAmount ?? new Prisma.Decimal(0)).toFixed(2) },
+      summary: { count: total, amount: agg._sum.totalAmount ?? 0 },
     };
   }
 

@@ -91,7 +91,7 @@ export class AdminController {
         STATUS_VI[o.status] ?? o.status,
         o.items.reduce((n, i) => n + i.quantity, 0),
         o.items.map((i) => `${i.product.name} x${i.quantity}`).join('; '),
-        o.totalAmount.toFixed(2),
+        String(o.totalAmount),
       ]),
     ]);
   }
@@ -111,7 +111,7 @@ export class AdminController {
       entityType: 'order',
       entityId: id,
       summary: `Đơn #${id.slice(0, 8)} (${order.user.email}): ${STATUS_VI[before.status]} → ${STATUS_VI[order.status]}`,
-      metadata: { from: before.status, to: order.status, total: order.totalAmount.toFixed(2) },
+      metadata: { from: before.status, to: order.status, total: order.totalAmount },
     });
     return order;
   }

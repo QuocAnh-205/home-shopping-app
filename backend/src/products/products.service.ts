@@ -9,9 +9,7 @@ import { CreateProductDto, ListProductsQuery, ProductSort, UpdateProductDto } fr
 const productInclude = { category: { select: { id: true, name: true, slug: true } } } satisfies Prisma.ProductInclude;
 type ProductRow = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
 
-export type ProductView = Omit<ProductRow, 'imageKey' | 'price' | 'compareAtPrice' | 'ratingAvg'> & {
-  price: string;
-  compareAtPrice: string | null;
+export type ProductView = Omit<ProductRow, 'imageKey' | 'ratingAvg'> & {
   /** % giảm làm tròn, 0 nếu không khuyến mãi */
   discountPercent: number;
   ratingAvg: number;
@@ -256,12 +254,11 @@ export class ProductsService {
 
   async create(dto: CreateProductDto): Promise<ProductView> {
     ProductsService.assertPricing(dto.price, dto.compareAtPrice);
-    const { price, compareAtPrice, specs, ...rest } = dto;
+    const { compareAtPrice, specs, ...rest } = dto;
     const row = await this.prisma.product.create({
       data: {
         ...rest,
-        price: new Prisma.Decimal(price),
-        compareAtPrice: compareAtPrice ? new Prisma.Decimal(compareAtPrice) : null,
+        compareAtPrice: compareAtPrice ?? null,
         specs: (specs ?? {}) as Prisma.InputJsonValue,
         isHot: dto.isHot ?? false,
       },
@@ -274,18 +271,14 @@ export class ProductsService {
   async update(id: string, dto: UpdateProductDto): Promise<ProductView> {
     const current = await this.prisma.product.findUnique({ where: { id }, select: { price: true, compareAtPrice: true } });
     if (!current) throw new NotFoundException('Product not found');
-    const { price, compareAtPrice, specs, ...rest } = dto;
-    ProductsService.assertPricing(
-      price ?? current.price.toFixed(2),
-      compareAtPrice === undefined ? (current.compareAtPrice?.toFixed(2) ?? null) : compareAtPrice,
-    );
+    const { compareAtPrice, specs, ...rest } = dto;
+    ProductsService.assertPricing(dto.price ?? current.price, compareAtPrice === undefined ? current.compareAtPrice : compareAtPrice);
 
     const row = await this.prisma.product.update({
       where: { id },
       data: {
         ...rest,
-        ...(price !== undefined ? { price: new Prisma.Decimal(price) } : {}),
-        ...(compareAtPrice !== undefined ? { compareAtPrice: compareAtPrice ? new Prisma.Decimal(compareAtPrice) : null } : {}),
+        ...(compareAtPrice !== undefined ? { compareAtPrice: compareAtPrice || null } : {}),
         ...(specs !== undefined ? { specs: specs as Prisma.InputJsonValue } : {}),
       },
       include: productInclude,
@@ -312,15 +305,16 @@ export class ProductsService {
     return this.redis.deleteByPattern(`${CACHE_PREFIX}:*`);
   }
 
-  static assertPricing(price: string, compareAtPrice: string | null | undefined): void {
-    if (compareAtPrice && new Prisma.Decimal(compareAtPrice).lte(new Prisma.Decimal(price))) {
+  static assertPricing(price: number, compareAtPrice: number | null | undefined): void {
+    if (compareAtPrice && compareAtPrice <= price) {
       throw new BadRequestException('compareAtPrice must be greater than price');
     }
   }
 
-  static discountPercent(price: Prisma.Decimal, compareAtPrice: Prisma.Decimal | null): number {
-    if (!compareAtPrice || compareAtPrice.lte(price)) return 0;
-    return compareAtPrice.minus(price).div(compareAtPrice).mul(100).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP).toNumber();
+  /** % giảm làm tròn (số nguyên), 0 nếu không khuyến mãi */
+  static discountPercent(price: number, compareAtPrice: number | null): number {
+    if (!compareAtPrice || compareAtPrice <= price) return 0;
+    return Math.round(((compareAtPrice - price) * 100) / compareAtPrice);
   }
 
   private async cached<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> {
@@ -333,11 +327,9 @@ export class ProductsService {
 
   private toViews(rows: ProductRow[]): Promise<ProductView[]> {
     return Promise.all(
-      rows.map(async ({ imageKey, price, compareAtPrice, ratingAvg, ...rest }) => ({
+      rows.map(async ({ imageKey, ratingAvg, ...rest }) => ({
         ...rest,
-        price: price.toFixed(2),
-        compareAtPrice: compareAtPrice?.toFixed(2) ?? null,
-        discountPercent: ProductsService.discountPercent(price, compareAtPrice),
+        discountPercent: ProductsService.discountPercent(rest.price, rest.compareAtPrice),
         ratingAvg: ratingAvg.toNumber(),
         imageUrl: await this.storage.getSignedImageUrl(imageKey),
       })),

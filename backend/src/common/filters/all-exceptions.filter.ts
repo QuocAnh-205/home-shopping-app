@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
+import { ErrorCode, defaultCode } from '../errors';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -13,11 +14,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'Internal server error';
+    let code: string | undefined;
+    let details: unknown;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const body = exception.getResponse();
-      message = typeof body === 'string' ? body : ((body as { message?: string | string[] }).message ?? exception.message);
+      if (typeof body === 'string') {
+        message = body;
+      } else {
+        const b = body as { message?: string | string[]; code?: string; details?: unknown };
+        message = b.message ?? exception.message;
+        code = b.code;
+        details = b.details;
+      }
+      // ValidationPipe trả mảng thông báo theo từng trường
+      if (!code && status === HttpStatus.BAD_REQUEST && Array.isArray(message)) code = ErrorCode.VALIDATION_ERROR;
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       if (exception.code === 'P2002') {
         status = HttpStatus.CONFLICT;
@@ -47,7 +59,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     res.status(status).json({
       statusCode: status,
+      code: code ?? defaultCode(status),
       message,
+      ...(details !== undefined ? { details } : {}),
       path: req.url,
       requestId: req.id,
       timestamp: new Date().toISOString(),

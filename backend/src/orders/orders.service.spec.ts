@@ -63,13 +63,13 @@ describe('OrdersService', () => {
     it('computes total from database prices and clears the cart', async () => {
       prisma.order.findUnique.mockResolvedValue(null);
       cart.getRaw.mockResolvedValue(new Map([[productId, 2]]));
-      tx.product.findMany.mockResolvedValue([{ id: productId, price: new Prisma.Decimal('1250000.50') }]);
+      tx.product.findMany.mockResolvedValue([{ id: productId, price: 1250000 }]);
       tx.product.updateMany.mockResolvedValue({ count: 1 });
       tx.order.create.mockImplementation(({ data }) => ({ id: orderId, ...data, items: [] }));
 
       const order = await service.create(userId, replayUuid, dto);
 
-      expect(order.totalAmount.toFixed(2)).toBe('2500001.00');
+      expect(order.totalAmount).toBe(2500000);
       expect(tx.product.updateMany).toHaveBeenCalledWith({
         where: { id: productId, stock: { gte: 2 } },
         data: { stock: { decrement: 2 }, soldCount: { increment: 2 } },
@@ -81,7 +81,7 @@ describe('OrdersService', () => {
     it('throws 409 and keeps the cart when stock is insufficient (no oversell)', async () => {
       prisma.order.findUnique.mockResolvedValue(null);
       cart.getRaw.mockResolvedValue(new Map([[productId, 5]]));
-      tx.product.findMany.mockResolvedValue([{ id: productId, price: new Prisma.Decimal('100') }]);
+      tx.product.findMany.mockResolvedValue([{ id: productId, price: 100 }]);
       tx.product.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(service.create(userId, replayUuid, dto)).rejects.toBeInstanceOf(ConflictException);

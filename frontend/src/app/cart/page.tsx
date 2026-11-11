@@ -97,7 +97,7 @@ export default function CartPage() {
       });
       setPlaced(order);
       idempotencyKey.current = crypto.randomUUID();
-      setCart({ items: [], totalItems: 0, totalAmount: '0.00' });
+      setCart({ items: [], totalItems: 0, totalAmount: 0 });
       notifyCartChanged();
     } catch (err) {
       setError((err as Error).message);

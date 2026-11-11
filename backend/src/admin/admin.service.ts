@@ -6,23 +6,23 @@ import { StorageService } from '../storage/storage.service';
 
 export interface DailyRevenue {
   day: string;
-  revenue: string;
+  revenue: number;
   orders: number;
 }
 
 export interface DashboardKpis {
   /** Doanh thu toàn thời gian (đơn đã thanh toán trở đi) */
-  revenueAll: string;
-  revenueToday: string;
-  revenueYesterday: string;
-  revenue30d: string;
-  revenuePrev30d: string;
+  revenueAll: number;
+  revenueToday: number;
+  revenueYesterday: number;
+  revenue30d: number;
+  revenuePrev30d: number;
   ordersToday: number;
   ordersYesterday: number;
   paidOrders30d: number;
   paidOrdersPrev30d: number;
   /** Giá trị trung bình mỗi đơn đã thanh toán trong 30 ngày */
-  avgOrderValue30d: string;
+  avgOrderValue30d: number;
   unitsSold30d: number;
   newCustomers30d: number;
   newCustomersPrev30d: number;
@@ -35,7 +35,7 @@ export interface DashboardKpis {
 export interface CategoryRevenue {
   slug: string;
   name: string;
-  revenue: string;
+  revenue: number;
   units: number;
 }
 
@@ -45,13 +45,13 @@ export interface TopProduct {
   slug: string;
   imageUrl: string | null;
   quantity: number;
-  revenue: string;
+  revenue: number;
 }
 
 export interface RecentOrder {
   id: string;
   customer: string;
-  totalAmount: string;
+  totalAmount: number;
   status: OrderStatus;
   createdAt: Date;
   itemCount: number;
@@ -87,7 +87,8 @@ const TODAY = Prisma.sql`(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`;
 /** Không tính tài khoản khách đã tự xóa (được giữ lại ẩn danh để không mất lịch sử đơn) */
 const ACTIVE_ACCOUNT: Prisma.UserWhereInput = { NOT: { email: { endsWith: '@deleted.invalid' } } };
 
-const dec = (v: Prisma.Decimal | string | number | null | undefined) => new Prisma.Decimal(v ?? 0).toFixed(2);
+/** SUM() của cột integer trả về bigint/numeric dạng chuỗi → số nguyên VND */
+const dec = (v: string | number | bigint | null | undefined): number => Math.round(Number(v ?? 0));
 
 @Injectable()
 export class AdminService {
@@ -121,7 +122,7 @@ export class AdminService {
     const ordersByStatus = Object.fromEntries(Object.values(OrderStatus).map((s) => [s, 0])) as Record<OrderStatus, number>;
     for (const row of byStatus) ordersByStatus[row.status] = row._count._all;
 
-    const revenue30 = new Prisma.Decimal(kpiRow.revenue_30d);
+    const revenue30 = dec(kpiRow.revenue_30d);
     const paid30 = Number(kpiRow.paid_orders_30d);
 
     return {
@@ -135,7 +136,7 @@ export class AdminService {
         ordersYesterday: Number(kpiRow.orders_yesterday),
         paidOrders30d: paid30,
         paidOrdersPrev30d: Number(kpiRow.paid_orders_prev_30d),
-        avgOrderValue30d: paid30 ? revenue30.div(paid30).toFixed(2) : '0.00',
+        avgOrderValue30d: paid30 ? Math.round(revenue30 / paid30) : 0,
         unitsSold30d: Number(kpiRow.units_30d),
         newCustomers30d,
         newCustomersPrev30d,
@@ -269,7 +270,7 @@ export class AdminService {
     return rows.map((o) => ({
       id: o.id,
       customer: o.user.fullName,
-      totalAmount: o.totalAmount.toFixed(2),
+      totalAmount: o.totalAmount,
       status: o.status,
       createdAt: o.createdAt,
       itemCount: o._count.items,

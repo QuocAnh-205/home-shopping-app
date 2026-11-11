@@ -45,16 +45,16 @@ export interface AdminUserSummary {
   providers: string[];
   orderCount: number;
   reviewCount: number;
-  totalSpent: string;
+  totalSpent: number;
 }
 
 export interface AdminUserDetail extends AdminUserSummary {
   gender: string | null;
   dateOfBirth: string | null;
   updatedAt: Date;
-  stats: { completedOrders: number; cancelledOrders: number; pendingOrders: number; lastOrderAt: Date | null; averageOrder: string };
+  stats: { completedOrders: number; cancelledOrders: number; pendingOrders: number; lastOrderAt: Date | null; averageOrder: number };
   addresses: { id: string; fullName: string; phone: string; full: string; type: string; isDefault: boolean }[];
-  recentOrders: { id: string; status: OrderStatus; totalAmount: string; createdAt: Date; itemCount: number }[];
+  recentOrders: { id: string; status: OrderStatus; totalAmount: number; createdAt: Date; itemCount: number }[];
   recentReviews: { id: string; rating: number; comment: string; createdAt: Date; product: { name: string; slug: string } }[];
 }
 
@@ -165,7 +165,7 @@ export class AdminUsersService {
     ]);
     const count = (s: OrderStatus) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
     const paidCount = SPENDING_STATUSES.reduce((n, s) => n + count(s), 0);
-    const totalSpent = spent.get(id) ?? new Prisma.Decimal(0);
+    const totalSpent = spent.get(id) ?? 0;
 
     return {
       ...this.toSummary(user, totalSpent),
@@ -177,7 +177,7 @@ export class AdminUsersService {
         cancelledOrders: count(OrderStatus.CANCELLED),
         pendingOrders: count(OrderStatus.PENDING),
         lastOrderAt: last?.createdAt ?? null,
-        averageOrder: paidCount ? totalSpent.div(paidCount).toFixed(2) : '0.00',
+        averageOrder: paidCount ? Math.round(totalSpent / paidCount) : 0,
       },
       addresses: user.addresses.map((a) => ({
         id: a.id,
@@ -190,7 +190,7 @@ export class AdminUsersService {
       recentOrders: user.orders.map((o) => ({
         id: o.id,
         status: o.status,
-        totalAmount: o.totalAmount.toFixed(2),
+        totalAmount: o.totalAmount,
         createdAt: o.createdAt,
         itemCount: o._count.items,
       })),
@@ -301,17 +301,17 @@ export class AdminUsersService {
     await this.redis.client.set(AuthService.passwordChangedKey(userId), String(Math.floor(Date.now() / 1000) + 1), 'EX', SESSION_REVOKE_TTL_SECONDS);
   }
 
-  private async spentByUser(ids: string[]): Promise<Map<string, Prisma.Decimal>> {
+  private async spentByUser(ids: string[]): Promise<Map<string, number>> {
     if (ids.length === 0) return new Map();
     const rows = await this.prisma.order.groupBy({
       by: ['userId'],
       where: { userId: { in: ids }, status: { in: SPENDING_STATUSES } },
       _sum: { totalAmount: true },
     });
-    return new Map(rows.map((r) => [r.userId, r._sum.totalAmount ?? new Prisma.Decimal(0)]));
+    return new Map(rows.map((r) => [r.userId, r._sum.totalAmount ?? 0]));
   }
 
-  private toSummary(r: UserListRow, spent?: Prisma.Decimal): AdminUserSummary {
+  private toSummary(r: UserListRow, spent?: number): AdminUserSummary {
     return {
       id: r.id,
       email: r.email,
@@ -327,7 +327,7 @@ export class AdminUsersService {
       providers: r.oauthAccounts.map((a) => a.provider),
       orderCount: r._count.orders,
       reviewCount: r._count.reviews,
-      totalSpent: (spent ?? new Prisma.Decimal(0)).toFixed(2),
+      totalSpent: spent ?? 0,
     };
   }
 }

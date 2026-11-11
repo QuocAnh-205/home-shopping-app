@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
@@ -9,16 +8,16 @@ export interface CartLine {
   name: string;
   slug: string;
   imageUrl: string | null;
-  unitPrice: string;
+  unitPrice: number;
   quantity: number;
-  lineTotal: string;
+  lineTotal: number;
   available: boolean;
 }
 
 export interface CartView {
   items: CartLine[];
   totalItems: number;
-  totalAmount: string;
+  totalAmount: number;
 }
 
 const CART_TTL_SECONDS = 7 * 24 * 3600;
@@ -48,7 +47,7 @@ export class CartService {
 
   async get(userId: string): Promise<CartView> {
     const raw = await this.getRaw(userId);
-    if (raw.size === 0) return { items: [], totalItems: 0, totalAmount: '0.00' };
+    if (raw.size === 0) return { items: [], totalItems: 0, totalAmount: 0 };
 
     const products = await this.prisma.product.findMany({
       where: { id: { in: [...raw.keys()] } },
@@ -60,29 +59,29 @@ export class CartService {
     const missing = [...raw.keys()].filter((id) => !products.some((p) => p.id === id));
     if (missing.length > 0) await this.redis.client.hdel(CartService.key(userId), ...missing);
 
-    let total = new Prisma.Decimal(0);
+    let total = 0;
     let totalItems = 0;
     const items: CartLine[] = await Promise.all(
       products.map(async (p) => {
         const quantity = raw.get(p.id) ?? 0;
-        const lineTotal = p.price.mul(quantity);
-        total = total.add(lineTotal);
+        const lineTotal = p.price * quantity;
+        total += lineTotal;
         totalItems += quantity;
         return {
           productId: p.id,
           name: p.name,
           slug: p.slug,
           imageUrl: await this.storage.getSignedImageUrl(p.imageKey),
-          unitPrice: p.price.toFixed(2),
+          unitPrice: p.price,
           quantity,
-          lineTotal: lineTotal.toFixed(2),
+          lineTotal,
           // Sản phẩm admin đã ẩn: vẫn hiện trong giỏ để khách thấy và tự xóa, nhưng không đặt được
           available: p.isActive && p.stock >= quantity,
         };
       }),
     );
 
-    return { items, totalItems, totalAmount: total.toFixed(2) };
+    return { items, totalItems, totalAmount: total };
   }
 
   async upsertItem(userId: string, productId: string, quantity: number): Promise<CartView> {
