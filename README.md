@@ -1,7 +1,7 @@
 # 🏠 Home Shopping App: DevOps Final Project
 
 > **Sinh viên:** Nguyễn Quốc Anh · **Repo:** [QuocAnh-205/home-shopping-app](https://github.com/QuocAnh-205/home-shopping-app)
-> **Bản production đang chạy:** **https://13-214-14-196.sslip.io** (AWS EC2 Singapore, HTTPS Let's Encrypt)
+> **Bản production đang chạy:** **https://13-214-14-196.sslip.io** (AWS EC2 Singapore, HTTPS Let's Encrypt) · **Staging:** https://staging.13-214-14-196.sslip.io
 
 Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn production: **IaC 100% Terraform**, **CI/CD DevSecOps** (Gitleaks · SonarCloud · Trivy · Hadolint · ShellCheck), **zero-downtime deploy + auto-rollback**, **observability đầy đủ** (Prometheus · Grafana · Loki · Alertmanager → Discord/Telegram) và **backup tự động lên S3**.
 
@@ -20,7 +20,159 @@ Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn pro
 🎓 Câu hỏi bảo vệ & cách trả lời: [docs/DEFENSE-QA.md](docs/DEFENSE-QA.md)
 📘 **Báo cáo DevOps toàn tập** (giải thích mọi thành phần, nhật ký triển khai, kịch bản demo, 100+ câu hỏi vấn đáp): [docs/BAO-CAO-DEVOPS.md](docs/BAO-CAO-DEVOPS.md)
 
-**Mục lục:** [Tính năng](#tính-năng) · [Dữ liệu lưu ở đâu](#dữ-liệu-được-lưu-ở-đâu) · [1. Chạy local](#1-chạy-demo-local-1-lệnh) · [2. Production trên AWS](#2-triển-khai-production-lên-aws) · [3. Vận hành](#3-vận-hành) · [4. Nhật ký cập nhật](#4-nhật-ký-cập-nhật) · [5. Hủy hạ tầng](#5-hủy-hạ-tầng-tránh-phát-sinh-chi-phí-sau-khi-chấm)
+**Mục lục:** [0. Quy trình DevOps](#0-quy-trình-devops-đối-chiếu-tiêu-chí-chấm) · [Tính năng](#tính-năng) · [Dữ liệu lưu ở đâu](#dữ-liệu-được-lưu-ở-đâu) · [1. Chạy local](#1-chạy-demo-local-1-lệnh) · [2. Production trên AWS](#2-triển-khai-production-lên-aws) · [3. Vận hành](#3-vận-hành) · [4. Nhật ký cập nhật](#4-nhật-ký-cập-nhật) · [5. Hủy hạ tầng](#5-hủy-hạ-tầng-tránh-phát-sinh-chi-phí-sau-khi-chấm)
+
+---
+
+## 0. Quy trình DevOps (đối chiếu tiêu chí chấm)
+
+**Dự án này có quy trình DevOps tự động hoàn toàn.** Từ lúc sửa code tới lúc web thật đổi theo, không ai phải SSH vào máy chủ hay bấm tay trên AWS Console:
+
+```
+nhánh tính năng ──► Pull Request ──► CI: lint · test · build image · quét bảo mật ──► (xanh mới được) merge vào main
+       ──► CI chạy lại ──► đẩy image lên Docker Hub ──► deploy STAGING + smoke test ──► deploy PRODUCTION (không downtime)
+       ──► health check thất bại thì TỰ ROLLBACK ──► báo kết quả qua Discord/Telegram
+```
+
+### 0.1. Bảng đối chiếu từng tiêu chí
+
+| Tiêu chí | Trạng thái | Làm thế nào / ở đâu |
+|---|---|---|
+| **Git**: nhánh riêng cho từng tính năng, pull request, commit rõ nghĩa, chặn push thẳng vào main | ✅ | Mỗi thay đổi đi qua nhánh `feat/…`, `fix/…`, `docs/…` rồi mở PR (mẫu PR: [`.github/pull_request_template.md`](.github/pull_request_template.md)). Commit theo Conventional Commits (`feat(ui): …`, `fix(admin): …`). **Branch protection** trên `main`: bắt buộc PR, bắt buộc 5 check CI xanh, cấm force-push/xóa nhánh, áp dụng cả với admin |
+| **CI**: mỗi lần push tự chạy lint, test, build Docker image; fail thì không cho merge | ✅ | [`.github/workflows/production-cicd.yml`](.github/workflows/production-cicd.yml), job 1a–2. Với **mọi PR**: ESLint + typecheck + 177 unit test, 66 e2e test trên Postgres/Redis thật, kiểm tra schema drift, diễn tập backup/restore, Hadolint, Terraform validate, ShellCheck, **build 2 Docker image + Trivy**. Đây là các *required status check*: một check đỏ là nút Merge bị khóa |
+| **CD**: merge vào main là tự deploy; có rollback | ✅ | Job **3a** deploy *staging* + smoke test → job **3b** deploy *production*: rolling update 2 bản song song, health check 30 giây, **tự rollback** nếu lỗi ([`scripts/deploy.sh`](scripts/deploy.sh)). **Rollback thủ công 1 nút:** Actions → *Rollback Production* → Run workflow ([`rollback.yml`](.github/workflows/rollback.yml)), để trống ô tag = quay về bản trước |
+| **Docker**: multi-stage, image nhỏ, user không phải root, compose cho cả hệ thống, image lên registry có tag phiên bản | ✅ | [`backend/Dockerfile`](backend/Dockerfile), [`frontend/Dockerfile`](frontend/Dockerfile): 4–5 stage, `node:20-alpine`, chỉ copy production deps / Next.js standalone, `USER 1001`, `read_only`, `cap_drop: ALL`, `no-new-privileges`. Compose: [`local`](docker-compose.local.yml) · [`prod`](docker-compose.prod.yml) · [`staging`](docker-compose.staging.yml) · [`monitoring`](monitoring/docker-compose.monitoring.yml). Docker Hub: mỗi bản có 3 tag **`<commit SHA>`**, **`1.0.<số lần chạy>`**, `latest` |
+| **Hạ tầng bằng code**: Terraform dựng EC2, security group, mạng | ✅ | [`terraform/`](terraform/): VPC, subnet, Internet Gateway, route table, Security Group, EC2 + Elastic IP, EBS mã hóa, S3 (backup + ảnh), IAM role, **GitHub OIDC** (CI không giữ AWS access key), CloudWatch auto-recover. Cài đặt máy lần đầu: [`scripts/user_data.sh`](scripts/user_data.sh) |
+| **Bí mật**: khóa VNPay/MoMo, mật khẩu DB không nằm trong repo | ✅ | Toàn bộ `.env` production là **GitHub Secret `PROD_ENV_FILE`**. Lúc deploy, nội dung được ghi lên EC2 qua stdin với `umask 077`, không lộ ra log. Gitleaks quét **toàn bộ lịch sử commit** ở mỗi lần chạy. Repo để public được vì không chứa bí mật nào |
+| **Giám sát**: Prometheus + Grafana, `/health`, cảnh báo khi web sập | ✅ | `GET /api/health` kiểm tra DB + Redis và trả về version đang chạy. Prometheus thu metric từ Node Exporter, cAdvisor, Postgres/Redis exporter và `/api/metrics` của backend. Grafana có dashboard dựng sẵn. **17 luật cảnh báo** ([`alert.rules.yml`](monitoring/prometheus/alert.rules.yml)), ví dụ `BackendDown`, `PostgresDown`, `BackendHigh5xxRate`, `DatabaseBackupMissing`, gửi qua Alertmanager tới **Discord**. Hỏng phần cứng thì CloudWatch tự khôi phục máy |
+| **Log tập trung, tìm kiếm được** | ✅ | Promtail tự phát hiện mọi container (cả staging) → **Loki** → tìm trong Grafana *Explore* bằng LogQL. Log backend là JSON, có `request_id` xuyên suốt Nginx → backend (xem [mục 3](#truy-vấn-loki-hữu-ích-grafana--explore)) |
+| **Sao lưu**: backup DB theo lịch, đã thử khôi phục | ✅ | Cron **02:00 hằng ngày**: [`backup-db.sh`](scripts/backup-db.sh) chạy `pg_dump`, kiểm tra gzip + checksum, đẩy lên **S3** (mã hóa, có lifecycle). Ngoài ra luôn dump DB trước mỗi lần deploy có migration. Khôi phục bằng [`restore-db.sh`](scripts/restore-db.sh). **Diễn tập restore tự động ở mỗi lần CI**: dump → restore sang DB mới → so khớp số dòng của users / products / orders / order_items / migrations |
+| **Bảo mật**: Trivy, quét thư viện, SG chỉ mở 80/443, SSH giới hạn IP | ✅ | **Trivy** quét image (chặn khi có lỗi CRITICAL đã có bản vá) và quét cấu hình IaC. `npm audit` + **Dependabot** (npm, Docker, Actions, Terraform). SonarCloud, Gitleaks. Security Group chỉ mở 80/443 cho Internet. Port 22 và Grafana (3001) chỉ cho **1 IP quản trị**. CI mở port 22 **tạm thời đúng IP runner** rồi đóng lại ngay sau deploy |
+| **Môi trường staging tách khỏi production** | ✅ | [`docker-compose.staging.yml`](docker-compose.staging.yml) + [`scripts/deploy-staging.sh`](scripts/deploy-staging.sh): chạy chung EC2 (tiết kiệm chi phí) nhưng **container, PostgreSQL, Redis, volume, mạng, JWT đều riêng**. Staging dùng cổng thanh toán giả lập, không S3, không email. Địa chỉ **https://staging.13-214-14-196.sslip.io**. Migration chạy thử trên DB staging trước; staging fail thì **production không bị đụng tới** |
+| **Tài liệu**: README, sơ đồ kiến trúc, sơ đồ pipeline, hướng dẫn chạy lại từ đầu | ✅ | Chính README này (sơ đồ ở [0.2](#02-sơ-đồ-kiến-trúc) và [0.3](#03-sơ-đồ-pipeline-cicd)). Chạy lại từ đầu: [mục 0.6](#06-dựng-lại-toàn-bộ-từ-đầu-máy-mới-tài-khoản-aws-mới). Chi tiết: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/BAO-CAO-DEVOPS.md](docs/BAO-CAO-DEVOPS.md) |
+
+**Giới hạn cần nói thật khi bảo vệ:**
+- Staging chạy chung máy với production. Nó tách ở tầng container và dữ liệu, chưa tách ở tầng máy chủ. Muốn tách hẳn thì nhân bản module Terraform ra một EC2 thứ hai (tốn thêm khoảng 10 USD/tháng).
+- Chỉ có 1 máy EC2 nên không chịu được việc mất cả vùng AWS. Bù lại có RPO 24 giờ, RTO khoảng 15 phút (xem báo cáo).
+- Tên miền đang dùng `sslip.io` (miễn phí, tự trỏ về Elastic IP). Khi có tên miền riêng chỉ cần đổi `DOMAIN` / `APP_URL`.
+
+### 0.2. Sơ đồ kiến trúc
+
+```mermaid
+flowchart LR
+  user([Người dùng]) -->|HTTPS 443| nginx
+  subgraph AWS["AWS ap-southeast-1 · VPC 10.0.0.0/16 (Terraform)"]
+    subgraph EC2["EC2 t3.small · Security Group: 80/443 public, 22 + 3001 chỉ IP quản trị"]
+      nginx["Nginx 1.28<br/>TLS Let's Encrypt · rate limit · CSP<br/>định tuyến theo tên miền"]
+      subgraph PROD["Production (homeshop)"]
+        fe[Frontend Next.js] --> be[Backend NestJS]
+        be --> pg[(PostgreSQL 16)]
+        be --> rd[(Redis 7)]
+      end
+      subgraph STG["Staging (homeshop-staging)"]
+        sfe[Frontend] --> sbe[Backend]
+        sbe --> spg[(PostgreSQL riêng)]
+        sbe --> srd[(Redis riêng)]
+      end
+      subgraph MON["Monitoring"]
+        prom[Prometheus] --> am[Alertmanager]
+        graf[Grafana]
+        loki[Loki] --- pt[Promtail]
+      end
+      nginx -->|13-214-14-196.sslip.io| fe
+      nginx -->|staging.13-214-14-196.sslip.io| sfe
+      cron[[cron 02:00 backup-db.sh]]
+    end
+    s3[(S3: backup DB + ảnh)]
+  end
+  be --> s3
+  cron --> s3
+  am -->|cảnh báo| discord([Discord])
+  prom -.scrape.-> be & pg & rd
+  pt -.log mọi container.-> loki
+```
+
+### 0.3. Sơ đồ pipeline CI/CD
+
+```mermaid
+flowchart LR
+  dev([Dev: nhánh feat/*]) -->|git push + mở PR| pr{{Pull Request}}
+  subgraph CI["CI: chạy cho MỌI PR và mọi lần push main (required checks)"]
+    a["1a · Security & Code Quality<br/>Gitleaks · ESLint · tsc · unit test<br/>npm audit · SonarCloud"]
+    b["1b · Integration Test<br/>migrate · drift · seed ×2 · e2e<br/>diễn tập backup/restore"]
+    c["1c · IaC & Config Scan<br/>Hadolint · Terraform · Trivy config<br/>ShellCheck · promtool · compose"]
+    d["2 · Build + Trivy image<br/>(backend ‖ frontend)"]
+    a & b & c --> d
+  end
+  pr --> CI
+  d -->|"tất cả xanh → nút Merge mở"| merge[[Merge vào main]]
+  merge --> CI2["CI chạy lại trên main"] --> push["Push Docker Hub<br/>tag SHA · 1.0.N · latest"]
+  push --> stg["3a · Deploy STAGING<br/>migrate DB staging · smoke test qua Nginx"]
+  stg -->|xanh| prod["3b · Deploy PRODUCTION<br/>backup trước migrate → rolling update<br/>health check 30s"]
+  prod -->|lỗi| rb["Tự rollback về bản trước"]
+  prod --> notify["4 · Báo Discord / Telegram"]
+  rb --> notify
+  manual([Bấm 'Rollback Production']) -.-> rbm["rollback.yml → deploy.sh --rollback"]
+```
+
+### 0.4. Quy trình làm việc hằng ngày (Git flow)
+
+```bash
+git checkout main && git pull
+git checkout -b feat/ten-tinh-nang          # 1 nhánh cho 1 tính năng / 1 lỗi
+# ... sửa code, chạy test local (mục 1) ...
+git commit -m "feat(cart): thêm nút xóa nhiều sản phẩm"   # Conventional Commits
+git push -u origin feat/ten-tinh-nang
+gh pr create --fill                          # hoặc mở PR trên giao diện GitHub
+# Chờ 5 check xanh → người còn lại trong nhóm review → Merge (squash)
+# → pipeline tự deploy staging rồi production, không làm gì thêm
+```
+
+Bật luật bảo vệ nhánh `main` (đã bật cho repo này; repo mới thì chạy 1 lần):
+
+```bash
+gh api -X PUT repos/<owner>/<repo>/branches/main/protection --input - <<'EOF'
+{
+  "required_status_checks": { "strict": true, "contexts": [
+    "1a · Security & Code Quality", "1b · Integration Test (Postgres + Redis)", "1c · IaC & Config Scan",
+    "2 · Build, Scan & Push (backend)", "2 · Build, Scan & Push (frontend)" ] },
+  "enforce_admins": true,
+  "required_pull_request_reviews": { "required_approving_review_count": 0 },
+  "restrictions": null, "allow_force_pushes": false, "allow_deletions": false,
+  "required_conversation_resolution": true
+}
+EOF
+```
+
+> Branch protection trên repo **private** cần GitHub Pro. Repo này để **public**, an toàn vì không có bí mật nào trong code (Gitleaks kiểm tra mỗi lần chạy).
+> `required_approving_review_count` đặt 0 để một người vẫn merge được khi bạn cùng nhóm vắng. Muốn bắt buộc review chéo thì đổi thành 1.
+
+### 0.5. Kịch bản demo 5 phút cho buổi bảo vệ
+
+| # | Làm gì | Cho thầy cô thấy |
+|---|---|---|
+| 1 | Mở Grafana `http://<EC2_IP>:3001` (dashboard *Home Shopping - Production Overview*) và web production | Hệ thống đang chạy, có metric và log |
+| 2 | `git checkout -b feat/demo-doi-chu`, sửa một dòng chữ, ví dụ tiêu đề trong `frontend/src/app/page.tsx`, rồi commit và push, `gh pr create --fill` | Làm việc trên nhánh riêng và PR |
+| 3 | Thử `git push origin main` thẳng | GitHub **từ chối** (`protected branch`) |
+| 4 | Tab *Checks* của PR | Lint, test, build image, Trivy tự chạy. Nút Merge bị khóa tới khi tất cả xanh |
+| 5 | Merge PR, mở tab *Actions* | Pipeline đẩy image (tag SHA + `1.0.N`), deploy **staging** rồi **production** |
+| 6 | Mở `https://staging.…` rồi tới web production | Dòng chữ mới xuất hiện ở staging trước, production sau. `/api/health` trả về đúng commit SHA mới |
+| 7 | Discord | Tin nhắn "✅ DEPLOY THÀNH CÔNG" kèm commit và người push |
+| 8 | Actions → *Rollback Production* → Run (để trống tag) | Production quay về bản trước trong khoảng 2 phút, không downtime |
+| 9 | Grafana → Explore → Loki: `{container=~"homeshop.*backend.*"} \|= "order"` | Log tập trung, tìm kiếm được |
+| 10 | Trên EC2 chạy `docker stop homeshop-postgres` (rồi `docker start` lại) | Khoảng 1 phút sau Discord báo `PostgresDown` |
+
+### 0.6. Dựng lại toàn bộ từ đầu (máy mới, tài khoản AWS mới)
+
+1. Cài: Git, Docker Desktop, Node 20, Terraform ≥ 1.6, AWS CLI v2, GitHub CLI (`gh`). Chạy `aws configure` và `gh auth login`.
+2. `git clone https://github.com/QuocAnh-205/home-shopping-app && cd home-shopping-app`
+3. **Chạy thử local:** `docker compose -f docker-compose.local.yml up -d --build` → http://localhost (chi tiết [mục 1](#1-chạy-demo-local-1-lệnh)).
+4. **Dựng hạ tầng:** `cd terraform && cp terraform.tfvars.example terraform.tfvars` (điền IP quản trị, SSH public key, tên repo) → `terraform init && terraform apply` → ghi lại output `public_ip`, `security_group_id`, `github_deploy_role_arn` ([mục 2.2](#22-dựng-hạ-tầng-bằng-terraform)).
+5. **Bí mật:** tạo file `.env` production theo [`.env.example`](.env.example) (mật khẩu DB, JWT, khóa thanh toán…), **không commit**. Rồi `bash scripts/setup-github-secrets.sh` để đẩy toàn bộ lên GitHub Secrets/Variables ([mục 2.4](#24-cấu-hình-github-settings--secrets-and-variables--actions)).
+6. **Bảo vệ nhánh main:** chạy lệnh ở [mục 0.4](#04-quy-trình-làm-việc-hằng-ngày-git-flow).
+7. **Deploy lần đầu:** Actions → *Production CI/CD* → Run workflow (hoặc merge một PR bất kỳ). Pipeline tự xin chứng chỉ HTTPS, chạy migration, seed, staging rồi production.
+8. **Kiểm tra:** `curl https://<ip-gạch-ngang>.sslip.io/api/health` trả về version = commit mới nhất; mở Grafana `http://<ip>:3001`.
+9. **Hủy sau khi chấm:** [mục 5](#5-hủy-hạ-tầng-tránh-phát-sinh-chi-phí-sau-khi-chấm) (`terraform destroy`).
 
 ---
 
