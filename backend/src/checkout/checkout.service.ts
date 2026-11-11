@@ -18,6 +18,10 @@ export interface CheckoutLine {
   imageUrl: string | null;
   /** Key ảnh gốc (snapshot vào order_items khi đặt) – không trả ra client */
   imageKey?: string | null;
+  /** Bảo hành (tháng) – snapshot vào order_items, không trả ra client */
+  warrantyMonths?: number | null;
+  /** Hàng cồng kềnh (giao + lắp đặt, phụ phí riêng) */
+  bulky: boolean;
   categoryId: number;
   unitPrice: number;
   quantity: number;
@@ -138,6 +142,8 @@ export class CheckoutService {
         lengthCm: true,
         widthCm: true,
         heightCm: true,
+        isBulky: true,
+        warrantyMonths: true,
       },
       orderBy: { id: 'asc' },
     });
@@ -164,6 +170,8 @@ export class CheckoutService {
         slug: p.slug,
         imageUrl: await this.storage.getSignedImageUrl(p.imageKey),
         imageKey: p.imageKey,
+        warrantyMonths: p.warrantyMonths,
+        bulky: p.isBulky,
         categoryId: p.categoryId,
         unitPrice: p.price,
         quantity,
@@ -188,7 +196,7 @@ export class CheckoutService {
         { provinceCode: address.provinceCode, wardCode: address.wardCode },
         items.map((i) => {
           const p = byId.get(i.productId)!;
-          return { weightGrams: p.weightGrams, lengthCm: p.lengthCm, widthCm: p.widthCm, heightCm: p.heightCm, quantity: i.quantity };
+          return { weightGrams: p.weightGrams, lengthCm: p.lengthCm, widthCm: p.widthCm, heightCm: p.heightCm, quantity: i.quantity, bulky: p.isBulky };
         }),
         subtotal,
       );
@@ -196,13 +204,14 @@ export class CheckoutService {
     }
     const shippingFee = shipping?.fee ?? 0;
     const freeShipEligible = shipping?.freeShipEligible ?? false;
+    const bulkyFee = shipping?.bulkyFee ?? 0;
 
     // Voucher
     const selectedCodes = [dto.voucherCode, dto.shippingVoucherCode].filter((c): c is string => Boolean(c));
     const candidates = await this.vouchers.candidates(userId, selectedCodes);
     const usage = await this.vouchers.usageByUser(userId, candidates.map((v) => v.id));
     const priced: PricedLine[] = items.map((i) => ({ productId: i.productId, categoryId: i.categoryId, lineTotal: i.lineTotal }));
-    const ctx = { now: new Date(), lines: priced, remainingShippingFee: remainingShipping(shippingFee, freeShipEligible), usedByUser: 0 };
+    const ctx = { now: new Date(), lines: priced, remainingShippingFee: remainingShipping(shippingFee, freeShipEligible, bulkyFee), usedByUser: 0 };
     const options = candidates.map((v) => {
       const check = evaluateVoucher(v, { ...ctx, usedByUser: usage.get(v.id) ?? 0 });
       return {
@@ -258,6 +267,7 @@ export class CheckoutService {
       subtotal,
       shippingFee,
       freeShipEligible,
+      bulkyFee,
       voucherDiscount,
       shippingVoucherDiscount,
       coins: { use: Boolean(dto.useCoins), balance: coinBalance, maxPercent: this.coinsService.maxUsePercent },

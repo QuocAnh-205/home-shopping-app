@@ -6805,3 +6805,493 @@ button.stat-tile:hover {
     padding: 22px 20px;
   }
 }
+
+/* ---------- Thanh tiến trình khi chuyển trang (thay cho loading.tsx) ---------- */
+.nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  height: 3px;
+  width: 0;
+  background: linear-gradient(90deg, var(--primary), #f59e0b);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 60%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    width 0.2s var(--ease),
+    opacity 0.3s var(--ease);
+}
+
+.nav-progress.is-active {
+  opacity: 1;
+  width: 85%;
+  transition:
+    width 8s cubic-bezier(0.1, 0.7, 0.2, 1),
+    opacity 0.1s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress.is-active {
+    transition: opacity 0.1s;
+  }
+}
+
+/* ==========================================================================
+   Biến thể · hàng cồng kềnh · bộ lọc nâng cao · so sánh · bảo hành điện tử
+   ========================================================================== */
+
+/* ---------- Nhãn hàng cồng kềnh ---------- */
+.tag-bulky {
+  background: color-mix(in srgb, var(--info) 14%, var(--surface));
+  color: var(--info);
+  border: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
+}
+
+:root[data-theme='dark'] .tag-bulky {
+  color: #93c5fd;
+}
+
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.detail-tags .badge {
+  white-space: normal;
+}
+
+.bulky-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 6px 0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--info) 8%, var(--surface));
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.bulky-note .svg-inline--fa {
+  margin-top: 3px;
+  color: var(--info);
+}
+
+/* ---------- Bộ chọn biến thể ---------- */
+.variant-picker {
+  display: grid;
+  gap: 10px;
+  margin: 6px 0 10px;
+}
+
+.variant-picker-label {
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.variant-picker-label strong {
+  color: var(--text);
+}
+
+.variant-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.variant-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-weight: 600;
+  font-size: 0.88rem;
+  transition:
+    border-color 0.15s var(--ease),
+    background 0.15s var(--ease);
+}
+
+.variant-option:hover {
+  border-color: var(--border-strong);
+}
+
+.variant-option img {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.variant-option span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.variant-option small {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.variant-option.is-current {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.variant-option.is-soldout {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+/* ---------- So sánh ---------- */
+.compare-btn {
+  margin-top: 10px;
+}
+
+.compare-btn.is-added {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.compare-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 45;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 8px 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-lg);
+}
+
+.compare-bar-items {
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.compare-bar-items li {
+  position: relative;
+}
+
+.compare-bar-items img,
+.compare-bar-thumb {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-3);
+}
+
+.compare-bar-items button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 0;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.6rem;
+  cursor: pointer;
+}
+
+.compare-bar .btn.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.compare-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.compare-toolbar .link-btn {
+  margin-left: auto;
+}
+
+.compare-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.compare-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.compare-table tbody th {
+  width: 170px;
+  color: var(--muted);
+  font-weight: 600;
+  background: var(--surface-2);
+}
+
+/* Cột nhãn dính trái khi vuốt ngang trên điện thoại */
+.compare-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface-2);
+}
+
+.compare-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--primary) 4%, transparent);
+}
+
+.compare-head {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.compare-head img {
+  width: 100%;
+  max-width: 180px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-bottom: 4px;
+}
+
+.compare-head strong {
+  display: block;
+  line-height: 1.35;
+}
+
+.compare-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+}
+
+/* ---------- Bộ lọc nâng cao ---------- */
+.tech-filters {
+  margin: 4px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.tech-filters summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tech-filters summary::-webkit-details-marker {
+  display: none;
+}
+
+.tech-filters summary .svg-inline--fa {
+  color: var(--primary);
+}
+
+.tech-filters-hint {
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.tech-filters-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 16px;
+  align-items: end;
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.tech-filters-bulky {
+  align-self: center;
+  font-weight: 500;
+}
+
+.tech-filters-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* ---------- Bảo hành điện tử ---------- */
+.warranty-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.warranty-form {
+  display: grid;
+  gap: 14px;
+}
+
+.warranty-hint {
+  text-align: center;
+  padding: 36px 24px;
+}
+
+.warranty-hint-ico {
+  font-size: 2.4rem;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+
+.warranty-head h2 {
+  margin: 0;
+}
+
+.warranty-items {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.warranty-items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.warranty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+@media (max-width: 860px) {
+  .warranty-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  /* Thanh so sánh nằm trên thanh điều hướng / thanh mua hàng */
+  .compare-bar {
+    bottom: calc(var(--bar-h) + 10px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .compare-bar-clear {
+    display: none;
+  }
+
+  .tech-filters-hint {
+    display: none;
+  }
+
+  .tech-filters-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tech-filters-bulky,
+  .tech-filters-actions {
+    grid-column: 1 / -1;
+  }
+
+  .tech-filters-actions .btn {
+    flex: 1;
+  }
+
+  .variant-option {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+  }
+
+  .warranty-state {
+    align-items: flex-start;
+  }
+
+  .compare-table tbody th {
+    width: 110px;
+    font-size: 0.8rem;
+  }
+}
+
+.compare-remove {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-2);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.compare-remove:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* Nút đóng banner tài khoản: tròn, không viền vuông */
+.acc-banner .btn-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+}
+
+.acc-banner .btn-icon:hover {
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+}

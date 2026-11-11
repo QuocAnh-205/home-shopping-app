@@ -22,7 +22,7 @@ export class CheckoutController {
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async preview(@Req() req: AuthenticatedRequest, @Body() dto: CheckoutDto): Promise<CheckoutPreview> {
     const preview = await this.checkout.preview(req.user.sub, dto);
-    // imageKey chỉ dùng nội bộ (snapshot ảnh vào đơn) – client đã có imageUrl
-    return { ...preview, items: preview.items.map(({ imageKey: _key, ...line }) => line) };
+    // imageKey / warrantyMonths chỉ dùng nội bộ (snapshot vào đơn) – client đã có imageUrl
+    return { ...preview, items: preview.items.map(({ imageKey: _key, warrantyMonths: _w, ...line }) => line) };
   }
 }

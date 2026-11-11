@@ -4,9 +4,11 @@ import type { Metadata, Viewport } from 'next';
 import { Be_Vietnam_Pro } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { BackButton } from '@/components/BackButton';
+import { CompareBar } from '@/components/CompareBar';
 import { Footer } from '@/components/Footer';
 import { Header } from '@/components/Header';
 import { MobileNav } from '@/components/MobileNav';
+import { NavProgress } from '@/components/NavProgress';
 import './globals.css';
 
 // CSS của Font Awesome đã import tĩnh ở trên → tắt chèn <style> lúc runtime (tránh nháy icon & hợp CSP)
@@ -46,6 +48,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
+        <NavProgress />
         <a href="#main" className="skip-link">
           Bỏ qua tới nội dung chính
         </a>
@@ -55,6 +58,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           {children}
         </main>
         <Footer />
+        <CompareBar />
         <MobileNav />
       </body>
     </html>

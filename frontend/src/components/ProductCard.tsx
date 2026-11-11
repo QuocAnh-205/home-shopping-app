@@ -1,4 +1,4 @@
-import { faArrowRight, faFire } from '@fortawesome/free-solid-svg-icons';
+import { faArrowRight, faFire, faTruck } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { categoryIcon } from '@/lib/icons';
@@ -18,6 +18,11 @@ export function ProductCard({ product, eager = false, rank }: { product: Product
           {product.isHot && (
             <span className="badge tag-hot">
               <FontAwesomeIcon icon={faFire} /> Hot
+            </span>
+          )}
+          {product.isBulky && (
+            <span className="badge tag-bulky" title="Hàng cồng kềnh – giao bằng xe tải nhỏ, lắp đặt tận nơi">
+              <FontAwesomeIcon icon={faTruck} /> Lắp đặt tận nơi
             </span>
           )}
         </div>

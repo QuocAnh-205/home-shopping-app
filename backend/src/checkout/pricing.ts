@@ -8,6 +8,8 @@ export interface PricingInput {
   subtotal: number;
   shippingFee: number;
   freeShipEligible: boolean;
+  /** Phần phí hàng cồng kềnh trong shippingFee: miễn phí theo ngưỡng KHÔNG áp dụng cho phần này */
+  bulkyFee?: number;
   /** Đã tính sẵn bởi voucher engine */
   voucherDiscount: number;
   shippingVoucherDiscount: number;
@@ -28,14 +30,14 @@ export interface PricingBreakdown {
 }
 
 /** Phí ship còn lại sau khi trừ miễn phí theo ngưỡng – voucher vận chuyển chỉ được giảm phần này */
-export function remainingShipping(shippingFee: number, freeShipEligible: boolean): number {
-  return freeShipEligible ? 0 : shippingFee;
+export function remainingShipping(shippingFee: number, freeShipEligible: boolean, bulkyFee = 0): number {
+  return freeShipEligible ? Math.min(shippingFee, Math.max(0, bulkyFee)) : shippingFee;
 }
 
 export function priceOrder(input: PricingInput): PricingBreakdown {
   const subtotal = Math.max(0, Math.trunc(input.subtotal));
   const shippingFee = Math.max(0, Math.trunc(input.shippingFee));
-  const thresholdDiscount = input.freeShipEligible ? shippingFee : 0;
+  const thresholdDiscount = input.freeShipEligible ? shippingFee - remainingShipping(shippingFee, true, input.bulkyFee ?? 0) : 0;
   const shippingDiscount = Math.min(shippingFee, thresholdDiscount + Math.max(0, input.shippingVoucherDiscount));
   const discount = Math.min(subtotal, Math.max(0, input.voucherDiscount));
   const beforeCoins = subtotal + shippingFee - discount - shippingDiscount;

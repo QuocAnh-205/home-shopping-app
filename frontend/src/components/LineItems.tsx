@@ -9,6 +9,8 @@ export interface LineItem {
   unitPrice: number;
   quantity: number;
   note?: string | null;
+  /** Nhãn phụ (vd hàng cồng kềnh) */
+  tag?: string | null;
 }
 
 /**
@@ -34,6 +36,7 @@ export function LineItems({ items }: { items: LineItem[] }) {
               {formatPrice(i.unitPrice)} × {i.quantity}
             </span>
             {i.note && <span className="badge badge-danger">{i.note}</span>}
+            {i.tag && <span className="badge tag-bulky">{i.tag}</span>}
           </div>
           <strong className="line-items-total">{formatPrice(i.unitPrice * i.quantity)}</strong>
         </li>

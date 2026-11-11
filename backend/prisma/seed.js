@@ -16,6 +16,8 @@
 const { PrismaClient, Role } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { categories, products } = require('./data/catalog');
+const { deriveAttributes } = require('./data/product-attributes');
+const { variantBySlug } = require('./data/variants');
 const { demoAccounts } = require('./data/demo-accounts');
 const { reviewers, reviewTexts } = require('./data/reviews');
 
@@ -77,17 +79,44 @@ function packageOf(p) {
   return { weightGrams: grams, lengthCm: side, widthCm: side, heightCm: side };
 }
 
+/**
+ * Thông số đầy đủ để khách ra quyết định: bổ sung Trọng lượng (ước tính, ghi rõ "≈"), Bảo hành mặc định theo danh mục
+ * và dịch vụ giao + lắp đặt cho hàng cồng kềnh khi catalog không ghi.
+ */
+function enrichSpecs(specs, attrs) {
+  const out = { ...specs };
+  if (attrs.estimatedWeightGrams && !out['Trọng lượng']) out['Trọng lượng'] = `≈ ${Math.round(attrs.estimatedWeightGrams / 1000)} kg`;
+  if (attrs.warrantyMonths && !Object.keys(out).some((k) => /bảo hành/i.test(k))) {
+    out['Bảo hành'] = attrs.warrantyMonths % 12 === 0 ? `${attrs.warrantyMonths / 12} năm` : `${attrs.warrantyMonths} tháng`;
+  }
+  if (attrs.isBulky) out['Giao hàng'] = 'Hàng cồng kềnh – giao bằng xe tải nhỏ, miễn phí lắp đặt tận nơi';
+  return out;
+}
+
 function toProductData(p, categoryId) {
   const story = CATEGORY_STORY[p.cat] ?? '';
+  const { estimatedWeightGrams, ...columns } = deriveAttributes({ name: p.name, categorySlug: p.cat, specs: p.specs });
+  // Hàng cồng kềnh: kiện hàng = kích thước thật + 5 cm đóng gói, cân nặng thật/ước tính (hộp lập phương suy từ cân nặng là sai với sofa)
+  const pkg =
+    columns.isBulky && columns.dimLengthCm
+      ? {
+          weightGrams: estimatedWeightGrams ?? packageOf(p).weightGrams,
+          lengthCm: Math.min(300, columns.dimLengthCm + 5),
+          widthCm: Math.min(300, columns.dimWidthCm + 5),
+          heightCm: Math.min(300, columns.dimHeightCm + 5),
+        }
+      : packageOf(p);
   return {
     name: p.name,
     description: story ? `${p.summary}\n\n${story}` : p.summary,
     highlights: p.features,
-    specs: p.specs,
+    specs: enrichSpecs(p.specs ?? {}, { ...columns, estimatedWeightGrams }),
     price: p.price,
     compareAtPrice: p.compare ?? null,
     imageKey: `/images/products/${p.slug}.webp`,
-    ...packageOf(p),
+    ...pkg,
+    ...columns,
+    ...(variantBySlug.get(p.slug) ?? { variantGroup: null, variantName: null, variantLabel: null }),
     isHot: Boolean(p.hot),
     categoryId,
   };

@@ -43,6 +43,59 @@ export interface Product {
   imageUrl: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Thuộc tính chuẩn hóa (bộ lọc / so sánh) – null khi thông số không ghi */
+  material: string | null;
+  powerW: number | null;
+  capacityMl: number | null;
+  warrantyMonths: number | null;
+  dimLengthCm: number | null;
+  dimWidthCm: number | null;
+  dimHeightCm: number | null;
+  /** Hàng cồng kềnh: giao bằng xe tải nhỏ + lắp đặt, phụ phí riêng */
+  isBulky: boolean;
+  variantGroup: string | null;
+  variantName: string | null;
+  variantLabel: string | null;
+}
+
+export interface ProductVariantOption {
+  slug: string;
+  label: string;
+  price: number;
+  stock: number;
+  imageUrl: string | null;
+}
+
+/** Trang chi tiết: kèm các SKU cùng nhóm biến thể (rỗng = không có lựa chọn) */
+export interface ProductDetail extends Product {
+  variants: ProductVariantOption[];
+}
+
+export interface ProductFacets {
+  materials: { value: string; count: number }[];
+  power: { value: string; count: number }[];
+  capacity: { value: string; count: number }[];
+  bulky: number;
+  withDimensions: number;
+}
+
+/** Nhãn hiển thị cho các khoảng lọc (khớp POWER_BUCKETS / CAPACITY_BUCKETS ở backend) */
+export const POWER_LABEL: Record<string, string> = { lt500: 'Dưới 500W', '500to1500': '500 – 1.500W', gt1500: 'Trên 1.500W' };
+export const CAPACITY_LABEL: Record<string, string> = { lt2: 'Dưới 2 lít', '2to5': '2 – 5 lít', gt5: 'Trên 5 lít' };
+
+export function formatCapacity(ml: number | null): string | null {
+  if (!ml) return null;
+  return ml >= 1000 ? `${(ml / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} lít` : `${ml} ml`;
+}
+
+export function formatDimensions(p: Pick<Product, 'dimLengthCm' | 'dimWidthCm' | 'dimHeightCm'>): string | null {
+  if (!p.dimLengthCm) return null;
+  return p.dimHeightCm && p.dimHeightCm > 1 ? `${p.dimLengthCm} × ${p.dimWidthCm} × ${p.dimHeightCm} cm` : `${p.dimLengthCm} × ${p.dimWidthCm} cm`;
+}
+
+export function formatWarranty(months: number | null): string | null {
+  if (!months) return null;
+  return months % 12 === 0 ? `${months / 12} năm` : `${months} tháng`;
 }
 
 export interface StoreSummary {
@@ -440,6 +493,8 @@ export interface CheckoutLine {
   lineTotal: number;
   stock: number;
   available: boolean;
+  /** Hàng cồng kềnh: giao + lắp đặt, phụ phí riêng */
+  bulky: boolean;
 }
 
 export interface CheckoutVoucherOption {
@@ -462,6 +517,8 @@ export interface CheckoutPreview {
     fee: number;
     provider: string;
     estimatedDelivery: { from: string; to: string };
+    /** Phụ phí hàng cồng kềnh (đã nằm trong fee, không được miễn phí theo ngưỡng) */
+    bulkyFee: number;
     freeShipThreshold: number;
     freeShipEligible: boolean;
     amountToFreeShip: number;

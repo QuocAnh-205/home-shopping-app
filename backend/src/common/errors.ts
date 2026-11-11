@@ -45,6 +45,8 @@ export const ErrorCode = {
   ORDER_CONCURRENT_UPDATE: 'ORDER_CONCURRENT_UPDATE',
   RETURN_NOT_ALLOWED: 'RETURN_NOT_ALLOWED',
   RETURN_NOT_FOUND: 'RETURN_NOT_FOUND',
+  // Đánh giá
+  REVIEW_NOT_ALLOWED: 'REVIEW_NOT_ALLOWED',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 

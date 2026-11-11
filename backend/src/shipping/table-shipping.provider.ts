@@ -9,6 +9,16 @@ export const RATE_TABLE: Readonly<Record<Zone, { base: number; perHalfKg: number
   CROSS_REGION: { base: 38_000, perHalfKg: 5_000, eta: [3, 5] },
 };
 
+/**
+ * Hàng cồng kềnh: phí trọn gói MỖI KIỆN theo vùng (xe tải nhỏ, 2 người khiêng lên tận phòng, lắp đặt miễn phí),
+ * giao chậm hơn hàng thường 2 ngày. Không tính theo khối lượng quy đổi (sofa 200×85×80 cm quy đổi ra ~230 kg là vô lý).
+ */
+export const BULKY_RATE: Readonly<Record<Zone, { perItem: number; extraDays: number }>> = {
+  SAME_PROVINCE: { perItem: 150_000, extraDays: 2 },
+  SAME_REGION: { perItem: 250_000, extraDays: 2 },
+  CROSS_REGION: { perItem: 350_000, extraDays: 3 },
+};
+
 /** Hệ số quy đổi khối lượng thể tích (cm³ / 6000 = kg) theo chuẩn chung của các hãng */
 const VOLUMETRIC_DIVISOR = 6000;
 
@@ -32,14 +42,21 @@ export class TableShippingProvider implements ShippingProvider {
   readonly name = 'TABLE';
 
   async quote(req: ShipmentRequest): Promise<ShippingQuote> {
-    const rate = RATE_TABLE[zoneOf(req)];
-    const weight = chargeableWeight(req.items);
-    const extraHalfKgs = Math.max(0, Math.ceil((weight - 1000) / 500));
+    const zone = zoneOf(req);
+    const rate = RATE_TABLE[zone];
+    const standard = req.items.filter((i) => !i.bulky);
+    const bulkyUnits = req.items.filter((i) => i.bulky).reduce((n, i) => n + i.quantity, 0);
+
+    const weight = standard.length ? chargeableWeight(standard) : 0;
+    const standardFee = standard.length ? rate.base + Math.max(0, Math.ceil((weight - 1000) / 500)) * rate.perHalfKg : 0;
+    const bulkyFee = bulkyUnits * BULKY_RATE[zone].perItem;
+    const extraDays = bulkyUnits ? BULKY_RATE[zone].extraDays : 0;
     return {
-      fee: rate.base + extraHalfKgs * rate.perHalfKg,
+      fee: standardFee + bulkyFee,
       provider: this.name,
-      etaDays: rate.eta,
+      etaDays: [rate.eta[0] + extraDays, rate.eta[1] + extraDays],
       chargeableWeightGrams: weight,
+      bulkyFee,
     };
   }
 }

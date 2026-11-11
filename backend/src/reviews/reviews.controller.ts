@@ -31,9 +31,10 @@ export class ReviewsController {
   @Get('products/:slug/reviews/mine')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
-  async mine(@Param('slug') slug: string, @Req() req: AuthenticatedRequest): Promise<{ review: ReviewView | null }> {
+  async mine(@Param('slug') slug: string, @Req() req: AuthenticatedRequest): Promise<{ review: ReviewView | null; canReview: boolean }> {
     assertSlug(slug);
-    return { review: await this.reviews.mine(slug, req.user.sub) };
+    const [review, canReview] = await Promise.all([this.reviews.mine(slug, req.user.sub), this.reviews.canReview(slug, req.user.sub)]);
+    return { review, canReview };
   }
 
   @Put('products/:slug/reviews')

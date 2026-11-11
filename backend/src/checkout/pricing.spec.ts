@@ -28,6 +28,13 @@ describe('order pricing', () => {
     expect(remainingShipping(38_000, false)).toBe(38_000);
   });
 
+  it('free shipping (order ≥ threshold) never waives the bulky-item surcharge', () => {
+    const p = priceOrder({ subtotal: 9_890_000, shippingFee: 170_000, bulkyFee: 150_000, freeShipEligible: true, voucherDiscount: 0, shippingVoucherDiscount: 0 });
+    expect(p).toMatchObject({ shippingFee: 170_000, shippingDiscount: 20_000, total: 9_890_000 + 150_000 });
+    expect(remainingShipping(170_000, true, 150_000)).toBe(150_000);
+    expect(remainingShipping(170_000, false, 150_000)).toBe(170_000);
+  });
+
   it('discount never exceeds the subtotal and amounts stay integer VND', () => {
     const p = priceOrder({ subtotal: 100_000, shippingFee: 20_000, freeShipEligible: false, voucherDiscount: 250_000, shippingVoucherDiscount: 0 });
     expect(p).toMatchObject({ discount: 100_000, total: 20_000 });

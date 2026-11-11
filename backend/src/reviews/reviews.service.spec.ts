@@ -1,3 +1,4 @@
+import { AppError } from '../common/errors';
 import { NotFoundException } from '@nestjs/common';
 import { CoinsService } from '../coins/coins.service';
 import { MetricsService } from '../metrics/metrics.service';
@@ -47,24 +48,25 @@ describe('ReviewsService', () => {
     expect(coins.rewardReview).toHaveBeenCalledWith(userId, productId, 'Sofa');
   });
 
-  it('does not reward coins again when an existing review is edited, nor for unverified reviews', async () => {
+  it('does not reward coins again when an existing review is edited', async () => {
     prisma.orderItem.count.mockResolvedValue(1);
     prisma.review.findUnique.mockResolvedValueOnce({ id: 'r1' });
     tx.review.upsert.mockResolvedValue({ id: 'r1' });
     await service.upsert('sofa', userId, { rating: 4, comment: 'Sửa lại đánh giá của tôi.' });
-    prisma.orderItem.count.mockResolvedValue(0);
-    prisma.review.findUnique.mockResolvedValueOnce(null);
-    await service.upsert('sofa', userId, { rating: 4, comment: 'Chưa mua nhưng đánh giá.' });
     expect(coins.rewardReview).not.toHaveBeenCalled();
   });
 
-  it('allows anyone signed in to review (verified=false when not purchased)', async () => {
+  it('rejects reviews from customers who have not received the product (403 REVIEW_NOT_ALLOWED)', async () => {
     prisma.orderItem.count.mockResolvedValue(0);
-    tx.review.upsert.mockResolvedValue({ id: 'r1' });
 
-    await service.upsert('sofa', userId, { rating: 3, comment: 'Màu hơi khác ảnh.' });
+    const err = await service.upsert('sofa', userId, { rating: 3, comment: 'Chưa mua nhưng đánh giá.' }).catch((e: AppError) => e);
 
-    expect(tx.review.upsert.mock.calls[0][0].update).toMatchObject({ rating: 3, verifiedPurchase: false });
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).code).toBe('REVIEW_NOT_ALLOWED');
+    expect((err as AppError).getStatus()).toBe(403);
+    expect(tx.review.upsert).not.toHaveBeenCalled();
+    // Chỉ đơn đã giao / hoàn thành / đang trả hàng mới tính là "đã nhận hàng"
+    expect(prisma.orderItem.count.mock.calls[0][0].where.order.status.in).toEqual(['DELIVERED', 'COMPLETED', 'RETURN_REQUESTED', 'RETURNED']);
   });
 
   it('builds a 1–5 star distribution summary', async () => {

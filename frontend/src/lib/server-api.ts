@@ -1,5 +1,5 @@
 import 'server-only';
-import type { Category, LatestReview, Product, ProductPage, SortValue, StoreSummary } from './types';
+import type { Category, LatestReview, Product, ProductDetail, ProductFacets, ProductPage, SortValue, StoreSummary } from './types';
 
 // SSR gọi thẳng backend qua mạng Docker nội bộ, không vòng ra Nginx/Internet
 const API_URL = process.env.INTERNAL_API_URL ?? 'http://backend:8080';
@@ -32,9 +32,14 @@ export interface ProductQuery {
   onSale?: boolean;
   minPrice?: number;
   maxPrice?: number;
+  material?: string;
+  power?: string;
+  capacity?: string;
+  maxLength?: number;
+  bulky?: boolean;
 }
 
-export function getProducts({ page, limit = 12, category, q, sort, onSale, minPrice, maxPrice }: ProductQuery): Promise<ProductPage> {
+export function getProducts({ page, limit = 12, category, q, sort, onSale, minPrice, maxPrice, material, power, capacity, maxLength, bulky }: ProductQuery): Promise<ProductPage> {
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (category) qs.set('category', category);
   if (q) qs.set('q', q);
@@ -42,6 +47,11 @@ export function getProducts({ page, limit = 12, category, q, sort, onSale, minPr
   if (onSale) qs.set('onSale', 'true');
   if (minPrice !== undefined) qs.set('minPrice', String(minPrice));
   if (maxPrice !== undefined) qs.set('maxPrice', String(maxPrice));
+  if (material) qs.set('material', material);
+  if (power) qs.set('power', power);
+  if (capacity) qs.set('capacity', capacity);
+  if (maxLength) qs.set('maxLength', String(maxLength));
+  if (bulky) qs.set('bulky', 'true');
   return get<ProductPage>(`/products?${qs.toString()}`, 30);
 }
 
@@ -53,8 +63,12 @@ export function getDeals(): Promise<Product[]> {
   return get<Product[]>('/products/deals', 60);
 }
 
-export function getProduct(slug: string): Promise<Product> {
-  return get<Product>(`/products/${encodeURIComponent(slug)}`, 30);
+export function getProduct(slug: string): Promise<ProductDetail> {
+  return get<ProductDetail>(`/products/${encodeURIComponent(slug)}`, 30);
+}
+
+export function getFacets(category?: string): Promise<ProductFacets> {
+  return get<ProductFacets>(`/products/facets${category ? `?category=${encodeURIComponent(category)}` : ''}`, 120);
 }
 
 export function getCategories(): Promise<Category[]> {

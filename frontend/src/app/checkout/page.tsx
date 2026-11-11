@@ -264,6 +264,7 @@ function Checkout() {
               unitPrice: i.unitPrice,
               quantity: i.quantity,
               note: i.available ? null : i.stock > 0 ? `Chỉ còn ${i.stock}` : 'Hết hàng',
+              tag: i.bulky ? 'Cồng kềnh · lắp đặt tận nơi' : null,
             }))}
           />
           <label className="field" style={{ marginTop: 12 }}>
@@ -278,11 +279,17 @@ function Checkout() {
               <FontAwesomeIcon icon={faTruckFast} /> Vận chuyển
             </h2>
             <p style={{ margin: 0 }}>
-              Giao nhanh · {formatPrice(shipping.fee)} · Nhận hàng dự kiến {formatShortDay(shipping.estimatedDelivery.from)} – {formatShortDay(shipping.estimatedDelivery.to)}
+              {shipping.bulkyFee >= shipping.fee ? 'Giao hàng cồng kềnh + lắp đặt' : 'Giao nhanh'} · {formatPrice(shipping.fee)} · Nhận hàng dự kiến {formatShortDay(shipping.estimatedDelivery.from)} – {formatShortDay(shipping.estimatedDelivery.to)}
             </p>
-            {shipping.freeShipEligible ? (
+            {shipping.bulkyFee > 0 && (
+              <p className="bulky-note small">
+                Gồm phụ phí hàng cồng kềnh {formatPrice(shipping.bulkyFee)} (xe tải nhỏ, 2 kỹ thuật viên mang lên tận phòng và lắp đặt miễn phí) – phần này
+                không áp dụng miễn phí vận chuyển.
+              </p>
+            )}
+            {shipping.freeShipEligible && shipping.bulkyFee >= shipping.fee ? null : shipping.freeShipEligible ? (
               <p className="ok small">
-                <FontAwesomeIcon icon={faCircleCheck} /> Đơn được miễn phí vận chuyển
+                <FontAwesomeIcon icon={faCircleCheck} /> {shipping.bulkyFee > 0 ? 'Miễn phí phần vận chuyển hàng thường' : 'Đơn được miễn phí vận chuyển'}
               </p>
             ) : (
               shipping.freeShipThreshold > 0 && <p className="muted small">Mua thêm {formatPrice(shipping.amountToFreeShip)} để được miễn phí vận chuyển</p>
