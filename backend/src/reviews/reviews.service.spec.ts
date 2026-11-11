@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { CoinsService } from '../coins/coins.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
@@ -15,15 +16,18 @@ describe('ReviewsService', () => {
   };
   const prisma = {
     orderItem: { count: jest.fn() },
+    product: { findUnique: jest.fn(async () => ({ name: 'Sofa' })) },
     review: { groupBy: jest.fn(), findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
   const products = { idBySlug: jest.fn(async () => productId), invalidateCache: jest.fn() };
+  const coins = { rewardReview: jest.fn(async () => 100) };
   const service = new ReviewsService(
     prisma as unknown as PrismaService,
     products as unknown as ProductsService,
     { getSignedImageUrl: jest.fn() } as unknown as StorageService,
     new MetricsService(),
+    coins as unknown as CoinsService,
   );
 
   beforeEach(() => jest.clearAllMocks());
@@ -39,6 +43,19 @@ describe('ReviewsService', () => {
     expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(tx.review.upsert.mock.invocationCallOrder[0]);
     expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeGreaterThan(tx.review.upsert.mock.invocationCallOrder[0]);
     expect(products.invalidateCache).toHaveBeenCalled();
+    // Đánh giá đầu tiên của sản phẩm đã mua → thưởng xu
+    expect(coins.rewardReview).toHaveBeenCalledWith(userId, productId, 'Sofa');
+  });
+
+  it('does not reward coins again when an existing review is edited, nor for unverified reviews', async () => {
+    prisma.orderItem.count.mockResolvedValue(1);
+    prisma.review.findUnique.mockResolvedValueOnce({ id: 'r1' });
+    tx.review.upsert.mockResolvedValue({ id: 'r1' });
+    await service.upsert('sofa', userId, { rating: 4, comment: 'Sửa lại đánh giá của tôi.' });
+    prisma.orderItem.count.mockResolvedValue(0);
+    prisma.review.findUnique.mockResolvedValueOnce(null);
+    await service.upsert('sofa', userId, { rating: 4, comment: 'Chưa mua nhưng đánh giá.' });
+    expect(coins.rewardReview).not.toHaveBeenCalled();
   });
 
   it('allows anyone signed in to review (verified=false when not purchased)', async () => {

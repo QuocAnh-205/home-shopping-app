@@ -1,4 +1,5 @@
 import { Gender, OAuthProvider, Role } from '@prisma/client';
+import type { UserSettings } from '../account/settings';
 
 export interface JwtPayload {
   sub: string;
@@ -26,6 +27,11 @@ export interface UserProfile {
 }
 
 export interface AccountProfile extends UserProfile {
+  username: string;
+  /** Đã dùng lượt đổi tên đăng nhập duy nhất */
+  usernameChangeable: boolean;
+  coinBalance: number;
+  settings: UserSettings;
   phone: string | null;
   gender: Gender | null;
   /** YYYY-MM-DD */

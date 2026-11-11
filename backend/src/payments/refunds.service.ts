@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { OrderPaymentStatus, PaymentMethod, PaymentStatus, Prisma, Refund, RefundStatus } from '@prisma/client';
+import { NotificationType, OrderPaymentStatus, PaymentMethod, PaymentStatus, Prisma, Refund, RefundStatus } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AppError, ErrorCode } from '../common/errors';
 import { MetricsService } from '../metrics/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,7 +20,33 @@ export class RefundsService {
     private readonly prisma: PrismaService,
     private readonly registry: PaymentGatewayRegistry,
     private readonly metrics: MetricsService,
+    private readonly notifications: NotificationsService,
   ) {}
+
+  private async notifyRefund(orderId: string, amount: number, manual: boolean): Promise<void> {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { userId: true } });
+    if (!order) return;
+    const code = `#${orderId.slice(0, 8).toUpperCase()}`;
+    const money = `${amount.toLocaleString('vi-VN')}₫`;
+    await this.notifications.notify(
+      order.userId,
+      manual
+        ? {
+            type: NotificationType.PAYMENT,
+            title: 'Cửa hàng sẽ chuyển khoản hoàn tiền',
+            body: `Đơn ${code} được hoàn ${money} bằng chuyển khoản. Kiểm tra tài khoản ngân hàng mặc định trong Tài khoản → Ngân hàng để nhận tiền đúng.`,
+            link: '/account?tab=bank',
+            dedupeKey: `refund:manual:${orderId}:${amount}`,
+          }
+        : {
+            type: NotificationType.PAYMENT,
+            title: 'Hoàn tiền thành công',
+            body: `Đã hoàn ${money} cho đơn ${code}. Tiền về tài khoản/ví bạn đã thanh toán sau 1–7 ngày làm việc tùy ngân hàng.`,
+            link: `/orders/${orderId}`,
+            dedupeKey: `refund:done:${orderId}:${amount}`,
+          },
+    );
+  }
 
   /** Tạo lệnh hoàn cho mọi khoản đã thu của đơn rồi thử hoàn ngay */
   async refundOrder(orderId: string, reason: string): Promise<Refund[]> {
@@ -67,6 +94,7 @@ export class RefundsService {
     const gw = refund.payment ? this.registry.forPayment(refund.payment) : undefined;
     if (!refund.payment || !gw?.supportsRefund || !gw.refund) {
       const r = await this.prisma.refund.update({ where: { id: refundId }, data: { status: RefundStatus.MANUAL_REQUIRED } });
+      await this.notifyRefund(refund.orderId, refund.amount, true);
       this.logger.warn({ event: 'refund.manual_required', refundId, orderId: refund.orderId, amount: refund.amount, method: refund.payment?.method ?? 'COD' });
       this.metrics.refundsTotal.inc({ result: 'manual' });
       return r;
@@ -88,6 +116,7 @@ export class RefundsService {
         data: { status: RefundStatus.SUCCEEDED, gatewayRefundId: result.gatewayRefundId ?? null, raw: (result.raw ?? Prisma.JsonNull) as Prisma.InputJsonValue, completedAt: new Date(), lastError: null },
       });
       await this.markOrderRefunded(refund.orderId);
+      await this.notifyRefund(refund.orderId, refund.amount, false);
       this.logger.log({ event: 'refund.succeeded', refundId, orderId: refund.orderId, amount: refund.amount, method: refund.payment.method });
       this.metrics.refundsTotal.inc({ result: 'succeeded' });
       return done;
@@ -120,6 +149,7 @@ export class RefundsService {
     if (updated.count !== 1) throw new AppError(ErrorCode.CONFLICT, 'Lệnh hoàn không ở trạng thái chờ hoàn tay', HttpStatus.CONFLICT);
     const r = await this.prisma.refund.findUniqueOrThrow({ where: { id: refundId } });
     await this.markOrderRefunded(r.orderId);
+    await this.notifyRefund(r.orderId, r.amount, false);
     this.logger.log({ event: 'refund.manual_completed', refundId, orderId: r.orderId, amount: r.amount, adminId });
     return r;
   }
@@ -127,7 +157,24 @@ export class RefundsService {
   list(status?: RefundStatus) {
     return this.prisma.refund.findMany({
       where: status ? { status } : {},
-      include: { payment: { select: { method: true, txnRef: true, gatewayTxnId: true } }, order: { select: { id: true, totalAmount: true, user: { select: { email: true, fullName: true } } } } },
+      include: {
+        payment: { select: { method: true, txnRef: true, gatewayTxnId: true } },
+        order: {
+          select: {
+            id: true,
+            totalAmount: true,
+            user: {
+              select: {
+                email: true,
+                fullName: true,
+                phone: true,
+                // Tài khoản nhận tiền hoàn của khách (hoàn tay khi chuyển khoản / COD)
+                bankAccounts: { where: { isDefault: true }, select: { bankName: true, accountNo: true, holderName: true } },
+              },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });

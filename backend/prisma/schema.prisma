@@ -105,6 +105,32 @@ enum VoucherType {
   FREESHIP
 }
 
+enum NotificationType {
+  /// Cập nhật đơn hàng (đổi trạng thái, giao hàng, trả hàng)
+  ORDER
+  /// Thanh toán / hoàn tiền
+  PAYMENT
+  /// Xu thưởng
+  COINS
+  /// Voucher, ưu đãi
+  PROMOTION
+  /// Tài khoản & bảo mật
+  ACCOUNT
+}
+
+enum CoinTxType {
+  /// Thưởng khi đơn hoàn thành
+  EARN_ORDER
+  /// Thưởng khi đánh giá sản phẩm đã mua
+  EARN_REVIEW
+  /// Dùng xu trừ tiền lúc đặt hàng
+  SPEND_ORDER
+  /// Trả lại xu đã dùng khi đơn bị hủy / trả hàng
+  REFUND_ORDER
+  /// Thu hồi xu đã thưởng khi đơn bị trả hàng
+  REVOKE_ORDER
+}
+
 enum OAuthProvider {
   GOOGLE
   FACEBOOK
@@ -113,6 +139,13 @@ enum OAuthProvider {
 model User {
   id                  String               @id @default(uuid()) @db.Uuid
   email               String               @unique
+  /// Tên đăng nhập (a-z, 0-9, dấu chấm, gạch dưới); tự tạo khi đăng ký, khách được đổi 1 lần
+  username            String?              @unique @db.VarChar(30)
+  usernameChangedAt   DateTime?            @map("username_changed_at")
+  /// Số dư xu (1 xu = 1₫ khi thanh toán), CHECK >= 0
+  coinBalance         Int                  @default(0) @map("coin_balance")
+  /// Cài đặt thông báo & quyền riêng tư (xem account/settings.ts)
+  settings            Json                 @default("{}")
   /// null = tài khoản chỉ đăng nhập qua Google/Facebook (chưa đặt mật khẩu)
   passwordHash        String?              @map("password_hash")
   fullName            String               @map("full_name")
@@ -134,6 +167,9 @@ model User {
   addresses           Address[]
   auditLogs           AdminAuditLog[]
   savedVouchers       UserVoucher[]
+  bankAccounts        BankAccount[]
+  notifications       Notification[]
+  coinTransactions    CoinTransaction[]
   returnRequests      ReturnRequest[]
   voucherUsages       VoucherUsage[]
 
@@ -166,6 +202,63 @@ model Address {
 
   @@index([userId, createdAt])
   @@map("addresses")
+}
+
+/// Tài khoản ngân hàng của khách (nhận tiền hoàn khi đơn chuyển khoản / COD bị trả hàng)
+model BankAccount {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Mã BIN Napas của ngân hàng
+  bankBin    String   @map("bank_bin") @db.VarChar(6)
+  bankName   String   @map("bank_name") @db.VarChar(100)
+  accountNo  String   @map("account_no") @db.VarChar(30)
+  /// Tên chủ tài khoản (IN HOA không dấu như trên thẻ)
+  holderName String   @map("holder_name") @db.VarChar(100)
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, bankBin, accountNo])
+  @@index([userId])
+  @@map("bank_accounts")
+}
+
+/// Thông báo trong web (chuông) – có thể gửi kèm email theo cài đặt của khách
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String           @db.VarChar(150)
+  body      String           @db.VarChar(500)
+  /// Đường dẫn trong web khi bấm vào (vd. /orders/<id>)
+  link      String?          @db.VarChar(255)
+  /// Chống gửi trùng (vd. "voucher-expiring:<voucherId>:<userId>")
+  dedupeKey String?          @unique @map("dedupe_key") @db.VarChar(120)
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+/// Sổ giao dịch xu; refKey unique → mỗi sự kiện (thưởng đơn, dùng xu cho đơn…) chỉ ghi 1 lần dù gọi lặp
+model CoinTransaction {
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         CoinTxType
+  /// + cộng, − trừ
+  amount       Int
+  balanceAfter Int        @map("balance_after")
+  orderId      String?    @map("order_id") @db.Uuid
+  refKey       String     @unique @map("ref_key") @db.VarChar(120)
+  note         String     @db.VarChar(255)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("coin_transactions")
 }
 
 /// Tỉnh/thành theo đơn vị hành chính mới (34 tỉnh, hiệu lực 01/07/2025)
@@ -343,6 +436,8 @@ model Order {
   /// Mã voucher đã dùng (snapshot): tối đa 1 voucher giảm giá + 1 voucher vận chuyển như Shopee
   voucherCode         String?        @map("voucher_code") @db.VarChar(32)
   shippingVoucherCode String?        @map("shipping_voucher_code") @db.VarChar(32)
+  /// Xu đã dùng để trừ tiền (1 xu = 1₫)
+  coinsUsed           Int            @default(0) @map("coins_used")
   voucherUsages       VoucherUsage[]
   payments            Payment[]
   refunds             Refund[]

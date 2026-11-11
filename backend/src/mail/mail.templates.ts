@@ -57,3 +57,34 @@ export function newsletterWelcomeMail(to: string): MailMessage {
     ),
   };
 }
+
+export function emailChangeCodeMail(to: string, fullName: string, code: string, minutes: number): MailMessage {
+  return {
+    to,
+    subject: `Mã xác nhận đổi email Home Shopping: ${code}`,
+    text: `Xin chào ${fullName},\n\nMã xác nhận đổi email đăng nhập của bạn là: ${code} (hiệu lực ${minutes} phút).\nKhông chia sẻ mã này cho bất kỳ ai. Nếu bạn không yêu cầu, hãy bỏ qua email này.`,
+    html: layout(
+      'Xác nhận email mới',
+      `<p>Xin chào <strong>${escapeHtml(fullName)}</strong>,</p>
+<p>Nhập mã sau để xác nhận đây là email mới của tài khoản Home Shopping:</p>
+<p style="text-align:center;margin:24px 0;font-size:32px;letter-spacing:8px;font-weight:bold">${escapeHtml(code)}</p>
+<p style="color:#78716c;font-size:13px">Mã có hiệu lực trong ${minutes} phút. Không chia sẻ mã cho bất kỳ ai, kể cả nhân viên cửa hàng.</p>`,
+    ),
+  };
+}
+
+export function notificationMail(to: string, fullName: string, title: string, body: string, link: string | null): MailMessage {
+  return {
+    to,
+    subject: title,
+    text: `Xin chào ${fullName},\n\n${body}${link ? `\n\nXem chi tiết: ${link}` : ''}\n\nBạn có thể tắt email loại này trong Tài khoản → Cài đặt thông báo.`,
+    html: layout(
+      escapeHtml(title),
+      `<p>Xin chào <strong>${escapeHtml(fullName)}</strong>,</p><p>${escapeHtml(body)}</p>${
+        link
+          ? `<p style="text-align:center;margin:24px 0"><a href="${escapeHtml(link)}" style="background:#c2410c;color:#fff;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:bold;display:inline-block">Xem chi tiết</a></p>`
+          : ''
+      }<p style="color:#78716c;font-size:12px">Tắt email loại này trong Tài khoản → Cài đặt thông báo.</p>`,
+    ),
+  };
+}

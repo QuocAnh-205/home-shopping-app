@@ -175,6 +175,9 @@ export class AccountService {
           WHERE p.id = ANY(${ids}::uuid[])`;
       }
       await tx.address.deleteMany({ where: { userId } });
+      await tx.bankAccount.deleteMany({ where: { userId } });
+      await tx.notification.deleteMany({ where: { userId } });
+      await tx.userVoucher.deleteMany({ where: { userId } });
       await tx.oAuthAccount.deleteMany({ where: { userId } });
       await tx.passwordResetToken.deleteMany({ where: { userId } });
       await tx.newsletterSubscriber.deleteMany({ where: { email: user.email } });
@@ -188,6 +191,8 @@ export class AccountService {
           phone: null,
           gender: null,
           dateOfBirth: null,
+          username: null,
+          settings: {},
         },
       });
     });

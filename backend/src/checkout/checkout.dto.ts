@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -76,6 +77,11 @@ export class CheckoutDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;
+
+  /** Dùng xu trong ví để trừ tiền */
+  @IsOptional()
+  @IsBoolean()
+  useCoins?: boolean;
 
   /** Lời nhắn cho shop */
   @IsOptional()

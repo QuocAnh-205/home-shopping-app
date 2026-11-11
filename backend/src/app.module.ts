@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CategoriesModule } from './categories/categories.module';
 import { CheckoutModule } from './checkout/checkout.module';
+import { CoinsModule } from './coins/coins.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
@@ -20,6 +21,7 @@ import { MailModule } from './mail/mail.module';
 import { MediaModule } from './media/media.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -85,6 +87,8 @@ import { VouchersModule } from './vouchers/vouchers.module';
     ShippingModule,
     ProductsModule,
     CartModule,
+    NotificationsModule,
+    CoinsModule,
     CheckoutModule,
     OrdersModule,
     PaymentsModule,

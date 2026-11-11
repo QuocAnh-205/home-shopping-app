@@ -4,6 +4,7 @@ import { CartService } from '../cart/cart.service';
 import { AppError, ErrorCode } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShippingResult, ShippingService } from '../shipping/shipping.service';
+import { CoinsService } from '../coins/coins.service';
 import { StorageService } from '../storage/storage.service';
 import { describeVoucher, evaluateVoucher, isShippingVoucher, PricedLine } from '../vouchers/voucher-engine';
 import { AppliedVoucher, VouchersService } from '../vouchers/vouchers.service';
@@ -65,6 +66,8 @@ export interface CheckoutPreview {
   paymentMethod: PaymentMethod;
   paymentMethods: PaymentMethodOption[];
   pricing: PricingBreakdown;
+  /** Xu: số dư, tối đa dùng được cho đơn này, đang dùng, xu sẽ nhận khi đơn hoàn thành */
+  coins: { balance: number; usable: number; applied: number; earnEstimate: number };
   issues: CheckoutIssue[];
   canPlaceOrder: boolean;
 }
@@ -98,6 +101,7 @@ export class CheckoutService {
     private readonly shipping: ShippingService,
     private readonly vouchers: VouchersService,
     private readonly storage: StorageService,
+    private readonly coinsService: CoinsService,
   ) {}
 
   setPaymentMethodsProvider(provider: PaymentMethodsProvider): void {
@@ -246,7 +250,16 @@ export class CheckoutService {
       issues.push({ code: ErrorCode.PAYMENT_METHOD_UNAVAILABLE, message: chosen?.reason ?? `${PAYMENT_LABEL[paymentMethod]} hiện chưa hỗ trợ` });
     }
 
-    const pricing = priceOrder({ subtotal, shippingFee, freeShipEligible, voucherDiscount, shippingVoucherDiscount });
+    const { coinBalance } = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { coinBalance: true } });
+    const pricing = priceOrder({
+      subtotal,
+      shippingFee,
+      freeShipEligible,
+      voucherDiscount,
+      shippingVoucherDiscount,
+      coins: { use: Boolean(dto.useCoins), balance: coinBalance, maxPercent: this.coinsService.maxUsePercent },
+    });
+    const beforeCoins = pricing.total + pricing.coinsUsed;
     const byDiscount = (a: CheckoutVoucherOption, b: CheckoutVoucherOption) => Number(b.applicable) - Number(a.applicable) || b.discount - a.discount;
     const { userId: _u, ...addressView } = address ?? ({} as Address);
 
@@ -265,6 +278,12 @@ export class CheckoutService {
       paymentMethod,
       paymentMethods: methods,
       pricing,
+      coins: {
+        balance: coinBalance,
+        usable: this.coinsService.usable(coinBalance, beforeCoins),
+        applied: pricing.coinsUsed,
+        earnEstimate: Math.floor((pricing.total * this.coinsService.earnPercent) / 100),
+      },
       issues,
       canPlaceOrder: issues.length === 0 && items.length > 0,
     };

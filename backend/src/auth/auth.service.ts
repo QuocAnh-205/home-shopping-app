@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, NotFoundException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { User } from '@prisma/client';
@@ -7,6 +7,7 @@ import * as bcrypt from 'bcryptjs';
 import { MailService } from '../mail/mail.service';
 import { passwordChangedMail, passwordResetMail } from '../mail/mail.templates';
 import { MetricsService } from '../metrics/metrics.service';
+import { readSettings, usernameFromEmail } from '../account/settings';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { ChangePasswordDto, LoginDto, RegisterDto, ResetPasswordDto } from './auth.dto';
@@ -221,17 +222,40 @@ export class AuthService {
         dateOfBirth: true,
         passwordHash: true,
         createdAt: true,
+        username: true,
+        usernameChangedAt: true,
+        coinBalance: true,
+        settings: true,
         oauthAccounts: { select: { provider: true } },
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    const { passwordHash, oauthAccounts, dateOfBirth, ...rest } = user;
+    const { passwordHash, oauthAccounts, dateOfBirth, usernameChangedAt, settings, username, ...rest } = user;
     return {
       ...rest,
+      username: username ?? (await this.assignUsername(userId, user.email)),
+      usernameChangeable: usernameChangedAt === null,
+      settings: readSettings(settings),
       dateOfBirth: dateOfBirth ? dateOfBirth.toISOString().slice(0, 10) : null,
       hasPassword: passwordHash !== null,
       providers: oauthAccounts.map((a) => a.provider),
     };
+  }
+
+  /** Tài khoản mới (đăng ký / Google / Facebook) chưa có tên đăng nhập: tạo từ email + hậu tố ngẫu nhiên */
+  async assignUsername(userId: string, email: string): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+      const candidate = usernameFromEmail(email, randomBytes(2).toString('hex'));
+      const updated = await this.prisma.user
+        .updateMany({ where: { id: userId, username: null }, data: { username: candidate } })
+        .catch(() => ({ count: -1 }));
+      if (updated.count === 1) return candidate;
+      if (updated.count === 0) {
+        const current = await this.prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+        if (current?.username) return current.username;
+      }
+    }
+    throw new ServiceUnavailableException('Cannot assign username');
   }
 
   async issue(user: Pick<User, 'id' | 'email' | 'fullName' | 'role' | 'avatarUrl'>): Promise<AuthResponse> {

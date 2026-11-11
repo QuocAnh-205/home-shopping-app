@@ -7,9 +7,18 @@ describe('order pricing', () => {
       shippingFee: 30_000,
       discount: 45_000,
       shippingDiscount: 15_000,
+      coinsUsed: 0,
       total: 420_000,
       saved: 60_000,
     });
+  });
+
+  it('coins cover at most the configured share of the amount and never more than the balance', () => {
+    const base = { subtotal: 450_000, shippingFee: 30_000, freeShipEligible: false, voucherDiscount: 45_000, shippingVoucherDiscount: 15_000 };
+    // Còn phải trả 420.000 → tối đa 50% = 210.000 xu
+    expect(priceOrder({ ...base, coins: { use: true, balance: 1_000_000, maxPercent: 50 } })).toMatchObject({ coinsUsed: 210_000, total: 210_000, saved: 270_000 });
+    expect(priceOrder({ ...base, coins: { use: true, balance: 12_345, maxPercent: 50 } })).toMatchObject({ coinsUsed: 12_345, total: 407_655 });
+    expect(priceOrder({ ...base, coins: { use: false, balance: 12_345, maxPercent: 50 } })).toMatchObject({ coinsUsed: 0, total: 420_000 });
   });
 
   it('free-shipping threshold waives the whole fee and a shipping voucher cannot push it negative', () => {

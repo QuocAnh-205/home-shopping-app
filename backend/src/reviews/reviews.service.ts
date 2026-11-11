@@ -1,5 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
+import { maskName, readSettings } from '../account/settings';
+import { CoinsService } from '../coins/coins.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
@@ -17,6 +19,20 @@ const reviewSelect = {
 } satisfies Prisma.ReviewSelect;
 
 export type ReviewView = Prisma.ReviewGetPayload<{ select: typeof reviewSelect }>;
+
+/** Đánh giá hiển thị công khai: kèm cài đặt quyền riêng tư của người viết để ẩn tên nếu họ chọn */
+const publicSelect = {
+  ...reviewSelect,
+  user: { select: { id: true, fullName: true, avatarUrl: true, settings: true } },
+} satisfies Prisma.ReviewSelect;
+type PublicRow = Prisma.ReviewGetPayload<{ select: typeof publicSelect }>;
+
+/** Người viết bật "Ẩn tên khi đánh giá" → hiện "N***h", không ảnh đại diện */
+export function presentReview<T extends Omit<PublicRow, never>>(row: T): Omit<T, 'user'> & { user: ReviewView['user'] } {
+  const { settings, ...user } = row.user;
+  const hidden = readSettings(settings).hideNameInReviews;
+  return { ...row, user: hidden ? { id: user.id, fullName: maskName(user.fullName), avatarUrl: null } : user };
+}
 
 export interface ReviewSummary {
   average: number;
@@ -47,6 +63,7 @@ export class ReviewsService {
     private readonly products: ProductsService,
     private readonly storage: StorageService,
     private readonly metrics: MetricsService,
+    private readonly coins: CoinsService,
   ) {}
 
   async list(slug: string, query: ListReviewsQuery): Promise<ReviewPage> {
@@ -55,7 +72,7 @@ export class ReviewsService {
     const [items, total, summary] = await Promise.all([
       this.prisma.review.findMany({
         where,
-        select: reviewSelect,
+        select: publicSelect,
         orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
         skip: (query.page - 1) * query.limit,
         take: query.limit,
@@ -63,7 +80,7 @@ export class ReviewsService {
       this.prisma.review.count({ where }),
       this.summary(productId),
     ]);
-    return { items, summary, page: query.page, limit: query.limit, total, totalPages: Math.max(1, Math.ceil(total / query.limit)) };
+    return { items: items.map(presentReview), summary, page: query.page, limit: query.limit, total, totalPages: Math.max(1, Math.ceil(total / query.limit)) };
   }
 
   async mine(slug: string, userId: string): Promise<ReviewView | null> {
@@ -78,6 +95,7 @@ export class ReviewsService {
       where: { productId, order: { userId, status: { notIn: [OrderStatus.CANCELLED, OrderStatus.AWAITING_PAYMENT] } } },
     });
 
+    const existed = await this.prisma.review.findUnique({ where: { productId_userId: { productId, userId } }, select: { id: true } });
     const review = await this.prisma.$transaction(async (tx) => {
       await ReviewsService.lockProduct(tx, productId);
       const saved = await tx.review.upsert({
@@ -93,6 +111,13 @@ export class ReviewsService {
     await this.products.invalidateCache();
     this.metrics.reviewsTotal.inc({ action: 'upsert', rating: String(dto.rating) });
     this.logger.log({ event: 'review.saved', productId, userId, rating: dto.rating, verified: purchased > 0 });
+    // Thưởng xu cho đánh giá ĐẦU TIÊN của sản phẩm đã mua (sửa/xóa rồi viết lại không cộng thêm – refKey cố định)
+    if (!existed && purchased > 0) {
+      const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { name: true } });
+      await this.coins.rewardReview(userId, productId, product?.name ?? slug).catch((err) =>
+        this.logger.error({ event: 'review.coin_reward_failed', userId, productId, err: (err as Error).message }),
+      );
+    }
     return review;
   }
 
@@ -112,12 +137,12 @@ export class ReviewsService {
   async latest(limit = 6): Promise<LatestReview[]> {
     const rows = await this.prisma.review.findMany({
       where: { rating: { gte: 4 }, product: { isActive: true } },
-      select: { ...reviewSelect, product: { select: { name: true, slug: true, imageKey: true } } },
+      select: { ...publicSelect, product: { select: { name: true, slug: true, imageKey: true } } },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
     return Promise.all(
-      rows.map(async ({ product, ...r }) => ({
+      rows.map(presentReview).map(async ({ product, ...r }) => ({
         ...r,
         product: { name: product.name, slug: product.slug, imageUrl: await this.storage.getSignedImageUrl(product.imageKey) },
       })),

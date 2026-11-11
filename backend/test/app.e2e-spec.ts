@@ -12,6 +12,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { MailMessage, MailService } from '../src/mail/mail.service';
+import { CoinsService } from '../src/coins/coins.service';
 import { OrderJobsService } from '../src/orders/order-jobs.service';
 import { PaymentJobsService } from '../src/payments/payment-jobs.service';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -494,7 +495,7 @@ describe('Home Shopping API (e2e)', () => {
 
       // 1 voucher giảm giá + 1 voucher vận chuyển cùng lúc
       const both = await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ ...buyNow(), voucherCode: code, shippingVoucherCode: shipCode }).expect(200);
-      expect(both.body.pricing).toEqual({ subtotal: 450000, shippingFee: 20000, discount: 20000, shippingDiscount: 20000, total: 430000, saved: 40000 });
+      expect(both.body.pricing).toEqual({ subtotal: 450000, shippingFee: 20000, discount: 20000, shippingDiscount: 20000, coinsUsed: 0, total: 430000, saved: 40000 });
 
       // Mua 2 (quy đổi 2 kg → 26.000₫): vượt ngưỡng 500.000₫ → miễn phí vận chuyển, voucher freeship không còn tác dụng
       const two = await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ ...buyNow(2), shippingVoucherCode: shipCode }).expect(200);
@@ -826,6 +827,131 @@ describe('Home Shopping API (e2e)', () => {
       await prisma.order.update({ where: { id: order.id }, data: { deliveredAt: new Date(Date.now() - 40 * 86_400_000) } });
       const res = await requestReturn(aliceToken, order.id).expect(409);
       expect(res.body.code).toBe('RETURN_NOT_ALLOWED');
+    });
+  });
+
+  describe('account center (tên đăng nhập, email, cài đặt, ngân hàng, thông báo, xu)', () => {
+    let gina: { token: string; id: string };
+    const ginaEmail = () => `gina-${run}@e2e.test`;
+
+    beforeAll(async () => {
+      gina = await register('gina');
+      await addAddress(gina.token);
+      await prisma.product.update({ where: { id: productId }, data: { stock: 30, price: 450000 } });
+    });
+
+    it('username is generated, can be changed exactly once, and must be unique', async () => {
+      const me = await http().get('/api/auth/me').set(auth(gina.token)).expect(200);
+      expect(me.body).toMatchObject({ username: expect.stringMatching(/^gina[a-z0-9._]*$/), usernameChangeable: true, coinBalance: 0 });
+      expect(me.body.settings).toEqual({ emailOrderUpdates: true, emailPromotions: false, inAppPromotions: true, hideNameInReviews: false });
+
+      await http().patch('/api/account/username').set(auth(gina.token)).send({ username: 'Có Dấu!' }).expect(400);
+      const bobMe = await http().get('/api/auth/me').set(auth(bobToken)).expect(200);
+      const dup = await http().patch('/api/account/username').set(auth(gina.token)).send({ username: bobMe.body.username }).expect(409);
+      expect(dup.body.code).toBe('CONFLICT');
+      const name = `gina.${run.replace(/[^a-z0-9]/g, '')}`;
+      const ok = await http().patch('/api/account/username').set(auth(gina.token)).send({ username: name.toUpperCase() }).expect(200);
+      expect(ok.body).toMatchObject({ username: name, usernameChangeable: false });
+      const again = await http().patch('/api/account/username').set(auth(gina.token)).send({ username: `${name}x` }).expect(409);
+      expect(again.body.message).toBe('Tên đăng nhập chỉ được thay đổi một lần');
+    });
+
+    it('changes email with password + a 6-digit code sent to the new address', async () => {
+      const newEmail = `gina2-${run}@e2e.test`;
+      await http().post('/api/account/email/request').set(auth(gina.token)).send({ newEmail, password: 'Wrong12345' }).expect(403);
+      await http().post('/api/account/email/request').set(auth(gina.token)).send({ newEmail: `bob-${run}@e2e.test`, password }).expect(409);
+      await http().post('/api/account/email/request').set(auth(gina.token)).send({ newEmail, password }).expect(200);
+      const mail = outbox.filter((m) => m.to === newEmail).at(-1)!;
+      const code = mail.text.match(/\b(\d{6})\b/)![1];
+      await http().post('/api/account/email/confirm').set(auth(gina.token)).send({ code: code === '000000' ? '111111' : '000000' }).expect(400);
+      const ok = await http().post('/api/account/email/confirm').set(auth(gina.token)).send({ code }).expect(200);
+      expect(ok.body.email).toBe(newEmail);
+      // Đăng nhập bằng email mới
+      await http().post('/api/auth/login').send({ email: newEmail, password }).expect(200);
+      await http().post('/api/auth/login').send({ email: ginaEmail(), password }).expect(401);
+    });
+
+    it('bank accounts: catalog, add (normalized holder name), one default, delete promotes the next', async () => {
+      const catalog = await http().get('/api/account/banks/catalog').set(auth(gina.token)).expect(200);
+      expect(catalog.body).toContainEqual({ bin: '970422', name: 'MB Bank (Ngân hàng Quân Đội)' });
+      let list = (await http().post('/api/account/banks').set(auth(gina.token)).send({ bankBin: '970422', accountNo: '0123 456 789', holderName: 'Nguyễn Thị Gina' }).expect(201)).body;
+      expect(list[0]).toMatchObject({ bankName: 'MB Bank (Ngân hàng Quân Đội)', accountNo: '0123456789', accountNoMasked: '******6789', holderName: 'NGUYEN THI GINA', isDefault: true });
+      await http().post('/api/account/banks').set(auth(gina.token)).send({ bankBin: '970422', accountNo: '0123456789', holderName: 'Gina' }).expect(409);
+      await http().post('/api/account/banks').set(auth(gina.token)).send({ bankBin: '123456', accountNo: '999999', holderName: 'Gina' }).expect(400);
+      list = (await http().post('/api/account/banks').set(auth(gina.token)).send({ bankBin: '970436', accountNo: '1111222233', holderName: 'Gina', isDefault: true }).expect(201)).body;
+      expect(list.filter((b: { isDefault: boolean }) => b.isDefault).map((b: { bankBin: string }) => b.bankBin)).toEqual(['970436']);
+      list = (await http().delete(`/api/account/banks/${list[0].id}`).set(auth(gina.token)).expect(200)).body;
+      expect(list).toHaveLength(1);
+      expect(list[0]).toMatchObject({ bankBin: '970422', isDefault: true });
+      expect((await http().get('/api/account/banks').set(auth(bobToken)).expect(200)).body).toEqual([]);
+    });
+
+    it('orders create notifications; coins are earned on completion, spent at checkout and refunded on cancel', async () => {
+      const order = (await http().post('/api/orders').set(auth(gina.token)).set('Idempotency-Key', randomUUID()).send({ items: [{ productId, quantity: 2 }] }).expect(201)).body;
+      for (const status of ['PROCESSING', 'SHIPPING', 'DELIVERED', 'COMPLETED']) {
+        await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status }).expect(200);
+      }
+      // 900.000₫ × 1% = 9.000 xu
+      const me = await http().get('/api/auth/me').set(auth(gina.token)).expect(200);
+      expect(me.body.coinBalance).toBe(9000);
+      const coins = await http().get('/api/coins').set(auth(gina.token)).expect(200);
+      expect(coins.body).toMatchObject({ balance: 9000, rules: { earnPercent: 1, reviewReward: 100, maxUsePercent: 50 } });
+      expect(coins.body.items[0]).toMatchObject({ type: 'EARN_ORDER', amount: 9000, balanceAfter: 9000, orderId: order.id });
+      // Chạy lại bước hoàn thành không cộng thêm (refKey)
+      await prisma.$transaction((tx) => app.get(CoinsService).apply(tx, gina.id, 'EARN_ORDER', 9000, `earn:order:${order.id}`, 'x', order.id));
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: gina.id } })).coinBalance).toBe(9000);
+
+      const unread = await http().get('/api/notifications/unread-count').set(auth(gina.token)).expect(200);
+      expect(unread.body.total).toBeGreaterThanOrEqual(6);
+      expect(unread.body.ORDER).toBeGreaterThanOrEqual(5);
+      expect(unread.body.COINS).toBe(1);
+      const list = await http().get('/api/notifications').query({ type: 'ORDER' }).set(auth(gina.token)).expect(200);
+      expect(list.body.items.map((n: { title: string }) => n.title)).toEqual(
+        expect.arrayContaining(['Đặt hàng thành công', 'Đơn hàng đã được xác nhận', 'Đơn hàng đang được giao', 'Giao hàng thành công', 'Đơn hàng hoàn thành']),
+      );
+      await http().post(`/api/notifications/${list.body.items[0].id}/read`).set(auth(gina.token)).expect(204);
+      await http().post(`/api/notifications/${list.body.items[0].id}/read`).set(auth(bobToken)).expect(204);
+      await http().post('/api/notifications/read-all').set(auth(gina.token)).expect(200);
+      expect((await http().get('/api/notifications/unread-count').set(auth(gina.token)).expect(200)).body.total).toBe(0);
+
+      // Dùng xu: đơn 450.000 + ship 20.000 = 470.000 → tối đa 50% nhưng chỉ có 9.000 xu
+      const preview = await http().post('/api/checkout/preview').set(auth(gina.token)).send({ items: [{ productId, quantity: 1 }], useCoins: true }).expect(200);
+      expect(preview.body.coins).toMatchObject({ balance: 9000, usable: 9000, applied: 9000 });
+      expect(preview.body.pricing).toMatchObject({ coinsUsed: 9000, total: 461000 });
+      const paid = await http()
+        .post('/api/orders')
+        .set(auth(gina.token))
+        .set('Idempotency-Key', randomUUID())
+        .send({ items: [{ productId, quantity: 1 }], useCoins: true, expectedTotal: 461000 })
+        .expect(201);
+      expect(paid.body).toMatchObject({ coinsUsed: 9000, totalAmount: 461000 });
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: gina.id } })).coinBalance).toBe(0);
+      // Hủy đơn → trả lại xu
+      await http().post(`/api/orders/${paid.body.id}/cancel`).set(auth(gina.token)).send({ reason: 'Đổi ý, không muốn mua nữa' }).expect(200);
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: gina.id } })).coinBalance).toBe(9000);
+    });
+
+    it('verified reviews earn coins once; "hide my name" masks the reviewer publicly', async () => {
+      const slug = (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).slug;
+      await http().put(`/api/products/${slug}/reviews`).set(auth(gina.token)).send({ rating: 5, comment: 'Ấm đun nước sôi rất nhanh, đáng tiền.' }).expect(200);
+      await http().put(`/api/products/${slug}/reviews`).set(auth(gina.token)).send({ rating: 4, comment: 'Sửa lại: dùng ổn, hơi ồn một chút.' }).expect(200);
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: gina.id } })).coinBalance).toBe(9100);
+
+      let reviews = await http().get(`/api/products/${slug}/reviews`).expect(200);
+      expect(reviews.body.items.find((r: { user: { id: string } }) => r.user.id === gina.id).user.fullName).toBe('E2E gina');
+      const s = await http().patch('/api/account/settings').set(auth(gina.token)).send({ hideNameInReviews: true, emailPromotions: true }).expect(200);
+      expect(s.body).toMatchObject({ hideNameInReviews: true, emailPromotions: true, emailOrderUpdates: true });
+      await http().patch('/api/account/settings').set(auth(gina.token)).send({ unknown: true }).expect(400);
+      reviews = await http().get(`/api/products/${slug}/reviews`).expect(200);
+      expect(reviews.body.items.find((r: { user: { id: string } }) => r.user.id === gina.id).user).toMatchObject({ fullName: 'E***a', avatarUrl: null });
+    });
+
+    it('exports all personal data as JSON', async () => {
+      const res = await http().get('/api/account/export').set(auth(gina.token)).expect(200);
+      expect(res.body).toMatchObject({ profile: { id: gina.id }, addresses: [expect.any(Object)], bankAccounts: [expect.any(Object)] });
+      expect(res.body.orders.length).toBeGreaterThanOrEqual(2);
+      expect(res.body.coinTransactions.length).toBeGreaterThanOrEqual(4);
+      expect(res.body.addresses[0].userId).toBeUndefined();
     });
   });
 

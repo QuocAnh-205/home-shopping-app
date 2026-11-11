@@ -1,6 +1,8 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ActorType, OrderStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { ActorType, NotificationType, OrderStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { CoinsService } from '../coins/coins.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AppError, ErrorCode } from '../common/errors';
 import { CartService } from '../cart/cart.service';
 import { PlaceOrderDto } from '../checkout/checkout.dto';
@@ -66,6 +68,8 @@ export class OrdersService {
     private readonly checkout: CheckoutService,
     private readonly vouchers: VouchersService,
     config: ConfigService,
+    private readonly coins: CoinsService,
+    private readonly notifications: NotificationsService,
   ) {
     this.paymentHoldMinutes = Number(config.get<string>('PAYMENT_HOLD_MINUTES') ?? 15);
   }
@@ -136,6 +140,7 @@ export class OrdersService {
               discountAmount: preview.pricing.discount,
               shippingDiscount: preview.pricing.shippingDiscount,
               totalAmount: preview.pricing.total,
+              coinsUsed: preview.pricing.coinsUsed,
               voucherCode: discountVoucher?.voucher.code ?? null,
               shippingVoucherCode: shippingVoucher?.voucher.code ?? null,
               recipientName: a.fullName,
@@ -171,6 +176,8 @@ export class OrdersService {
             include: orderInclude,
           });
           await this.vouchers.reserve(tx, userId, order.id, plan.appliedVouchers);
+          // Xu: trừ số dư có khóa dòng; số dư vừa bị dùng ở đơn khác → COINS_INSUFFICIENT, rollback cả đơn
+          if (preview.pricing.coinsUsed > 0) await this.coins.spend(tx, userId, order.id, preview.pricing.coinsUsed);
           return order;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 },
@@ -180,6 +187,15 @@ export class OrdersService {
       await this.snapshotImages(order.id);
       await Promise.all([this.cart.removeItems(userId, plan.cartProductIds), this.products.invalidateCache()]);
       this.metrics.ordersTotal.inc({ result: 'success' });
+      await this.notifications.notify(userId, {
+        type: NotificationType.ORDER,
+        title: online ? 'Đặt hàng thành công – chờ thanh toán' : 'Đặt hàng thành công',
+        body: online
+          ? `Đơn #${order.id.slice(0, 8).toUpperCase()} đang được giữ hàng, vui lòng hoàn tất thanh toán ${preview.pricing.total.toLocaleString('vi-VN')}₫.`
+          : `Đơn #${order.id.slice(0, 8).toUpperCase()} (${preview.pricing.total.toLocaleString('vi-VN')}₫) đang chờ cửa hàng xác nhận.`,
+        link: `/orders/${order.id}`,
+        dedupeKey: `order:${order.id}:created`,
+      });
       this.logger.log({
         event: 'order.created',
         orderId: order.id,
@@ -189,6 +205,7 @@ export class OrdersService {
         subtotal: preview.pricing.subtotal,
         shippingFee: preview.pricing.shippingFee,
         discount: preview.pricing.discount + preview.pricing.shippingDiscount,
+        coinsUsed: preview.pricing.coinsUsed,
         total: preview.pricing.total,
         vouchers: plan.appliedVouchers.map((v) => v.voucher.code),
       });

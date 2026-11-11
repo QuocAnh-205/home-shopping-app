@@ -76,3 +76,75 @@ export class DeleteAccountDto {
   @MaxLength(72)
   password?: string;
 }
+
+export class ChangeUsernameDto {
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @Matches(/^[a-z0-9._]{4,30}$/, { message: 'Tên đăng nhập gồm 4–30 ký tự: chữ thường không dấu, số, dấu chấm hoặc gạch dưới' })
+  username: string;
+}
+
+export class EmailChangeRequestDto {
+  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @MaxLength(254)
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  newEmail: string;
+
+  /** Bắt buộc với tài khoản có mật khẩu */
+  @IsOptional()
+  @IsString()
+  @MaxLength(72)
+  password?: string;
+}
+
+export class EmailChangeConfirmDto {
+  @Matches(/^\d{6}$/, { message: 'Mã xác nhận gồm 6 chữ số' })
+  code: string;
+}
+
+export class UpdateSettingsDto {
+  @IsOptional()
+  @IsBoolean()
+  emailOrderUpdates?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailPromotions?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppPromotions?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hideNameInReviews?: boolean;
+}
+
+export class BankAccountDto {
+  @Matches(/^\d{6}$/, { message: 'Vui lòng chọn ngân hàng' })
+  bankBin: string;
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\s+/g, '') : value))
+  @Matches(/^\d{6,19}$/, { message: 'Số tài khoản gồm 6–19 chữ số' })
+  accountNo: string;
+
+  /** Tên chủ tài khoản: IN HOA không dấu như trên thẻ */
+  @Transform(({ value }) =>
+    typeof value === 'string'
+      ? value
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/g, 'd')
+          .replace(/Đ/g, 'D')
+          .toUpperCase()
+          .trim()
+          .replace(/\s+/g, ' ')
+      : value,
+  )
+  @Matches(/^[A-Z ]{3,100}$/, { message: 'Tên chủ tài khoản chỉ gồm chữ cái (IN HOA không dấu)' })
+  holderName: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+}

@@ -1,6 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 import { PaymentMethod, Prisma } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
+import { CoinsService } from '../coins/coins.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CheckoutPlan, CheckoutPreview, CheckoutService } from '../checkout/checkout.service';
 import { AppError } from '../common/errors';
 import { MetricsService } from '../metrics/metrics.service';
@@ -29,6 +31,7 @@ describe('OrdersService.create', () => {
   const products = { invalidateCache: jest.fn() };
   const checkout = { build: jest.fn() };
   const vouchers = { reserve: jest.fn() };
+  const coins = { spend: jest.fn() };
   const config = { get: () => undefined } as unknown as ConfigService;
 
   const service = new OrdersService(
@@ -40,6 +43,8 @@ describe('OrdersService.create', () => {
     checkout as unknown as CheckoutService,
     vouchers as unknown as VouchersService,
     config,
+    coins as unknown as CoinsService,
+    { notify: jest.fn() } as unknown as NotificationsService,
   );
 
   const preview = (patch: Partial<CheckoutPreview> = {}): CheckoutPreview =>
@@ -51,7 +56,8 @@ describe('OrdersService.create', () => {
       vouchers: { voucherCode: null, shippingVoucherCode: null, discount: [], shipping: [], errors: [] },
       paymentMethod: PaymentMethod.COD,
       paymentMethods: [],
-      pricing: { subtotal: 2_500_000, shippingFee: 30_000, discount: 0, shippingDiscount: 30_000, total: 2_500_000, saved: 30_000 },
+      pricing: { subtotal: 2_500_000, shippingFee: 30_000, discount: 0, shippingDiscount: 30_000, coinsUsed: 0, total: 2_500_000, saved: 30_000 },
+      coins: { balance: 0, usable: 0, applied: 0, earnEstimate: 25_000 },
       issues: [],
       canPlaceOrder: true,
       ...patch,

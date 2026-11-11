@@ -1,6 +1,6 @@
 /**
  * Công thức tiền của 1 đơn (hàm thuần, không I/O → test kỹ được):
- *   total = subtotal + shippingFee − discount − shippingDiscount
+ *   total = subtotal + shippingFee − discount − shippingDiscount − coinsUsed
  *   shippingDiscount = miễn phí theo ngưỡng (nếu đạt) + voucher vận chuyển (chỉ trên phần phí còn lại)
  * Mọi số đều là số nguyên VND, không âm.
  */
@@ -11,6 +11,8 @@ export interface PricingInput {
   /** Đã tính sẵn bởi voucher engine */
   voucherDiscount: number;
   shippingVoucherDiscount: number;
+  /** Xu khách chọn dùng: tối đa maxPercent% số tiền còn phải trả, không quá số dư */
+  coins?: { use: boolean; balance: number; maxPercent: number };
 }
 
 export interface PricingBreakdown {
@@ -18,6 +20,8 @@ export interface PricingBreakdown {
   shippingFee: number;
   discount: number;
   shippingDiscount: number;
+  /** Xu được trừ (1 xu = 1₫) */
+  coinsUsed: number;
   total: number;
   /** Tổng tiết kiệm (hiển thị "Tiết kiệm được ...") */
   saved: number;
@@ -34,6 +38,9 @@ export function priceOrder(input: PricingInput): PricingBreakdown {
   const thresholdDiscount = input.freeShipEligible ? shippingFee : 0;
   const shippingDiscount = Math.min(shippingFee, thresholdDiscount + Math.max(0, input.shippingVoucherDiscount));
   const discount = Math.min(subtotal, Math.max(0, input.voucherDiscount));
-  const total = subtotal + shippingFee - discount - shippingDiscount;
-  return { subtotal, shippingFee, discount, shippingDiscount, total, saved: discount + shippingDiscount };
+  const beforeCoins = subtotal + shippingFee - discount - shippingDiscount;
+  const c = input.coins;
+  const coinsUsed = c?.use ? Math.max(0, Math.min(c.balance, Math.floor((beforeCoins * c.maxPercent) / 100))) : 0;
+  const total = beforeCoins - coinsUsed;
+  return { subtotal, shippingFee, discount, shippingDiscount, coinsUsed, total, saved: discount + shippingDiscount + coinsUsed };
 }

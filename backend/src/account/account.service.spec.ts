@@ -19,6 +19,9 @@ describe('AccountService', () => {
     newsletterSubscriber: { deleteMany: jest.fn() },
     user: { update: jest.fn() },
     address: { count: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
+    bankAccount: { deleteMany: jest.fn() },
+    notification: { deleteMany: jest.fn() },
+    userVoucher: { deleteMany: jest.fn() },
   };
   const prisma = {
     user: { update: jest.fn(), findUnique: jest.fn() },
