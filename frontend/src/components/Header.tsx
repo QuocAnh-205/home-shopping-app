@@ -2,6 +2,7 @@
 
 import {
   faBagShopping,
+  faBell,
   faGauge,
   faHouseChimney,
   faMagnifyingGlass,
@@ -13,7 +14,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, type FormEvent } from 'react';
-import { logout, useCartCount, useSession } from '@/lib/client-api';
+import { logout, useCartCount, useSession, useUnreadNotifications } from '@/lib/client-api';
 import { initials } from '@/lib/types';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -49,6 +50,7 @@ export function Header() {
   const pathname = usePathname();
   const { session, ready } = useSession();
   const cartCount = useCartCount();
+  const unread = useUnreadNotifications();
   const active = (href: string) => (pathname.startsWith(href) ? 'icon-btn active' : 'icon-btn');
 
   async function onLogout() {
@@ -81,6 +83,15 @@ export function Header() {
             <Link href="/orders" className={`${active('/orders')} desktop-only`}>
               <FontAwesomeIcon icon={faReceipt} fixedWidth />
               <span className="label">Đơn hàng</span>
+            </Link>
+          )}
+          {ready && session && (
+            <Link href="/account?tab=notifications" className={active('/account')} aria-label={`Thông báo, ${unread.total} chưa đọc`}>
+              <span className="icon-badge">
+                <FontAwesomeIcon icon={faBell} fixedWidth />
+                {unread.total > 0 && <span className="badge-count">{unread.total > 99 ? '99+' : unread.total}</span>}
+              </span>
+              <span className="label desktop-only">Thông báo</span>
             </Link>
           )}
           {ready && session?.user.role === 'ADMIN' && (

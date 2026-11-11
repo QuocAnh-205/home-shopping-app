@@ -188,6 +188,12 @@ function OrderDetail({ id }: { id: string }) {
                   <dd className="ok">−{formatPrice(order.discountAmount)}</dd>
                 </>
               )}
+              {order.coinsUsed > 0 && (
+                <>
+                  <dt>Dùng xu</dt>
+                  <dd className="ok">−{formatPrice(order.coinsUsed)}</dd>
+                </>
+              )}
               <dt className="total">Tổng cộng</dt>
               <dd className="total price">{formatPrice(order.totalAmount)}</dd>
             </dl>

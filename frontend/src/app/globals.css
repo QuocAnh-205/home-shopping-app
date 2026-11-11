@@ -5396,3 +5396,431 @@ button.stat-tile:hover {
   color: var(--primary);
   border-color: var(--primary);
 }
+
+/* ---------------- Trung tâm tài khoản ---------------- */
+.acc-nav-group.active {
+  color: var(--primary);
+}
+
+.acc-nav-sale {
+  color: var(--danger);
+}
+
+.acc-nav-coin {
+  color: #d97706;
+}
+
+.acc-nav-meta {
+  margin-left: auto;
+}
+
+.badge-new {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.badge-count.inline {
+  position: static;
+  margin-left: auto;
+}
+
+.tab-count {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 18px;
+  text-align: center;
+}
+
+.acc-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--warn);
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--text);
+}
+
+.acc-banner > span {
+  flex: 1;
+}
+
+.acc-banner > .svg-inline--fa {
+  color: var(--warn);
+}
+
+.acc-field {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+
+.notify-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notify-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  padding: 14px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notify-item.unread {
+  background: var(--primary-soft);
+}
+
+.notify-item:hover {
+  background: var(--surface-2);
+}
+
+.notify-ico {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--primary);
+}
+
+.notify-payment {
+  color: var(--ok);
+}
+
+.notify-coins {
+  color: #d97706;
+}
+
+.notify-promotion {
+  color: var(--danger);
+}
+
+.notify-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notify-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.settings-list {
+  display: grid;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting-row > span {
+  display: grid;
+  gap: 2px;
+}
+
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: background 0.2s var(--ease);
+}
+
+.switch span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s var(--ease);
+}
+
+.switch.on {
+  background: var(--primary);
+}
+
+.switch.on span {
+  transform: translateX(20px);
+}
+
+.personal-info {
+  max-width: 560px;
+}
+
+.otp-input {
+  font-size: 1.4rem;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+
+.voucher-code-form {
+  flex-wrap: nowrap;
+  margin-bottom: 12px;
+}
+
+.voucher-code-form .input {
+  min-width: 0;
+}
+
+.voucher-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.voucher-ticket {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.voucher-stub {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 1.4rem;
+  border-right: 2px dashed var(--surface);
+}
+
+.voucher-stub small {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.voucher-ticket.is-ship .voucher-stub {
+  background: var(--accent);
+}
+
+.voucher-main {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.voucher-usage {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.voucher-usage span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+}
+
+.voucher-cta {
+  display: grid;
+  align-content: center;
+  padding-right: 12px;
+}
+
+.coins-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: var(--r);
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
+.coins-hero .muted {
+  color: rgb(255 255 255 / 85%);
+}
+
+.coins-hero > div {
+  display: grid;
+}
+
+.coins-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 22%);
+  font-size: 1.6rem;
+}
+
+.coins-balance {
+  font-size: 1.6rem;
+}
+
+.coins-rules {
+  margin: 12px 0;
+  padding-left: 20px;
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+
+.coin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.coin-list li {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.coin-badge {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+.coin-badge.in {
+  color: #d97706;
+}
+
+.coin-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.coin-amount {
+  font-size: 1.05rem;
+}
+
+.coins-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .voucher-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .acc-nav-meta {
+    display: none;
+  }
+}
+
+.acc-banner .btn-icon {
+  background: transparent;
+  color: var(--muted);
+}
+
+/* Điện thoại: menu tài khoản thành hàng thẻ cuộn ngang → nội dung hiện ngay, không phải cuộn qua cả menu */
+@media (max-width: 860px) {
+  .acc-side .acc-since {
+    display: none;
+  }
+
+  /* minmax(0, 1fr): hàng thẻ dài cuộn ngang bên trong, không đẩy cả trang tràn ra ngoài màn hình */
+  .acc-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .acc-side,
+  .acc-main {
+    min-width: 0;
+  }
+
+  .acc-nav {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+  }
+
+  .acc-nav-group,
+  .acc-nav ul button {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .acc-nav ul {
+    display: contents;
+  }
+
+  .acc-nav ul li {
+    display: contents;
+  }
+
+  .acc-nav ul button.active,
+  .acc-nav-group.active {
+    border-color: var(--primary);
+  }
+}

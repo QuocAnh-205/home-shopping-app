@@ -134,6 +134,40 @@ export function useCartCount(): number {
   return count;
 }
 
+// ---------------- Thông báo ----------------
+
+const NOTIFY_EVENT = 'hs:notifications';
+
+export function notifyNotificationsChanged(): void {
+  window.dispatchEvent(new Event(NOTIFY_EVENT));
+}
+
+/** Số thông báo chưa đọc, tự làm mới mỗi 60 giây và khi có thao tác đọc */
+export function useUnreadNotifications(): Record<string, number> & { total: number } {
+  const { session } = useSession();
+  const [counts, setCounts] = useState<Record<string, number> & { total: number }>({ total: 0 });
+  useEffect(() => {
+    if (!session) {
+      setCounts({ total: 0 });
+      return;
+    }
+    let active = true;
+    const load = () =>
+      apiFetch<Record<string, number> & { total: number }>('/notifications/unread-count')
+        .then((c) => active && setCounts(c))
+        .catch(() => undefined);
+    void load();
+    const t = setInterval(load, 60_000);
+    window.addEventListener(NOTIFY_EVENT, load);
+    return () => {
+      active = false;
+      clearInterval(t);
+      window.removeEventListener(NOTIFY_EVENT, load);
+    };
+  }, [session]);
+  return counts;
+}
+
 // ---------------- HTTP ----------------
 
 const ERROR_VI: Record<number, string> = {

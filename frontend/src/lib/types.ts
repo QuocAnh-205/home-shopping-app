@@ -168,6 +168,7 @@ export interface Order {
   shippingDiscount: number;
   voucherCode: string | null;
   shippingVoucherCode: string | null;
+  coinsUsed: number;
   recipientName: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -194,7 +195,18 @@ export interface UserProfile {
   avatarUrl: string | null;
 }
 
+export interface UserSettings {
+  emailOrderUpdates: boolean;
+  emailPromotions: boolean;
+  inAppPromotions: boolean;
+  hideNameInReviews: boolean;
+}
+
 export interface AccountProfile extends UserProfile {
+  username: string;
+  usernameChangeable: boolean;
+  coinBalance: number;
+  settings: UserSettings;
   phone: string | null;
   gender: Gender | null;
   /** YYYY-MM-DD */
@@ -461,7 +473,8 @@ export interface CheckoutPreview {
   };
   paymentMethod: PaymentMethod;
   paymentMethods: { method: PaymentMethod; label: string; available: boolean; reason?: string }[];
-  pricing: { subtotal: number; shippingFee: number; discount: number; shippingDiscount: number; total: number; saved: number };
+  pricing: { subtotal: number; shippingFee: number; discount: number; shippingDiscount: number; coinsUsed: number; total: number; saved: number };
+  coins: { balance: number; usable: number; applied: number; earnEstimate: number };
   issues: { code: string; message: string; productId?: string }[];
   canPlaceOrder: boolean;
 }
@@ -504,4 +517,46 @@ export interface PaymentInfo {
   sandbox: boolean;
   /** Chuyển khoản quét mã VietQR (chờ cửa hàng đối soát) */
   transfer: boolean;
+}
+
+// ---------------- Trung tâm tài khoản ----------------
+
+export type NotificationType = 'ORDER' | 'PAYMENT' | 'COINS' | 'PROMOTION' | 'ACCOUNT';
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationPage {
+  items: AppNotification[];
+  page: number;
+  totalPages: number;
+  unread: number;
+}
+
+export interface BankAccount {
+  id: string;
+  bankBin: string;
+  bankName: string;
+  accountNo: string;
+  accountNoMasked: string;
+  holderName: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export type CoinTxType = 'EARN_ORDER' | 'EARN_REVIEW' | 'SPEND_ORDER' | 'REFUND_ORDER' | 'REVOKE_ORDER';
+
+export interface CoinSummary {
+  balance: number;
+  items: { id: string; type: CoinTxType; amount: number; balanceAfter: number; orderId: string | null; note: string; createdAt: string }[];
+  page: number;
+  totalPages: number;
+  rules: { earnPercent: number; reviewReward: number; maxUsePercent: number };
 }

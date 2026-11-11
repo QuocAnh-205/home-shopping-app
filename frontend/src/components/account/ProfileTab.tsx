@@ -4,6 +4,7 @@ import { faCamera, faCircleCheck, faSpinner, faTriangleExclamation } from '@fort
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { apiFetch, updateSessionUser } from '@/lib/client-api';
+import { EmailChangeDialog } from './EmailChangeDialog';
 import { initials, maskEmail, maskPhone, type AccountProfile, type Gender } from '@/lib/types';
 
 const AVATAR_MAX_BYTES = 1024 * 1024;
@@ -32,6 +33,8 @@ export function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSa
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [username, setUsername] = useState(profile.username);
+  const [changingEmail, setChangingEmail] = useState(false);
 
   const thisYear = new Date().getFullYear();
   const years = Array.from({ length: thisYear - 10 - 1900 + 1 }, (_, i) => thisYear - 10 - i);
@@ -47,6 +50,10 @@ export function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSa
     setBusy(true);
     setMsg(null);
     try {
+      // Tên đăng nhập chỉ đổi được 1 lần: gửi riêng, chỉ khi khách thật sự sửa
+      if (profile.usernameChangeable && username.trim().toLowerCase() !== profile.username) {
+        await apiFetch<AccountProfile>('/account/username', { method: 'PATCH', body: JSON.stringify({ username: username.trim().toLowerCase() }) });
+      }
       const updated = await apiFetch<AccountProfile>('/account/profile', {
         method: 'PATCH',
         body: JSON.stringify({
@@ -105,8 +112,32 @@ export function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSa
       <div className="acc-profile">
         <form className="acc-form" onSubmit={save}>
           <div className="acc-row">
-            <span className="acc-label">Email đăng nhập</span>
-            <span className="acc-value">{maskEmail(profile.email)}</span>
+            <span className="acc-label">Tên đăng nhập</span>
+            {profile.usernameChangeable ? (
+              <span className="acc-field">
+                <input
+                  className="input"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ''))}
+                  minLength={4}
+                  maxLength={30}
+                  pattern="[a-z0-9._]{4,30}"
+                  aria-label="Tên đăng nhập"
+                />
+                <small className="muted">Tên đăng nhập chỉ có thể thay đổi một lần.</small>
+              </span>
+            ) : (
+              <span className="acc-value">{profile.username}</span>
+            )}
+          </div>
+          <div className="acc-row">
+            <span className="acc-label">Email</span>
+            <span className="acc-value">
+              {maskEmail(profile.email)}
+              <button type="button" className="link-btn" onClick={() => setChangingEmail(true)}>
+                Thay đổi
+              </button>
+            </span>
           </div>
           <label className="acc-row">
             <span className="acc-label">Tên</span>
@@ -187,6 +218,17 @@ export function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSa
             </button>
           </div>
         </form>
+
+        {changingEmail && (
+          <EmailChangeDialog
+            profile={profile}
+            onClose={() => setChangingEmail(false)}
+            onChanged={(p) => {
+              onSaved(p);
+              setMsg({ ok: true, text: 'Đã đổi email đăng nhập' });
+            }}
+          />
+        )}
 
         <div className="acc-avatar">
           {profile.avatarUrl ? (

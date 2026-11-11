@@ -3,6 +3,7 @@
 import {
   faArrowLeft,
   faCircleCheck,
+  faCoins,
   faCreditCard,
   faLocationDot,
   faLock,
@@ -41,6 +42,7 @@ const METHOD_ICON: Record<PaymentMethod, IconDefinition> = {
 };
 
 interface Choice {
+  useCoins?: boolean;
   addressId?: string;
   voucherCode?: string;
   shippingVoucherCode?: string;
@@ -183,7 +185,7 @@ function Checkout() {
       router.replace(`/orders/${order.id}?placed=1`);
     } catch (err) {
       const e = err as ApiError;
-      if (e.code === 'PRICE_CHANGED' || e.code === 'OUT_OF_STOCK' || e.code === 'VOUCHER_EXHAUSTED' || e.code === 'VOUCHER_USER_LIMIT') {
+      if (['PRICE_CHANGED', 'OUT_OF_STOCK', 'VOUCHER_EXHAUSTED', 'VOUCHER_USER_LIMIT', 'COINS_INSUFFICIENT'].includes(e.code ?? '')) {
         // Bảng giá đã cũ: tải lại để khách xem con số mới rồi bấm đặt lại (key mới vì nội dung đơn đã khác)
         idempotencyKey.current = crypto.randomUUID();
         setNotice(e.message);
@@ -325,6 +327,19 @@ function Checkout() {
           ))}
         </div>
 
+        {preview.coins.balance > 0 && (
+          <label className="coins-toggle">
+            <span>
+              <FontAwesomeIcon icon={faCoins} className="acc-nav-coin" /> Dùng {preview.coins.usable.toLocaleString('vi-VN')} xu
+              <span className="muted small"> (có {preview.coins.balance.toLocaleString('vi-VN')} xu)</span>
+            </span>
+            <span className="row" style={{ gap: 8 }}>
+              <span className="ok small">−{formatPrice(preview.coins.usable)}</span>
+              <input type="checkbox" checked={Boolean(choice.useCoins)} disabled={preview.coins.usable === 0} onChange={(e) => update({ useCoins: e.target.checked })} />
+            </span>
+          </label>
+        )}
+
         <dl className="summary">
           <dt>Tổng tiền hàng</dt>
           <dd>{formatPrice(pricing.subtotal)}</dd>
@@ -342,10 +357,21 @@ function Checkout() {
               <dd className="ok">−{formatPrice(pricing.discount)}</dd>
             </>
           )}
+          {pricing.coinsUsed > 0 && (
+            <>
+              <dt>Dùng xu</dt>
+              <dd className="ok">−{formatPrice(pricing.coinsUsed)}</dd>
+            </>
+          )}
           <dt className="total">Tổng thanh toán</dt>
           <dd className="total price">{formatPrice(pricing.total)}</dd>
         </dl>
         {pricing.saved > 0 && <p className="ok small">Tiết kiệm {formatPrice(pricing.saved)}</p>}
+        {preview.coins.earnEstimate > 0 && (
+          <p className="muted small">
+            <FontAwesomeIcon icon={faCoins} className="acc-nav-coin" /> Nhận {preview.coins.earnEstimate.toLocaleString('vi-VN')} xu khi đơn hoàn thành
+          </p>
+        )}
 
         {notice && (
           <p className="alert alert-info" role="status">
