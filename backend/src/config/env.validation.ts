@@ -46,7 +46,9 @@ export function validateEnv(config: Env): Env {
   for (const key of ['PAYMENT_HOLD_MINUTES', 'TRANSFER_CONFIRM_HOURS', 'ORDER_AUTO_COMPLETE_DAYS', 'RETURN_WINDOW_DAYS', 'SHIPPING_FREE_THRESHOLD', 'SHOP_PROVINCE_CODE']) {
     if (config[key] !== undefined && config[key] !== '' && !/^\d+$/.test(config[key]!)) errors.push(`${key} must be a non-negative integer`);
   }
-  if (config.PAYMENT_MOCK_ENABLED && !['true', 'false'].includes(config.PAYMENT_MOCK_ENABLED)) errors.push('PAYMENT_MOCK_ENABLED must be true or false');
+  for (const key of ['PAYMENT_MOCK_ENABLED', 'TRANSFER_AUTO_CONFIRM']) {
+    if (config[key] && !['true', 'false'].includes(config[key]!)) errors.push(`${key} must be true or false`);
+  }
   for (const key of ['PAYMENT_IPN_BASE_URL', 'VNPAY_PAY_URL', 'VNPAY_API_URL', 'MOMO_ENDPOINT']) {
     if (config[key] && !/^https?:\/\/[^\s]+$/.test(config[key]!)) errors.push(`${key} must be an http(s) URL`);
   }

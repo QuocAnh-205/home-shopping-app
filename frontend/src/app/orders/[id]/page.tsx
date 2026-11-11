@@ -45,7 +45,9 @@ const CUSTOMER_CANCELLABLE = ['AWAITING_PAYMENT', 'PENDING'];
 
 function OrderDetail({ id }: { id: string }) {
   const router = useRouter();
-  const justPlaced = useSearchParams().get('placed') === '1';
+  const search = useSearchParams();
+  const justPlaced = search.get('placed') === '1';
+  const justPaid = search.get('paid') === '1';
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -128,6 +130,11 @@ function OrderDetail({ id }: { id: string }) {
         </p>
       )}
       {notice && <p className="alert alert-info">{notice}</p>}
+      {justPaid && order.paymentStatus === 'PAID' && (
+        <p className="alert alert-ok" role="status">
+          <FontAwesomeIcon icon={faBoxOpen} /> Thanh toán thành công! Cửa hàng đang chuẩn bị hàng cho bạn, theo dõi tiến trình ngay bên dưới.
+        </p>
+      )}
       {justPlaced && order.status === 'PENDING' && (
         <p className="alert alert-ok" role="status">
           <FontAwesomeIcon icon={faBoxOpen} /> Đặt hàng thành công! Cửa hàng sẽ xác nhận đơn trong thời gian sớm nhất.

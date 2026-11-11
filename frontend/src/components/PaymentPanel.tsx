@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import {
   faBoxesPacking,
@@ -10,18 +10,12 @@ import {
   faQrcode,
   faSpinner,
   faTriangleExclamation,
-} from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/client-api";
-import {
-  PAYMENT_METHOD_LABEL,
-  formatDate,
-  formatPrice,
-  type Order,
-  type PaymentInfo,
-  type PaymentMethod,
-} from "@/lib/types";
+} from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
+import { apiFetch } from '@/lib/client-api';
+import { PAYMENT_METHOD_LABEL, formatDate, formatPrice, type Order, type PaymentInfo, type PaymentMethod } from '@/lib/types';
 
 interface MethodOption {
   method: PaymentMethod;
@@ -31,49 +25,32 @@ interface MethodOption {
 
 /** Hướng dẫn quét mã theo app khách chọn (mã VietQR chuẩn Napas 247 – app nào ở Việt Nam cũng quét được) */
 const STEPS: Record<PaymentMethod, string[]> = {
-  MOMO: [
-    'Mở ứng dụng MoMo → bấm "Quét mã".',
-    "Quét mã QR bên cạnh (hoặc chọn ảnh mã đã lưu).",
-    "Kiểm tra số tiền & nội dung rồi xác nhận chuyển.",
-  ],
+  MOMO: ['Mở ứng dụng MoMo → bấm "Quét mã".', 'Quét mã QR bên cạnh (hoặc chọn ảnh mã đã lưu).', 'Kiểm tra số tiền & nội dung rồi xác nhận chuyển.'],
   VNPAY: [
-    "Mở app ngân hàng bất kỳ có VNPay-QR / quét QR (Vietcombank, BIDV, MB, Techcombank…).",
-    "Quét mã QR bên cạnh.",
-    "Giữ nguyên số tiền & nội dung, xác nhận chuyển.",
+    'Mở app ngân hàng bất kỳ có VNPay-QR / quét QR (Vietcombank, BIDV, MB, Techcombank…).',
+    'Quét mã QR bên cạnh.',
+    'Giữ nguyên số tiền & nội dung, xác nhận chuyển.',
   ],
   VIETQR: [
     'Mở app ngân hàng / ví bất kỳ (MB, Vietcombank, ZaloPay, MoMo…) → "Quét QR".',
-    "Quét mã bên cạnh hoặc chuyển tay theo thông tin dưới đây.",
-    "Ghi ĐÚNG nội dung chuyển khoản để cửa hàng đối soát.",
+    'Quét mã bên cạnh hoặc chuyển tay theo thông tin dưới đây.',
+    'Ghi ĐÚNG nội dung chuyển khoản để cửa hàng đối soát.',
   ],
   COD: [],
 };
 
 function useCountdown(until: string | null): number {
-  const [left, setLeft] = useState(() =>
-    until ? new Date(until).getTime() - Date.now() : 0,
-  );
+  const [left, setLeft] = useState(() => (until ? new Date(until).getTime() - Date.now() : 0));
   useEffect(() => {
     setLeft(until ? new Date(until).getTime() - Date.now() : 0);
     if (!until) return;
-    const t = setInterval(
-      () => setLeft(new Date(until).getTime() - Date.now()),
-      1000,
-    );
+    const t = setInterval(() => setLeft(new Date(until).getTime() - Date.now()), 1000);
     return () => clearInterval(t);
   }, [until]);
   return Math.max(0, left);
 }
 
-function CopyField({
-  label,
-  value,
-  display,
-}: {
-  label: string;
-  value: string;
-  display?: string;
-}) {
+function CopyField({ label, value, display }: { label: string; value: string; display?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="copy-field">
@@ -108,13 +85,8 @@ function CopyField({
  * - Cổng online có link (VNPay/MoMo merchant): nút "Thanh toán ngay"
  * - Đổi phương thức (kể cả sang COD) trước khi hết thời gian giữ hàng
  */
-export function PaymentPanel({
-  order,
-  onChanged,
-}: {
-  order: Order;
-  onChanged: () => void;
-}) {
+export function PaymentPanel({ order, onChanged }: { order: Order; onChanged: () => void }) {
+  const router = useRouter();
   const left = useCountdown(order.paymentExpiresAt);
   const [methods, setMethods] = useState<MethodOption[]>([]);
   const [method, setMethod] = useState<PaymentMethod>(order.paymentMethod);
@@ -129,10 +101,7 @@ export function PaymentPanel({
       setBusy(true);
       setError(null);
       try {
-        const p = await apiFetch<PaymentInfo | null>(
-          `/orders/${order.id}/payments`,
-          { method: "POST", body: JSON.stringify({ method: m }) },
-        );
+        const p = await apiFetch<PaymentInfo | null>(`/orders/${order.id}/payments`, { method: 'POST', body: JSON.stringify({ method: m }) });
         if (!p) {
           onChanged(); // đã đổi sang COD
           return;
@@ -155,14 +124,12 @@ export function PaymentPanel({
 
   // Mở trang là có ngay mã QR / link: lấy giao dịch đang mở, chưa có thì tạo
   useEffect(() => {
-    apiFetch<MethodOption[]>("/payments/methods")
+    apiFetch<MethodOption[]>('/payments/methods')
       .then(setMethods)
       .catch(() => setMethods([]));
     apiFetch<PaymentInfo[]>(`/orders/${order.id}/payments`)
       .then((list) => {
-        const open = list.find(
-          (p) => p.status === "PENDING" && p.method === order.paymentMethod,
-        );
+        const open = list.find((p) => p.status === 'PENDING' && p.method === order.paymentMethod);
         if (open) setPayment(open);
         else void start(order.paymentMethod, false);
       })
@@ -187,16 +154,16 @@ export function PaymentPanel({
     setBusy(true);
     setError(null);
     try {
-      await apiFetch(`/orders/${order.id}/payments/claim`, { method: "POST" });
+      const res = await apiFetch<{ autoConfirmed: boolean }>(`/orders/${order.id}/payments/claim`, { method: 'POST' });
+      if (res.autoConfirmed) {
+        // Chế độ demo: tiền được coi như đã nhận → đơn sang "Đang chuẩn bị hàng"; trang đơn hiện thông báo thành công
+        router.replace(`/orders/${order.id}?paid=1`, { scroll: true });
+        onChanged();
+        return;
+      }
       onChanged();
       // Chuyển khách tới màn hình chờ xác nhận + lịch sử đơn (mã QR không còn cần nữa)
-      setTimeout(
-        () =>
-          document
-            .getElementById("pay-title")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-        300,
-      );
+      setTimeout(() => document.getElementById('pay-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -205,17 +172,14 @@ export function PaymentPanel({
   }
 
   const hh = Math.floor(left / 3_600_000);
-  const mm = String(Math.floor((left % 3_600_000) / 60_000)).padStart(2, "0");
-  const ss = String(Math.floor((left % 60_000) / 1000)).padStart(2, "0");
+  const mm = String(Math.floor((left % 3_600_000) / 60_000)).padStart(2, '0');
+  const ss = String(Math.floor((left % 60_000) / 1000)).padStart(2, '0');
   const countdown = hh > 0 ? `${hh} giờ ${mm} phút` : `${mm}:${ss}`;
-  const qr = payment?.status === "PENDING" ? payment.qr : null;
+  const qr = payment?.status === 'PENDING' ? payment.qr : null;
 
   if (claimed) {
     return (
-      <section
-        className="panel payment-panel payment-waiting"
-        aria-labelledby="pay-title"
-      >
+      <section className="panel payment-panel payment-waiting" aria-labelledby="pay-title">
         <div className="waiting-head">
           <span className="waiting-ico" aria-hidden>
             <FontAwesomeIcon icon={faHourglassHalf} />
@@ -224,18 +188,13 @@ export function PaymentPanel({
             <h2 className="panel-title" id="pay-title" style={{ margin: 0 }}>
               Đang chờ cửa hàng xác nhận thanh toán
             </h2>
-            <p className="muted" style={{ margin: "4px 0 0" }}>
-              Cửa hàng sẽ kiểm tra sao kê và xác nhận khoản chuyển{" "}
-              {formatPrice(order.totalAmount)} của bạn. Trang tự cập nhật khi
-              tiền được xác nhận.
+            <p className="muted" style={{ margin: '4px 0 0' }}>
+              Cửa hàng sẽ kiểm tra sao kê và xác nhận khoản chuyển {formatPrice(order.totalAmount)} của bạn. Trang tự cập nhật khi tiền được xác nhận.
             </p>
           </div>
         </div>
 
-        <ol
-          className="waiting-steps"
-          aria-label="Tiến trình xác nhận thanh toán"
-        >
+        <ol className="waiting-steps" aria-label="Tiến trình xác nhận thanh toán">
           <li className="done">
             <span className="dot">
               <FontAwesomeIcon icon={faCircleCheck} />
@@ -251,9 +210,7 @@ export function PaymentPanel({
             </span>
             <span>
               <strong>Bạn đã báo chuyển khoản</strong>
-              <span className="muted small">
-                {formatDate(order.transferClaimedAt!)}
-              </span>
+              <span className="muted small">{formatDate(order.transferClaimedAt!)}</span>
             </span>
           </li>
           <li className="current">
@@ -262,9 +219,7 @@ export function PaymentPanel({
             </span>
             <span>
               <strong>Cửa hàng xác nhận đã nhận tiền</strong>
-              <span className="muted small">
-                Thường trong vài giờ làm việc · đơn được giữ thêm {countdown}
-              </span>
+              <span className="muted small">Thường trong vài giờ làm việc · đơn được giữ thêm {countdown}</span>
             </span>
           </li>
           <li>
@@ -273,9 +228,7 @@ export function PaymentPanel({
             </span>
             <span>
               <strong>Chuẩn bị & giao hàng</strong>
-              <span className="muted small">
-                Bắt đầu ngay sau khi thanh toán được xác nhận
-              </span>
+              <span className="muted small">Bắt đầu ngay sau khi thanh toán được xác nhận</span>
             </span>
           </li>
         </ol>
@@ -293,8 +246,7 @@ export function PaymentPanel({
           )}
         </dl>
         <p className="muted small" style={{ margin: 0 }}>
-          Chưa thấy cập nhật sau 24 giờ? Liên hệ cửa hàng và gửi kèm ảnh biên
-          lai chuyển khoản.{" "}
+          Chưa thấy cập nhật sau 24 giờ? Liên hệ cửa hàng và gửi kèm ảnh biên lai chuyển khoản.{' '}
           <a className="link" href="#order-history">
             Xem lịch sử đơn hàng
           </a>
@@ -315,29 +267,19 @@ export function PaymentPanel({
   return (
     <section className="panel payment-panel" aria-labelledby="pay-title">
       <h2 className="panel-title" id="pay-title">
-        <FontAwesomeIcon icon={qr ? faQrcode : faCreditCard} /> Thanh toán{" "}
-        {formatPrice(order.totalAmount)}
+        <FontAwesomeIcon icon={qr ? faQrcode : faCreditCard} /> Thanh toán {formatPrice(order.totalAmount)}
       </h2>
 
       <p className="payment-countdown">
-        <FontAwesomeIcon icon={faClock} /> Đơn được giữ trong{" "}
-        <strong>{countdown}</strong>. Quá hạn chưa thanh toán đơn sẽ tự hủy và
-        sản phẩm trả về kho.
+        <FontAwesomeIcon icon={faClock} /> Đơn được giữ trong <strong>{countdown}</strong>. Quá hạn chưa thanh toán đơn sẽ tự hủy và sản phẩm trả về kho.
       </p>
 
       {qr ? (
         <div className="vietqr">
           <figure className="vietqr-code">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={qr.imageUrl}
-              alt={`Mã VietQR chuyển ${formatPrice(qr.amount)} tới ${qr.accountName}`}
-              width={260}
-              height={260}
-            />
-            <figcaption className="muted small">
-              Quét bằng mọi app ngân hàng, MoMo, ZaloPay, VNPay-QR
-            </figcaption>
+            <img src={qr.imageUrl} alt={`Mã VietQR chuyển ${formatPrice(qr.amount)} tới ${qr.accountName}`} width={260} height={260} />
+            <figcaption className="muted small">Quét bằng mọi app ngân hàng, MoMo, ZaloPay, VNPay-QR</figcaption>
           </figure>
           <div className="vietqr-info">
             <ol className="vietqr-steps">
@@ -348,31 +290,17 @@ export function PaymentPanel({
             <CopyField label="Ngân hàng" value={qr.bankName} />
             <CopyField label="Số tài khoản" value={qr.accountNo} />
             <CopyField label="Chủ tài khoản" value={qr.accountName} />
-            <CopyField
-              label="Số tiền"
-              value={String(qr.amount)}
-              display={formatPrice(qr.amount)}
-            />
+            <CopyField label="Số tiền" value={String(qr.amount)} display={formatPrice(qr.amount)} />
             <CopyField label="Nội dung (bắt buộc)" value={qr.content} />
             <button className="btn btn-block" disabled={busy} onClick={claim}>
-              {busy ? (
-                <FontAwesomeIcon icon={faSpinner} spin />
-              ) : (
-                <FontAwesomeIcon icon={faCircleCheck} />
-              )}{" "}
-              Tôi đã chuyển khoản
+              {busy ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faCircleCheck} />} Tôi đã chuyển khoản
             </button>
           </div>
         </div>
       ) : (
         payment?.payUrl && (
-          <button
-            className="btn"
-            disabled={busy || left === 0}
-            onClick={() => start(order.paymentMethod, true)}
-          >
-            {busy && <FontAwesomeIcon icon={faSpinner} spin />} Thanh toán ngay
-            qua {PAYMENT_METHOD_LABEL[order.paymentMethod]}
+          <button className="btn" disabled={busy || left === 0} onClick={() => start(order.paymentMethod, true)}>
+            {busy && <FontAwesomeIcon icon={faSpinner} spin />} Thanh toán ngay qua {PAYMENT_METHOD_LABEL[order.paymentMethod]}
           </button>
         )
       )}
@@ -392,33 +320,20 @@ export function PaymentPanel({
         <div className="pay-change">
           <label className="field">
             Chọn phương thức khác
-            <select
-              className="input"
-              value={method}
-              onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-            >
+            <select className="input" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
               {options.map((m) => (
                 <option key={m.method} value={m.method} disabled={!m.available}>
                   {m.label}
-                  {!m.available ? " (chưa hỗ trợ)" : ""}
+                  {!m.available ? ' (chưa hỗ trợ)' : ''}
                 </option>
               ))}
             </select>
           </label>
           <div className="row">
-            <button
-              className="btn btn-sm"
-              disabled={busy || left === 0 || method === order.paymentMethod}
-              onClick={() => start(method, true)}
-            >
-              {method === "COD"
-                ? "Đổi sang thanh toán khi nhận hàng"
-                : "Đổi phương thức"}
+            <button className="btn btn-sm" disabled={busy || left === 0 || method === order.paymentMethod} onClick={() => start(method, true)}>
+              {method === 'COD' ? 'Đổi sang thanh toán khi nhận hàng' : 'Đổi phương thức'}
             </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => setChanging(false)}
-            >
+            <button className="btn btn-ghost btn-sm" onClick={() => setChanging(false)}>
               Giữ nguyên
             </button>
           </div>

@@ -29,6 +29,7 @@ describe('order state machine', () => {
     // Không ai được "nhảy cóc" hay hồi sinh đơn
     [S.PENDING, S.SHIPPING, ADMIN, false],
     [S.PENDING, S.PROCESSING, CUSTOMER, false],
+    [S.PENDING, S.PROCESSING, SYSTEM, true],
     [S.AWAITING_PAYMENT, S.PENDING, ADMIN, false],
     [S.CANCELLED, S.PENDING, ADMIN, false],
     [S.COMPLETED, S.SHIPPING, ADMIN, false],

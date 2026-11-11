@@ -15,6 +15,7 @@ import { MailMessage, MailService } from '../src/mail/mail.service';
 import { CoinsService } from '../src/coins/coins.service';
 import { OrderJobsService } from '../src/orders/order-jobs.service';
 import { PaymentJobsService } from '../src/payments/payment-jobs.service';
+import { PaymentsService } from '../src/payments/payments.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Home Shopping API (e2e)', () => {
@@ -734,6 +735,37 @@ describe('Home Shopping API (e2e)', () => {
       const paid = await http().get(`/api/orders/${order.id}`).set(auth(bobToken)).expect(200);
       expect(paid.body).toMatchObject({ status: 'PENDING', paymentStatus: 'PAID' });
       await http().post(`/api/orders/${order.id}/payments/claim`).set(auth(bobToken)).expect(409);
+    });
+
+    it('demo mode (TRANSFER_AUTO_CONFIRM): "I have transferred" → paid → preparing at once', async () => {
+      const payments = app.get(PaymentsService);
+      payments.transferAutoConfirm = true;
+      try {
+        const order = await place(aliceToken, 'MOMO');
+        await prisma.payment.create({
+          data: {
+            orderId: order.id,
+            method: 'MOMO',
+            amount: order.totalAmount,
+            txnRef: `HSDEMO${run.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
+            expiresAt: new Date(order.paymentExpiresAt),
+            qrData: { bankBin: '970422', bankName: 'MB Bank', accountNo: '0000000000', accountName: 'E2E', amount: order.totalAmount, content: 'x', imageUrl: 'x' },
+            rawCreate: { transfer: true },
+          },
+        });
+        const claim = await http().post(`/api/orders/${order.id}/payments/claim`).set(auth(aliceToken)).expect(200);
+        expect(claim.body).toMatchObject({ autoConfirmed: true, paymentExpiresAt: null });
+        const after = await http().get(`/api/orders/${order.id}`).set(auth(aliceToken)).expect(200);
+        expect(after.body).toMatchObject({ status: 'PROCESSING', paymentStatus: 'PAID', paymentExpiresAt: null });
+        expect(after.body.history.map((h: { fromStatus: string | null; toStatus: string }) => `${h.fromStatus}>${h.toStatus}`)).toEqual([
+          'null>AWAITING_PAYMENT',
+          'AWAITING_PAYMENT>AWAITING_PAYMENT',
+          'AWAITING_PAYMENT>PENDING',
+          'PENDING>PROCESSING',
+        ]);
+      } finally {
+        payments.transferAutoConfirm = false;
+      }
     });
 
     it('admins can confirm a transfer manually (VietQR reconciliation path)', async () => {

@@ -67,10 +67,13 @@ export class PaymentsService implements OnModuleInit {
     config: ConfigService,
   ) {
     this.transferHoldHours = Number(config.get<string>('TRANSFER_CONFIRM_HOURS') ?? 24);
+    this.transferAutoConfirm = config.get<string>('TRANSFER_AUTO_CONFIRM') === 'true';
   }
 
   /** Giờ giữ hàng sau khi khách báo đã chuyển khoản (chờ cửa hàng đối soát) */
   readonly transferHoldHours: number;
+  /** Chế độ demo: khách bấm "Tôi đã chuyển khoản" → tự xác nhận thanh toán + chuẩn bị hàng (không chờ đối soát) */
+  transferAutoConfirm: boolean;
 
   onModuleInit(): void {
     this.checkout.setPaymentMethodsProvider(() => this.methods());
@@ -238,13 +241,15 @@ export class PaymentsService implements OnModuleInit {
    * (chỉ cửa hàng xác nhận sau khi thấy tiền về), nhưng gia hạn giữ hàng TRANSFER_CONFIRM_HOURS để đơn không bị
    * job tự hủy khi cửa hàng chưa kịp đối soát. Gọi lại nhiều lần không gia hạn thêm.
    */
-  async claimTransfer(userId: string, orderId: string): Promise<{ transferClaimedAt: Date; paymentExpiresAt: Date }> {
+  async claimTransfer(userId: string, orderId: string): Promise<{ transferClaimedAt: Date; paymentExpiresAt: Date | null; autoConfirmed: boolean }> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
       select: { status: true, paymentExpiresAt: true, transferClaimedAt: true },
     });
     if (!order) throw new AppError(ErrorCode.ORDER_NOT_FOUND, 'Không tìm thấy đơn hàng', HttpStatus.NOT_FOUND);
-    if (order.transferClaimedAt && order.paymentExpiresAt) return { transferClaimedAt: order.transferClaimedAt, paymentExpiresAt: order.paymentExpiresAt };
+    if (order.transferClaimedAt && order.paymentExpiresAt) {
+      return { transferClaimedAt: order.transferClaimedAt, paymentExpiresAt: order.paymentExpiresAt, autoConfirmed: false };
+    }
     if (order.status !== OrderStatus.AWAITING_PAYMENT || !order.paymentExpiresAt || order.paymentExpiresAt <= new Date()) {
       throw new AppError(ErrorCode.PAYMENT_NOT_ALLOWED, 'Đơn hàng không còn chờ thanh toán', HttpStatus.CONFLICT);
     }
@@ -276,7 +281,40 @@ export class PaymentsService implements OnModuleInit {
     });
     await this.event(payment.id, payment.method, 'CLAIM', true, 'claimed', { txnRef: payment.txnRef, amount: payment.amount });
     this.logger.log({ event: 'payment.transfer_claimed', orderId, paymentId: payment.id, method: payment.method, amount: payment.amount, holdUntil: until });
-    return { transferClaimedAt: now, paymentExpiresAt: until };
+
+    if (this.transferAutoConfirm) {
+      await this.autoConfirmTransfer(orderId, payment.id, payment.method as OnlineMethod);
+      return { transferClaimedAt: now, paymentExpiresAt: null, autoConfirmed: true };
+    }
+    return { transferClaimedAt: now, paymentExpiresAt: until, autoConfirmed: false };
+  }
+
+  /**
+   * CHẾ ĐỘ DEMO (TRANSFER_AUTO_CONFIRM=true – dùng cho đồ án / báo cáo): coi như cửa hàng đã thấy tiền về ngay khi
+   * khách báo chuyển khoản. Đi qua ĐÚNG luồng xác nhận như admin bấm tay (ghi nhật ký, đổi trạng thái tiền, thông báo),
+   * rồi hệ thống xác nhận đơn → "Đang chuẩn bị hàng". Không bật cho cửa hàng thật.
+   */
+  private async autoConfirmTransfer(orderId: string, paymentId: string, method: OnlineMethod): Promise<void> {
+    const p = await this.prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+    const kind = await this.apply(
+      method,
+      {
+        txnRef: p.txnRef,
+        amount: p.amount,
+        success: true,
+        gatewayTxnId: `DEMO-${p.txnRef}`,
+        message: 'Chế độ demo: tự xác nhận khi khách báo đã chuyển khoản',
+        raw: { demo: true },
+      },
+      'MANUAL',
+      true,
+    );
+    if (kind !== 'ok') {
+      this.logger.warn({ event: 'payment.demo_auto_confirm_skipped', orderId, result: kind });
+      return;
+    }
+    await this.lifecycle.transition(orderId, OrderStatus.PROCESSING, { type: ActorType.SYSTEM }, { note: 'Đã nhận thanh toán, cửa hàng bắt đầu chuẩn bị hàng' });
+    this.logger.log({ event: 'payment.demo_auto_confirmed', orderId, paymentId, method });
   }
 
   /** Admin xác nhận đã nhận tiền (chuyển khoản VietQR đối soát theo sao kê) – đi qua cùng luồng với IPN */

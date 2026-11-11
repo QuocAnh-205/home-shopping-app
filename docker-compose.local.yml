@@ -57,6 +57,8 @@ services:
       SWAGGER_ENABLED: "true"
       # Thanh toán VNPay/MoMo: chưa có khóa → cổng giả lập (trang /payment/mock). Có khóa sandbox thì export trước khi chạy
       PAYMENT_MOCK_ENABLED: "true"
+      # Demo: "Tôi đã chuyển khoản" → tự xác nhận thanh toán + chuẩn bị hàng
+      TRANSFER_AUTO_CONFIRM: "true"
       VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
       VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
       MOMO_PARTNER_CODE: ${MOMO_PARTNER_CODE:-}

@@ -138,6 +138,8 @@ services:
       PAYMENT_MOCK_ENABLED: ${PAYMENT_MOCK_ENABLED:-false}
       PAYMENT_HOLD_MINUTES: ${PAYMENT_HOLD_MINUTES:-15}
       TRANSFER_CONFIRM_HOURS: ${TRANSFER_CONFIRM_HOURS:-24}
+      # Đồ án / demo: khách bấm "Tôi đã chuyển khoản" → tự xác nhận thanh toán + chuẩn bị hàng. Cửa hàng thật: false
+      TRANSFER_AUTO_CONFIRM: ${TRANSFER_AUTO_CONFIRM:-true}
       PAYMENT_IPN_BASE_URL: ${PAYMENT_IPN_BASE_URL:-}
       VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
       VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}

@@ -22,7 +22,8 @@ export const ORDER_RULES: Readonly<Record<OrderStatus, Partial<Record<OrderStatu
     CANCELLED: [CUSTOMER, ADMIN, SYSTEM],
   },
   PENDING: {
-    PROCESSING: [ADMIN],
+    // SYSTEM: chế độ demo TRANSFER_AUTO_CONFIRM tự xác nhận đơn ngay sau khi xác nhận thanh toán
+    PROCESSING: [ADMIN, SYSTEM],
     CANCELLED: [CUSTOMER, ADMIN, SYSTEM],
   },
   PROCESSING: {
