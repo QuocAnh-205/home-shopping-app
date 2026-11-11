@@ -17,8 +17,8 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { use, useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, use, useCallback, useEffect, useState } from 'react';
 import { RequireAuth } from '@/components/RequireAuth';
 import { STATUS_ICON, StatusBadge } from '@/components/StatusBadge';
 import { apiFetch, notifyCartChanged } from '@/lib/client-api';
@@ -30,6 +30,7 @@ import {
   STATUS_LABEL,
   formatDate,
   formatPrice,
+  formatShortDay,
   shortId,
   type ActorType,
   type Order,
@@ -41,6 +42,7 @@ const CUSTOMER_CANCELLABLE = ['AWAITING_PAYMENT', 'PENDING'];
 
 function OrderDetail({ id }: { id: string }) {
   const router = useRouter();
+  const justPlaced = useSearchParams().get('placed') === '1';
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -123,6 +125,11 @@ function OrderDetail({ id }: { id: string }) {
         </p>
       )}
       {notice && <p className="alert alert-info">{notice}</p>}
+      {justPlaced && order.status === 'PENDING' && (
+        <p className="alert alert-ok" role="status">
+          <FontAwesomeIcon icon={faBoxOpen} /> Đặt hàng thành công! Cửa hàng sẽ xác nhận đơn trong thời gian sớm nhất.
+        </p>
+      )}
 
       <div className="panel" style={{ marginBottom: 20 }}>
         {offFlow ? (
@@ -161,8 +168,8 @@ function OrderDetail({ id }: { id: string }) {
                 {order.items.map((i) => (
                   <tr key={i.id}>
                     <td>
-                      <Link className="link" href={`/products/${i.product.slug}`}>
-                        {i.product.name}
+                      <Link className="link" href={`/products/${i.productSlug}`}>
+                        {i.productName}
                       </Link>
                     </td>
                     <td>{formatPrice(i.unitPrice)}</td>
@@ -172,10 +179,24 @@ function OrderDetail({ id }: { id: string }) {
                 ))}
               </tbody>
               <tfoot>
-                {subtotal !== order.totalAmount && (
+                <tr>
+                  <td colSpan={3}>Tổng tiền hàng</td>
+                  <td>{formatPrice(order.subtotal || subtotal)}</td>
+                </tr>
+                <tr>
+                  <td colSpan={3}>Phí vận chuyển</td>
+                  <td>{formatPrice(order.shippingFee)}</td>
+                </tr>
+                {order.shippingDiscount > 0 && (
                   <tr>
-                    <td colSpan={3}>Tạm tính</td>
-                    <td>{formatPrice(subtotal)}</td>
+                    <td colSpan={3}>Giảm phí vận chuyển{order.shippingVoucherCode && ` (${order.shippingVoucherCode})`}</td>
+                    <td className="ok">−{formatPrice(order.shippingDiscount)}</td>
+                  </tr>
+                )}
+                {order.discountAmount > 0 && (
+                  <tr>
+                    <td colSpan={3}>Voucher {order.voucherCode}</td>
+                    <td className="ok">−{formatPrice(order.discountAmount)}</td>
                   </tr>
                 )}
                 <tr>
@@ -221,9 +242,22 @@ function OrderDetail({ id }: { id: string }) {
             </dt>
             <dd>{formatDate(order.createdAt)}</dd>
             <dt>
-              <FontAwesomeIcon icon={faPhone} fixedWidth /> Điện thoại
+              <FontAwesomeIcon icon={faPhone} fixedWidth /> Người nhận
             </dt>
-            <dd>{order.phone}</dd>
+            <dd>
+              {order.recipientName && `${order.recipientName} · `}
+              {order.phone}
+            </dd>
+            {order.estimatedDeliveryFrom && order.estimatedDeliveryTo && !['CANCELLED', 'DELIVERED', 'COMPLETED', 'RETURNED'].includes(order.status) && (
+              <>
+                <dt>
+                  <FontAwesomeIcon icon={faTruckFast} fixedWidth /> Dự kiến giao
+                </dt>
+                <dd>
+                  {formatShortDay(order.estimatedDeliveryFrom.slice(0, 10))} – {formatShortDay(order.estimatedDeliveryTo.slice(0, 10))}
+                </dd>
+              </>
+            )}
             <dt>
               <FontAwesomeIcon icon={faCreditCard} fixedWidth /> Thanh toán
             </dt>
@@ -236,6 +270,7 @@ function OrderDetail({ id }: { id: string }) {
             <FontAwesomeIcon icon={faLocationDot} />
             {order.shippingAddress}
           </p>
+          {order.note && <p className="muted small">Lời nhắn: {order.note}</p>}
 
           {canConfirm && (
             <button className="btn btn-block" disabled={busy} onClick={() => act('received')}>
@@ -299,7 +334,9 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   return (
     <section>
       <RequireAuth>
-        <OrderDetail id={id} />
+        <Suspense fallback={null}>
+          <OrderDetail id={id} />
+        </Suspense>
       </RequireAuth>
     </section>
   );

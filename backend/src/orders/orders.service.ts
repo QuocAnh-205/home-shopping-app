@@ -1,13 +1,16 @@
-import { BadRequestException, ConflictException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { ActorType, OrderStatus, Prisma } from '@prisma/client';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ActorType, OrderStatus, PaymentMethod, Prisma } from '@prisma/client';
 import { AppError, ErrorCode } from '../common/errors';
 import { CartService } from '../cart/cart.service';
+import { PlaceOrderDto } from '../checkout/checkout.dto';
+import { CheckoutLine, CheckoutPreview, CheckoutService } from '../checkout/checkout.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
+import { VouchersService } from '../vouchers/vouchers.service';
 import type { AdminListOrdersQuery } from '../admin/admin.dto';
 import { OrderLifecycleService } from './order-lifecycle.service';
-import { CreateOrderDto } from './orders.dto';
 
 const orderInclude = {
   items: { include: { product: { select: { name: true, slug: true } } }, orderBy: { id: 'asc' } },
@@ -50,12 +53,6 @@ export interface BuyAgainResult {
   skipped: { productId: string; name: string; reason: string }[];
 }
 
-class OutOfStockError extends Error {
-  constructor(readonly productId: string) {
-    super(`Product ${productId} is out of stock`);
-  }
-}
-
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -66,76 +63,134 @@ export class OrdersService {
     private readonly products: ProductsService,
     private readonly metrics: MetricsService,
     private readonly lifecycle: OrderLifecycleService,
-  ) {}
+    private readonly checkout: CheckoutService,
+    private readonly vouchers: VouchersService,
+    config: ConfigService,
+  ) {
+    this.paymentHoldMinutes = Number(config.get<string>('PAYMENT_HOLD_MINUTES') ?? 15);
+  }
+
+  readonly paymentHoldMinutes: number;
 
   /**
    * Đặt hàng an toàn:
-   * - Idempotency-Key: client retry (mạng chập chờn, double-click) không tạo đơn trùng.
-   * - Trừ kho bằng UPDATE có điều kiện (stock >= qty) trong transaction → không oversell khi nhiều người mua cùng lúc.
-   * - Giá lấy từ DB, không tin giá từ client.
+   * - Idempotency-Key: bấm 2 lần / mạng gửi lại không tạo 2 đơn (cùng key → trả lại đúng đơn đã tạo).
+   * - Mọi con số tính lại ở server (CheckoutService) từ database; expectedTotal lệch → 409 PRICE_CHANGED.
+   * - 1 transaction: trừ kho bằng UPDATE có điều kiện (stock >= qty AND price = giá đã tính) → không bán quá số lượng
+   *   khi nhiều người đặt cùng lúc, giá đổi giữa chừng cũng bị phát hiện; tạo đơn + snapshot; trừ lượt voucher.
+   * - Đơn online: Chờ thanh toán, giữ hàng PAYMENT_HOLD_MINUTES phút (job nền tự hủy nếu quá hạn).
    */
-  async create(userId: string, idempotencyKey: string, dto: CreateOrderDto): Promise<OrderWithItems> {
+  async create(userId: string, idempotencyKey: string, dto: PlaceOrderDto): Promise<OrderWithItems> {
     const existing = await this.prisma.order.findUnique({ where: { idempotencyKey }, include: orderInclude });
     if (existing) {
-      if (existing.userId !== userId) throw new ConflictException('Idempotency key already used');
+      if (existing.userId !== userId) {
+        throw new AppError(ErrorCode.IDEMPOTENCY_KEY_REUSED, 'Idempotency-Key đã được dùng cho yêu cầu khác', HttpStatus.CONFLICT);
+      }
       return existing;
     }
 
-    const cart = await this.cart.getRaw(userId);
-    if (cart.size === 0) throw new BadRequestException('Cart is empty');
+    const plan = await this.checkout.build(userId, dto);
+    const { preview } = plan;
+    if (!preview.canPlaceOrder) {
+      this.metrics.ordersTotal.inc({ result: 'failed' });
+      throw OrdersService.issueError(preview);
+    }
+    if (dto.expectedTotal !== undefined && dto.expectedTotal !== preview.pricing.total) {
+      this.metrics.ordersTotal.inc({ result: 'failed' });
+      this.logger.warn({ event: 'order.failed', reason: 'price_changed', userId, expected: dto.expectedTotal, actual: preview.pricing.total });
+      throw new AppError(ErrorCode.PRICE_CHANGED, 'Giá hoặc ưu đãi vừa thay đổi, vui lòng kiểm tra lại đơn hàng', HttpStatus.CONFLICT, {
+        expectedTotal: dto.expectedTotal,
+        total: preview.pricing.total,
+        preview,
+      });
+    }
+
+    const online = preview.paymentMethod !== PaymentMethod.COD;
+    const status = online ? OrderStatus.AWAITING_PAYMENT : OrderStatus.PENDING;
+    const a = plan.address;
+    const items = [...preview.items].sort((x, y) => x.productId.localeCompare(y.productId));
+    const discountVoucher = plan.appliedVouchers.find((v) => v.voucher.type !== 'FREESHIP');
+    const shippingVoucher = plan.appliedVouchers.find((v) => v.voucher.type === 'FREESHIP');
 
     try {
       const order = await this.prisma.$transaction(
         async (tx) => {
-          // Sắp xếp theo id để mọi transaction khóa row theo cùng thứ tự → tránh deadlock
-          const products = await tx.product.findMany({
-            where: { id: { in: [...cart.keys()] }, isActive: true },
-            select: { id: true, price: true, name: true, slug: true, imageKey: true },
-            orderBy: { id: 'asc' },
-          });
-          if (products.length !== cart.size) throw new BadRequestException('Some products in your cart are no longer available');
-
-          let total = 0;
-          for (const p of products) {
-            const qty = cart.get(p.id)!;
+          // Khóa dòng sản phẩm theo thứ tự id → mọi transaction cùng thứ tự, tránh deadlock
+          for (const item of items) {
             const updated = await tx.product.updateMany({
-              where: { id: p.id, stock: { gte: qty } },
-              data: { stock: { decrement: qty }, soldCount: { increment: qty } },
+              where: { id: item.productId, isActive: true, stock: { gte: item.quantity }, price: item.unitPrice },
+              data: { stock: { decrement: item.quantity }, soldCount: { increment: item.quantity } },
             });
-            if (updated.count !== 1) throw new OutOfStockError(p.id);
-            total += p.price * qty;
+            if (updated.count !== 1) throw await OrdersService.stockOrPriceError(tx, item);
           }
 
-          return tx.order.create({
+          const order = await tx.order.create({
             data: {
               userId,
               idempotencyKey,
-              totalAmount: total,
-              subtotal: total,
-              shippingAddress: dto.shippingAddress,
-              phone: dto.phone,
+              status,
+              paymentMethod: preview.paymentMethod,
+              paymentExpiresAt: online ? new Date(Date.now() + this.paymentHoldMinutes * 60_000) : null,
+              subtotal: preview.pricing.subtotal,
+              shippingFee: preview.pricing.shippingFee,
+              discountAmount: preview.pricing.discount,
+              shippingDiscount: preview.pricing.shippingDiscount,
+              totalAmount: preview.pricing.total,
+              voucherCode: discountVoucher?.voucher.code ?? null,
+              shippingVoucherCode: shippingVoucher?.voucher.code ?? null,
+              recipientName: a.fullName,
+              phone: a.phone,
+              shippingAddress: [a.street, a.ward, a.province].join(', '),
+              provinceCode: a.provinceCode,
+              wardCode: a.wardCode,
+              shippingProvider: preview.shipping?.provider ?? null,
+              estimatedDeliveryFrom: preview.shipping ? new Date(preview.shipping.estimatedDelivery.from) : null,
+              estimatedDeliveryTo: preview.shipping ? new Date(preview.shipping.estimatedDelivery.to) : null,
+              note: dto.note ?? null,
               items: {
-                create: products.map((p) => ({
-                  productId: p.id,
-                  quantity: cart.get(p.id)!,
-                  unitPrice: p.price,
-                  productName: p.name,
-                  productSlug: p.slug,
-                  imageKey: p.imageKey,
+                create: preview.items.map((i) => ({
+                  productId: i.productId,
+                  quantity: i.quantity,
+                  unitPrice: i.unitPrice,
+                  productName: i.name,
+                  productSlug: i.slug,
+                  imageKey: null,
                 })),
               },
-              history: { create: { toStatus: OrderStatus.PENDING, actorType: ActorType.CUSTOMER, actorId: userId, note: 'Đặt hàng' } },
+              history: {
+                create: {
+                  toStatus: status,
+                  actorType: ActorType.CUSTOMER,
+                  actorId: userId,
+                  note: online ? `Đặt hàng, chờ thanh toán qua ${CheckoutService.paymentLabel(preview.paymentMethod)}` : 'Đặt hàng',
+                },
+              },
             },
             include: orderInclude,
           });
+          await this.vouchers.reserve(tx, userId, order.id, plan.appliedVouchers);
+          return order;
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10_000 },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 },
       );
 
-      await Promise.all([this.cart.clear(userId), this.products.invalidateCache()]);
+      // Snapshot ảnh sản phẩm (khóa ảnh gốc, không phải URL ký tạm thời)
+      await this.snapshotImages(order.id);
+      await Promise.all([this.cart.removeItems(userId, plan.cartProductIds), this.products.invalidateCache()]);
       this.metrics.ordersTotal.inc({ result: 'success' });
-      this.logger.log({ event: 'order.created', orderId: order.id, userId, total: order.totalAmount });
-      return order;
+      this.logger.log({
+        event: 'order.created',
+        orderId: order.id,
+        userId,
+        status,
+        paymentMethod: preview.paymentMethod,
+        subtotal: preview.pricing.subtotal,
+        shippingFee: preview.pricing.shippingFee,
+        discount: preview.pricing.discount + preview.pricing.shippingDiscount,
+        total: preview.pricing.total,
+        vouchers: plan.appliedVouchers.map((v) => v.voucher.code),
+      });
+      return this.prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: orderInclude });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         // Hai request cùng Idempotency-Key chạy song song: request thua trả về đơn đã tạo
@@ -143,13 +198,47 @@ export class OrdersService {
         if (winner && winner.userId === userId) return winner;
       }
       this.metrics.ordersTotal.inc({ result: 'failed' });
-      if (err instanceof OutOfStockError) {
-        this.logger.warn({ event: 'order.failed', reason: 'out_of_stock', productId: err.productId, userId });
-        throw new ConflictException(err.message);
-      }
-      this.logger.error({ event: 'order.failed', reason: (err as Error).message, userId });
+      const code = err instanceof AppError ? err.code : 'error';
+      this.logger.warn({ event: 'order.failed', reason: code, userId, message: (err as Error).message });
       throw err;
     }
+  }
+
+  private async snapshotImages(orderId: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE order_items oi SET image_key = p.image_key FROM products p
+      WHERE oi.order_id = ${orderId}::uuid AND p.id = oi.product_id`;
+  }
+
+  /** Lỗi đầu tiên của trang thanh toán → mã lỗi + HTTP status phù hợp, kèm toàn bộ preview để frontend hiển thị */
+  static issueError(preview: CheckoutPreview): AppError {
+    const first = preview.issues[0] ?? { code: ErrorCode.NO_ITEMS_SELECTED, message: 'Chưa chọn sản phẩm nào' };
+    const conflicts: string[] = [ErrorCode.OUT_OF_STOCK, ErrorCode.PRODUCT_UNAVAILABLE, ErrorCode.VOUCHER_NOT_APPLICABLE];
+    const status = conflicts.includes(first.code)
+      ? HttpStatus.CONFLICT
+      : HttpStatus.BAD_REQUEST;
+    return new AppError(first.code as ErrorCode, first.message, status, { issues: preview.issues, preview });
+  }
+
+  /** UPDATE trừ kho không khớp dòng nào: phân biệt ngừng bán / giá đổi / hết hàng để báo đúng cho khách */
+  private static async stockOrPriceError(tx: Prisma.TransactionClient, item: CheckoutLine): Promise<AppError> {
+    const p = await tx.product.findUnique({ where: { id: item.productId }, select: { isActive: true, price: true, stock: true } });
+    if (!p || !p.isActive) {
+      return new AppError(ErrorCode.PRODUCT_UNAVAILABLE, `${item.name} đã ngừng kinh doanh`, HttpStatus.CONFLICT, { productId: item.productId });
+    }
+    if (p.price !== item.unitPrice) {
+      return new AppError(ErrorCode.PRICE_CHANGED, `Giá của ${item.name} vừa thay đổi, vui lòng kiểm tra lại đơn hàng`, HttpStatus.CONFLICT, {
+        productId: item.productId,
+        oldPrice: item.unitPrice,
+        newPrice: p.price,
+      });
+    }
+    return new AppError(
+      ErrorCode.OUT_OF_STOCK,
+      p.stock > 0 ? `${item.name} chỉ còn ${p.stock} sản phẩm` : `${item.name} vừa hết hàng`,
+      HttpStatus.CONFLICT,
+      { productId: item.productId, available: p.stock, requested: item.quantity },
+    );
   }
 
   /** Đơn của tôi; tab = nhóm trạng thái kiểu Shopee (ORDER_TABS) hoặc 1 trạng thái cụ thể */

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -15,8 +14,10 @@ import {
 import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthenticatedRequest } from '../auth/auth.types';
+import { AppError, ErrorCode } from '../common/errors';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CancelOrderDto, CreateOrderDto, MyOrdersQuery } from './orders.dto';
+import { PlaceOrderDto } from '../checkout/checkout.dto';
+import { CancelOrderDto, MyOrdersQuery } from './orders.dto';
 import { BuyAgainResult, OrderWithItems, OrdersService } from './orders.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -35,10 +36,10 @@ export class OrdersController {
   create(
     @Req() req: AuthenticatedRequest,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @Body() dto: CreateOrderDto,
+    @Body() dto: PlaceOrderDto,
   ): Promise<OrderWithItems> {
     if (!idempotencyKey || !UUID_RE.test(idempotencyKey)) {
-      throw new BadRequestException('Idempotency-Key header (UUID) is required');
+      throw new AppError(ErrorCode.IDEMPOTENCY_KEY_REQUIRED, 'Thiếu header Idempotency-Key (UUID) cho mỗi lần đặt hàng');
     }
     return this.orders.create(req.user.sub, idempotencyKey.toLowerCase(), dto);
   }

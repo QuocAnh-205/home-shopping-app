@@ -209,8 +209,8 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
                                 {o.items.map((i) => (
                                   <tr key={i.id}>
                                     <td>
-                                      <a className="link" href={`/products/${i.product.slug}`} target="_blank" rel="noreferrer">
-                                        {i.product.name}
+                                      <a className="link" href={`/products/${i.productSlug}`} target="_blank" rel="noreferrer">
+                                        {i.productName}
                                       </a>
                                     </td>
                                     <td className="num">{formatPrice(i.unitPrice)}</td>

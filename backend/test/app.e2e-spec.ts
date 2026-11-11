@@ -32,7 +32,11 @@ describe('Home Shopping API (e2e)', () => {
 
   const http = () => request(app.getHttpServer());
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
-  const shipping = { shippingAddress: '123 Lê Lợi, Quận 1, TP. Hồ Chí Minh', phone: '0901234567' };
+  // Đặt hàng: cả giỏ, địa chỉ mặc định, COD (mọi con số server tự tính)
+  const shipping = {};
+  /** Địa chỉ giao hàng chuẩn 2 cấp: TP. Hồ Chí Minh (79) – Phường Bến Thành (26743), cùng tỉnh với kho */
+  const addAddress = (token: string) =>
+    http().post('/api/account/addresses').set(auth(token)).send({ fullName: 'Khách E2E', phone: '0901234567', provinceCode: 79, wardCode: 26743, street: '123 Lê Lợi' }).expect(201);
 
   async function register(name: string): Promise<{ token: string; id: string }> {
     const res = await http()
@@ -61,6 +65,8 @@ describe('Home Shopping API (e2e)', () => {
 
     aliceToken = (await register('alice')).token;
     bobToken = (await register('bob')).token;
+    await addAddress(aliceToken);
+    await addAddress(bobToken);
   }, 60_000);
 
   afterAll(async () => {
@@ -448,6 +454,125 @@ describe('Home Shopping API (e2e)', () => {
     });
   });
 
+  describe('checkout (xem trước đơn, voucher, giá thay đổi, mua một phần giỏ, mua ngay)', () => {
+    const code = `E2E${run.toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
+    const shipCode = `SHIP${run.toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
+    let extraId: string;
+    const buyNow = (quantity = 1) => ({ items: [{ productId, quantity }] });
+
+    beforeAll(async () => {
+      // Sản phẩm chính 450.000₫, nặng 500 g, hộp 20×20×15 cm (quy đổi 1 kg) → nội tỉnh HCM: 20.000₫
+      await prisma.product.update({ where: { id: productId }, data: { stock: 20, weightGrams: 500, lengthCm: 20, widthCm: 20, heightCm: 15 } });
+      const extra = await http()
+        .post('/api/products')
+        .set(auth(adminToken))
+        .send({ name: `Khăn E2E ${run}`, slug: `khan-e2e-${run}`, description: 'x', price: 100000, stock: 10, categoryId: created.categoryId })
+        .expect(201);
+      extraId = extra.body.id;
+      created.productIds.push(extraId);
+      const ship = await http()
+        .post('/api/admin/vouchers')
+        .set(auth(adminToken))
+        .send({ code: shipCode, name: 'Freeship E2E', type: 'FREESHIP', value: 0, startsAt: new Date(Date.now() - 60_000), endsAt: new Date(Date.now() + 86_400_000) })
+        .expect(201);
+      created.voucherIds.push(ship.body.id);
+    });
+
+    it('preview recomputes everything server-side: subtotal, shipping, ETA, vouchers with reasons', async () => {
+      const res = await http().post('/api/checkout/preview').set(auth(aliceToken)).send(buyNow()).expect(200);
+      expect(res.body).toMatchObject({
+        source: 'BUY_NOW',
+        canPlaceOrder: true,
+        paymentMethod: 'COD',
+        address: { provinceCode: 79, wardCode: 26743 },
+        shipping: { fee: 20000, provider: 'TABLE', freeShipEligible: false, amountToFreeShip: 50000, estimatedDelivery: { from: expect.any(String), to: expect.any(String) } },
+        pricing: { subtotal: 450000, shippingFee: 20000, discount: 0, shippingDiscount: 0, total: 470000 },
+      });
+      expect(res.body.vouchers.discount.find((v: { code: string }) => v.code === code)).toMatchObject({ applicable: true, discount: 20000 });
+      expect(res.body.vouchers.shipping.find((v: { code: string }) => v.code === shipCode)).toMatchObject({ applicable: true, discount: 20000 });
+
+      // 1 voucher giảm giá + 1 voucher vận chuyển cùng lúc
+      const both = await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ ...buyNow(), voucherCode: code, shippingVoucherCode: shipCode }).expect(200);
+      expect(both.body.pricing).toEqual({ subtotal: 450000, shippingFee: 20000, discount: 20000, shippingDiscount: 20000, total: 430000, saved: 40000 });
+
+      // Mua 2 (quy đổi 2 kg → 26.000₫): vượt ngưỡng 500.000₫ → miễn phí vận chuyển, voucher freeship không còn tác dụng
+      const two = await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ ...buyNow(2), shippingVoucherCode: shipCode }).expect(200);
+      expect(two.body.pricing).toMatchObject({ shippingFee: 26000, shippingDiscount: 26000, total: 900000 });
+      expect(two.body.vouchers.errors).toEqual([{ code: shipCode, reason: 'Đơn hàng đã được miễn phí vận chuyển' }]);
+
+      // Chọn nhầm ô voucher → báo lý do, không tính giảm, không đặt được
+      const wrong = await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ ...buyNow(), shippingVoucherCode: code }).expect(200);
+      expect(wrong.body.canPlaceOrder).toBe(false);
+      expect(wrong.body.vouchers.errors[0].reason).toBe('Đây không phải voucher vận chuyển');
+      const tooMany = await http().post('/api/checkout/preview').set(auth(aliceToken)).send(buyNow(30)).expect(200);
+      expect(tooMany.body.issues[0]).toMatchObject({ code: 'OUT_OF_STOCK', productId });
+    });
+
+    it('refuses to place the order when the price changed since the customer looked (PRICE_CHANGED)', async () => {
+      const preview = await http().post('/api/checkout/preview').set(auth(aliceToken)).send(buyNow()).expect(200);
+      await http().patch(`/api/products/${productId}`).set(auth(adminToken)).send({ price: 460000, compareAtPrice: null }).expect(200);
+
+      const res = await http()
+        .post('/api/orders')
+        .set(auth(aliceToken))
+        .set('Idempotency-Key', randomUUID())
+        .send({ ...buyNow(), expectedTotal: preview.body.pricing.total })
+        .expect(409);
+      expect(res.body).toMatchObject({ code: 'PRICE_CHANGED', details: { expectedTotal: 470000, total: 480000 } });
+      expect(res.body.details.preview.items[0].unitPrice).toBe(460000);
+      await http().patch(`/api/products/${productId}`).set(auth(adminToken)).send({ price: 450000 }).expect(200);
+    });
+
+    it('a voucher with 1 use left, two customers at once → exactly one gets it; cancelling returns the use', async () => {
+      const results = await Promise.all(
+        [aliceToken, bobToken].map((token) =>
+          http().post('/api/orders').set(auth(token)).set('Idempotency-Key', randomUUID()).send({ ...buyNow(), voucherCode: code }),
+        ),
+      );
+      expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+      const loser = results.find((r) => r.status === 409)!;
+      expect(['VOUCHER_EXHAUSTED', 'VOUCHER_NOT_APPLICABLE']).toContain(loser.body.code);
+      const winner = results.find((r) => r.status === 201)!;
+      expect(winner.body).toMatchObject({ voucherCode: code, discountAmount: 20000, totalAmount: 450000, subtotal: 450000, shippingFee: 20000 });
+      expect((await prisma.voucher.findUniqueOrThrow({ where: { code } })).usedCount).toBe(1);
+
+      const token = winner.request.getHeader('Authorization') as string;
+      await http().post(`/api/orders/${winner.body.id}/cancel`).set('Authorization', token).send({ reason: 'Muốn nhập/thay đổi mã voucher' }).expect(200);
+      expect((await prisma.voucher.findUniqueOrThrow({ where: { code } })).usedCount).toBe(0);
+      expect(await prisma.voucherUsage.count({ where: { orderId: winner.body.id } })).toBe(0);
+    });
+
+    it('buys only the ticked cart items; "buy now" leaves the cart untouched', async () => {
+      await http().delete('/api/cart').set(auth(bobToken)).expect(204);
+      await http().put('/api/cart/items').set(auth(bobToken)).send({ productId, quantity: 1 }).expect(200);
+      await http().put('/api/cart/items').set(auth(bobToken)).send({ productId: extraId, quantity: 2 }).expect(200);
+
+      const order = await http().post('/api/orders').set(auth(bobToken)).set('Idempotency-Key', randomUUID()).send({ cartProductIds: [extraId] }).expect(201);
+      expect(order.body.items.map((i: { productId: string; quantity: number }) => [i.productId, i.quantity])).toEqual([[extraId, 2]]);
+      expect(order.body.items[0]).toMatchObject({ productName: `Khăn E2E ${run}`, unitPrice: 100000 });
+      let cart = (await http().get('/api/cart').set(auth(bobToken)).expect(200)).body;
+      expect(cart.items.map((i: { productId: string }) => i.productId)).toEqual([productId]);
+
+      // Chọn sản phẩm không có trong giỏ
+      const gone = await http().post('/api/checkout/preview').set(auth(bobToken)).send({ cartProductIds: [extraId] }).expect(409);
+      expect(gone.body.code).toBe('NO_ITEMS_SELECTED');
+
+      await http().post('/api/orders').set(auth(bobToken)).set('Idempotency-Key', randomUUID()).send({ items: [{ productId: extraId, quantity: 1 }] }).expect(201);
+      cart = (await http().get('/api/cart').set(auth(bobToken)).expect(200)).body;
+      expect(cart.items.map((i: { productId: string }) => i.productId)).toEqual([productId]);
+      await http().delete('/api/cart').set(auth(bobToken)).expect(204);
+    });
+
+    it('validates checkout input and ownership', async () => {
+      await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ items: [{ productId, quantity: 0 }] }).expect(400);
+      await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ ...buyNow(), cartProductIds: [productId] }).expect(400);
+      const other = await http().get('/api/account/addresses').set(auth(bobToken)).expect(200);
+      const res = await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ ...buyNow(), addressId: other.body[0].id }).expect(404);
+      expect(res.body.code).toBe('ADDRESS_NOT_FOUND');
+      await http().post('/api/checkout/preview').send(buyNow()).expect(401);
+    });
+  });
+
   it('lists the 34 provinces and their wards (2-level administrative units)', async () => {
     const provinces = await http().get('/api/locations/provinces').expect(200);
     expect(provinces.body).toHaveLength(34);
@@ -508,33 +633,35 @@ describe('Home Shopping API (e2e)', () => {
     });
 
     it('address book: first is default, one default at a time, private per user', async () => {
-      const first = await http().post('/api/account/addresses').set(auth(aliceToken)).send(address).expect(201);
+      const { token: dora } = await register('dora');
+      const { token: eve } = await register('eve');
+      const first = await http().post('/api/account/addresses').set(auth(dora)).send(address).expect(201);
       expect(first.body).toMatchObject({ isDefault: true, province: 'Thành phố Đà Nẵng', ward: 'Phường Hải Châu', district: null, provinceCode: 48 });
       // Xã không thuộc tỉnh đã chọn (Phường Ba Đình là của Hà Nội)
-      const wrong = await http().post('/api/account/addresses').set(auth(aliceToken)).send({ ...address, wardCode: 4 }).expect(400);
+      const wrong = await http().post('/api/account/addresses').set(auth(dora)).send({ ...address, wardCode: 4 }).expect(400);
       expect(wrong.body.code).toBe('ADDRESS_INVALID');
 
       const second = await http()
         .post('/api/account/addresses')
-        .set(auth(aliceToken))
+        .set(auth(dora))
         .send({ ...address, street: '99 Trần Phú', type: 'OFFICE', isDefault: true })
         .expect(201);
-      let list = (await http().get('/api/account/addresses').set(auth(aliceToken)).expect(200)).body;
+      let list = (await http().get('/api/account/addresses').set(auth(dora)).expect(200)).body;
       expect(list.filter((a: { isDefault: boolean }) => a.isDefault).map((a: { id: string }) => a.id)).toEqual([second.body.id]);
 
-      list = (await http().post(`/api/account/addresses/${first.body.id}/default`).set(auth(aliceToken)).expect(201)).body;
+      list = (await http().post(`/api/account/addresses/${first.body.id}/default`).set(auth(dora)).expect(201)).body;
       expect(list[0].id).toBe(first.body.id);
 
-      // Bob không xem/sửa/xóa được địa chỉ của Alice
-      expect((await http().get('/api/account/addresses').set(auth(bobToken)).expect(200)).body).toEqual([]);
-      await http().put(`/api/account/addresses/${first.body.id}`).set(auth(bobToken)).send(address).expect(404);
-      await http().delete(`/api/account/addresses/${first.body.id}`).set(auth(bobToken)).expect(404);
+      // Người khác không xem/sửa/xóa được địa chỉ của Dora
+      expect((await http().get('/api/account/addresses').set(auth(eve)).expect(200)).body).toEqual([]);
+      await http().put(`/api/account/addresses/${first.body.id}`).set(auth(eve)).send(address).expect(404);
+      await http().delete(`/api/account/addresses/${first.body.id}`).set(auth(eve)).expect(404);
 
-      await http().post('/api/account/addresses').set(auth(aliceToken)).send({ ...address, phone: 'abc' }).expect(400);
-      await http().post('/api/account/addresses').set(auth(aliceToken)).send({ ...address, street: '<script>' }).expect(400);
+      await http().post('/api/account/addresses').set(auth(dora)).send({ ...address, phone: 'abc' }).expect(400);
+      await http().post('/api/account/addresses').set(auth(dora)).send({ ...address, street: '<script>' }).expect(400);
 
       // Xóa địa chỉ mặc định → địa chỉ còn lại tự thành mặc định
-      list = (await http().delete(`/api/account/addresses/${first.body.id}`).set(auth(aliceToken)).expect(200)).body;
+      list = (await http().delete(`/api/account/addresses/${first.body.id}`).set(auth(dora)).expect(200)).body;
       expect(list).toHaveLength(1);
       expect(list[0]).toMatchObject({ id: second.body.id, isDefault: true });
     });
@@ -597,6 +724,7 @@ describe('Home Shopping API (e2e)', () => {
 
     beforeAll(async () => {
       carol = await register('mgmt');
+      await addAddress(carol.token);
     });
 
     it('lists and searches users with counts; customers are forbidden', async () => {
@@ -654,7 +782,8 @@ describe('Home Shopping API (e2e)', () => {
       expect(list.body.total).toBe(0);
       const cart = await http().get('/api/cart').set(auth(carol.token)).expect(200);
       expect(cart.body.items[0].available).toBe(false);
-      await http().post('/api/orders').set(auth(carol.token)).set('Idempotency-Key', randomUUID()).send(shipping).expect(400);
+      const hidden = await http().post('/api/orders').set(auth(carol.token)).set('Idempotency-Key', randomUUID()).send(shipping).expect(409);
+      expect(hidden.body.code).toBe('PRODUCT_UNAVAILABLE');
 
       const adminList = await http().get(`/api/admin/products?status=hidden&q=e2e-hidden-${run}`).set(auth(adminToken)).expect(200);
       expect(adminList.body.items.map((p: { id: string }) => p.id)).toContain(product.id);

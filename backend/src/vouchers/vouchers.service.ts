@@ -14,7 +14,7 @@ export type VoucherView = Omit<Voucher, 'usedCount' | 'usageLimit' | 'createdAt'
 };
 
 export interface AppliedVoucher {
-  voucher: Pick<Voucher, 'id' | 'code' | 'perUserLimit'>;
+  voucher: Pick<Voucher, 'id' | 'code' | 'perUserLimit' | 'type'>;
   discount: number;
 }
 

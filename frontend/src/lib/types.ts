@@ -130,6 +130,9 @@ export interface OrderItem {
   productId: string;
   quantity: number;
   unitPrice: number;
+  /** Snapshot lúc đặt */
+  productName: string;
+  productSlug: string;
   product: { name: string; slug: string };
 }
 
@@ -156,6 +159,16 @@ export interface Order {
   completedAt: string | null;
   cancelledAt: string | null;
   history: OrderHistoryEntry[];
+  subtotal: number;
+  shippingFee: number;
+  discountAmount: number;
+  shippingDiscount: number;
+  voucherCode: string | null;
+  shippingVoucherCode: string | null;
+  recipientName: string | null;
+  estimatedDeliveryFrom: string | null;
+  estimatedDeliveryTo: string | null;
+  note: string | null;
   totalAmount: number;
   shippingAddress: string;
   phone: string;
@@ -375,4 +388,80 @@ export function shortId(id: string): string {
 /** Chữ cái đầu của tên (tên tiếng Việt: lấy từ cuối là tên gọi) */
 export function initials(fullName: string): string {
   return fullName.trim().split(/\s+/).slice(-1)[0]?.charAt(0).toUpperCase() ?? '?';
+}
+
+// ---------------- Thanh toán (checkout) ----------------
+
+export type VoucherType = 'PERCENT' | 'FIXED' | 'FREESHIP';
+
+export interface CheckoutLine {
+  productId: string;
+  name: string;
+  slug: string;
+  imageUrl: string | null;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+  stock: number;
+  available: boolean;
+}
+
+export interface CheckoutVoucherOption {
+  code: string;
+  name: string;
+  summary: string;
+  type: VoucherType;
+  endsAt: string;
+  applicable: boolean;
+  reason: string | null;
+  discount: number;
+  selected: boolean;
+}
+
+export interface CheckoutPreview {
+  source: 'CART' | 'BUY_NOW';
+  items: CheckoutLine[];
+  address: Address | null;
+  shipping: {
+    fee: number;
+    provider: string;
+    estimatedDelivery: { from: string; to: string };
+    freeShipThreshold: number;
+    freeShipEligible: boolean;
+    amountToFreeShip: number;
+  } | null;
+  vouchers: {
+    voucherCode: string | null;
+    shippingVoucherCode: string | null;
+    discount: CheckoutVoucherOption[];
+    shipping: CheckoutVoucherOption[];
+    errors: { code: string; reason: string }[];
+  };
+  paymentMethod: PaymentMethod;
+  paymentMethods: { method: PaymentMethod; label: string; available: boolean; reason?: string }[];
+  pricing: { subtotal: number; shippingFee: number; discount: number; shippingDiscount: number; total: number; saved: number };
+  issues: { code: string; message: string; productId?: string }[];
+  canPlaceOrder: boolean;
+}
+
+export interface Voucher {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  type: VoucherType;
+  value: number;
+  maxDiscount: number | null;
+  minOrderValue: number;
+  startsAt: string;
+  endsAt: string;
+  summary: string;
+  usedPercent: number | null;
+  saved?: boolean;
+}
+
+/** "2026-11-13" → "13/11" */
+export function formatShortDay(isoDate: string): string {
+  const [, m, d] = isoDate.split('-');
+  return `${d}/${m}`;
 }

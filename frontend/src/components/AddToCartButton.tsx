@@ -1,6 +1,6 @@
 'use client';
 
-import { faBagShopping, faCircleCheck, faMinus, faPlus, faSpinner, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+import { faBagShopping, faCartPlus, faCircleCheck, faMinus, faPlus, faSpinner, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -16,6 +16,16 @@ export function AddToCartButton({ productId, stock }: { productId: string; stock
   const [quantity, setQuantity] = useState(1);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /** "Mua ngay": sang thẳng trang thanh toán, không thêm vào giỏ */
+  function buyNow() {
+    const target = `/checkout?buy=${productId}&qty=${quantity}`;
+    if (!getToken()) {
+      router.push('/login?next=' + encodeURIComponent(target));
+      return;
+    }
+    router.push(target);
+  }
 
   async function add() {
     if (!getToken()) {
@@ -71,9 +81,12 @@ export function AddToCartButton({ productId, stock }: { productId: string; stock
             <FontAwesomeIcon icon={faPlus} />
           </button>
         </div>
-        <button className="btn btn-lg" onClick={add} disabled={busy}>
-          <FontAwesomeIcon icon={busy ? faSpinner : faBagShopping} spin={busy} />
+        <button className="btn btn-lg btn-ghost" onClick={add} disabled={busy}>
+          <FontAwesomeIcon icon={busy ? faSpinner : faCartPlus} spin={busy} />
           {busy ? 'Đang thêm…' : 'Thêm vào giỏ hàng'}
+        </button>
+        <button className="btn btn-lg" onClick={buyNow} disabled={busy}>
+          <FontAwesomeIcon icon={faBagShopping} /> Mua ngay
         </button>
       </div>
       {status && (

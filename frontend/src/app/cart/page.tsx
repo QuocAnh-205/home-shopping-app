@@ -3,14 +3,12 @@
 import {
   faArrowLeft,
   faBagShopping,
-  faCircleCheck,
-  faLocationDot,
   faLock,
   faMinus,
-  faPhone,
   faPlus,
   faReceipt,
   faSpinner,
+  faTicket,
   faTrashCan,
   faTriangleExclamation,
   faTruckFast,
@@ -18,27 +16,22 @@ import {
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '@/components/EmptyState';
 import { apiFetch, notifyCartChanged, useSession } from '@/lib/client-api';
-import { formatAddress, formatPrice, shortId, type Address, type Cart, type Order } from '@/lib/types';
+import { formatPrice, type Cart } from '@/lib/types';
 
 const MAX_PER_ITEM = 99;
-
-const toShipTo = (a: Address) => ({ address: `${a.fullName}, ${formatAddress(a)}`, phone: a.phone });
 
 export default function CartPage() {
   const router = useRouter();
   const { session, ready } = useSession();
   const [cart, setCart] = useState<Cart | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [placed, setPlaced] = useState<Order | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [shipTo, setShipTo] = useState({ address: '', phone: '' });
-  // Một Idempotency-Key cho mỗi lần "ý định đặt hàng": bấm 2 lần hay retry vẫn chỉ tạo 1 đơn
-  const idempotencyKey = useRef<string>('');
+  // Sản phẩm được tick để mua (như Shopee); mặc định chọn mọi sản phẩm còn đủ hàng
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [touched, setTouched] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -54,17 +47,15 @@ export default function CartPage() {
       router.replace('/login?next=/cart');
       return;
     }
-    idempotencyKey.current ||= crypto.randomUUID();
     void load();
-    // Sổ địa chỉ: điền sẵn địa chỉ mặc định (người dùng vẫn sửa tay được)
-    apiFetch<Address[]>('/account/addresses')
-      .then((list) => {
-        setAddresses(list);
-        const def = list.find((a) => a.isDefault);
-        if (def) setShipTo((cur) => (cur.address || cur.phone ? cur : toShipTo(def)));
-      })
-      .catch(() => setAddresses([]));
   }, [ready, session, load, router]);
+
+  // Đồng bộ lựa chọn khi giỏ thay đổi: bỏ sản phẩm đã xóa / hết hàng; lần đầu chọn tất cả
+  useEffect(() => {
+    if (!cart) return;
+    const ok = new Set(cart.items.filter((i) => i.available).map((i) => i.productId));
+    setSelected((cur) => (touched ? new Set([...cur].filter((id) => ok.has(id))) : ok));
+  }, [cart, touched]);
 
   async function mutate(productId: string, request: () => Promise<Cart>) {
     setPending(productId);
@@ -82,55 +73,32 @@ export default function CartPage() {
 
   const setQuantity = (productId: string, quantity: number) =>
     mutate(productId, () => apiFetch<Cart>('/cart/items', { method: 'PUT', body: JSON.stringify({ productId, quantity }) }));
-
   const remove = (productId: string) => mutate(productId, () => apiFetch<Cart>(`/cart/items/${productId}`, { method: 'DELETE' }));
 
-  async function checkout(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      const order = await apiFetch<Order>('/orders', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey.current },
-        body: JSON.stringify({ shippingAddress: shipTo.address.trim(), phone: shipTo.phone.trim() }),
-      });
-      setPlaced(order);
-      idempotencyKey.current = crypto.randomUUID();
-      setCart({ items: [], totalItems: 0, totalAmount: 0 });
-      notifyCartChanged();
-    } catch (err) {
-      setError((err as Error).message);
-      await load();
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const toggle = (id: string) => {
+    setTouched(true);
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
-  if (placed) {
-    return (
-      <section className="panel success">
-        <span className="success-ico" aria-hidden>
-          <FontAwesomeIcon icon={faCircleCheck} />
-        </span>
-        <h1 className="page-title">Đặt hàng thành công!</h1>
-        <p>
-          Mã đơn <strong>#{shortId(placed.id)}</strong> · Tổng thanh toán <span className="price">{formatPrice(placed.totalAmount)}</span>
-        </p>
-        <p className="muted">Chúng tôi sẽ gọi xác nhận qua số {placed.phone} trong ít phút.</p>
-        <div className="row row-center">
-          <Link className="btn" href={`/orders/${placed.id}`}>
-            <FontAwesomeIcon icon={faReceipt} /> Theo dõi đơn hàng
-          </Link>
-          <Link className="btn btn-ghost" href="/">
-            Tiếp tục mua sắm
-          </Link>
-        </div>
-      </section>
-    );
-  }
+  const selectable = useMemo(() => cart?.items.filter((i) => i.available) ?? [], [cart]);
+  const allSelected = selectable.length > 0 && selectable.every((i) => selected.has(i.productId));
+  const toggleAll = () => {
+    setTouched(true);
+    setSelected(allSelected ? new Set() : new Set(selectable.map((i) => i.productId)));
+  };
 
-  const blocked = cart?.items.some((i) => !i.available) ?? false;
+  const chosen = cart?.items.filter((i) => selected.has(i.productId)) ?? [];
+  const chosenCount = chosen.reduce((n, i) => n + i.quantity, 0);
+  const chosenTotal = chosen.reduce((s, i) => s + i.lineTotal, 0);
+
+  function checkout() {
+    router.push(`/checkout?items=${chosen.map((i) => i.productId).join(',')}`);
+  }
 
   return (
     <section>
@@ -157,9 +125,20 @@ export default function CartPage() {
       ) : (
         <div className="cart-layout">
           <div className="stack">
+            <label className="checkbox cart-select-all">
+              <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={selectable.length === 0} /> Chọn tất cả ({selectable.length})
+            </label>
             <ul className="cart-list">
               {cart.items.map((i) => (
                 <li key={i.productId} className={`cart-item ${pending === i.productId ? 'is-pending' : ''}`}>
+                  <input
+                    type="checkbox"
+                    className="cart-check"
+                    checked={selected.has(i.productId)}
+                    disabled={!i.available}
+                    onChange={() => toggle(i.productId)}
+                    aria-label={`Chọn ${i.name}`}
+                  />
                   <Link href={`/products/${i.slug}`} className="cart-thumb">
                     {i.imageUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -198,13 +177,7 @@ export default function CartPage() {
                   </div>
                   <div className="cart-item-right">
                     <strong>{formatPrice(i.lineTotal)}</strong>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      disabled={pending !== null}
-                      onClick={() => remove(i.productId)}
-                      aria-label={`Xóa ${i.name}`}
-                    >
+                    <button type="button" className="btn btn-ghost btn-sm" disabled={pending !== null} onClick={() => remove(i.productId)} aria-label={`Xóa ${i.name}`}>
                       <FontAwesomeIcon icon={faTrashCan} /> Xóa
                     </button>
                   </div>
@@ -221,84 +194,27 @@ export default function CartPage() {
               <span className="fa-icon-wrap">
                 <FontAwesomeIcon icon={faReceipt} />
               </span>
-              Thanh toán
+              Tóm tắt
             </h2>
             <dl className="summary">
-              <dt>Tạm tính ({cart.totalItems} sản phẩm)</dt>
-              <dd>{formatPrice(cart.totalAmount)}</dd>
+              <dt>Đã chọn ({chosenCount} sản phẩm)</dt>
+              <dd>{formatPrice(chosenTotal)}</dd>
               <dt>
                 <FontAwesomeIcon icon={faTruckFast} /> Phí vận chuyển
               </dt>
-              <dd className="ok">Miễn phí</dd>
-              <dt className="total">Tổng cộng</dt>
-              <dd className="total price">{formatPrice(cart.totalAmount)}</dd>
+              <dd className="muted small">Tính ở bước thanh toán</dd>
+              <dt>
+                <FontAwesomeIcon icon={faTicket} /> Voucher
+              </dt>
+              <dd className="muted small">Chọn ở bước thanh toán</dd>
+              <dt className="total">Tạm tính</dt>
+              <dd className="total price">{formatPrice(chosenTotal)}</dd>
             </dl>
-            <form className="form" onSubmit={checkout}>
-              {addresses.length > 0 && (
-                <label className="field">
-                  Chọn từ sổ địa chỉ
-                  <select
-                    className="input"
-                    defaultValue={addresses.find((a) => a.isDefault)?.id ?? ''}
-                    onChange={(e) => {
-                      const a = addresses.find((x) => x.id === e.target.value);
-                      if (a) setShipTo(toShipTo(a));
-                    }}
-                  >
-                    {addresses.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.isDefault ? '★ ' : ''}
-                        {a.fullName} · {a.district}, {a.province}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <label className="field">
-                <span className="field-head">
-                  Địa chỉ nhận hàng
-                  <Link className="link small" href="/account?tab=address">
-                    {addresses.length ? 'Quản lý địa chỉ' : 'Lưu vào sổ địa chỉ'}
-                  </Link>
-                </span>
-                <textarea
-                  className="input"
-                  name="address"
-                  value={shipTo.address}
-                  onChange={(e) => setShipTo({ ...shipTo, address: e.target.value })}
-                  rows={3}
-                  placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành"
-                  minLength={10}
-                  maxLength={500}
-                  autoComplete="street-address"
-                  required
-                />
-              </label>
-              <label className="field">
-                Số điện thoại
-                <span className="input-wrap">
-                  <FontAwesomeIcon icon={faPhone} />
-                  <input
-                    className="input"
-                    name="phone"
-                    value={shipTo.phone}
-                    onChange={(e) => setShipTo({ ...shipTo, phone: e.target.value })}
-                    type="tel"
-                    inputMode="tel"
-                    autoComplete="tel"
-                    placeholder="0901 234 567"
-                    pattern="(\+84|0)[0-9 .\-]{9,13}"
-                    required
-                  />
-                </span>
-              </label>
-              <button className="btn btn-lg btn-block" type="submit" disabled={submitting || blocked || pending !== null}>
-                <FontAwesomeIcon icon={submitting ? faSpinner : faLocationDot} spin={submitting} />
-                {submitting ? 'Đang đặt hàng…' : 'Đặt hàng · Thanh toán khi nhận'}
-              </button>
-            </form>
+            <button className="btn btn-lg btn-block" disabled={chosen.length === 0 || pending !== null} onClick={checkout}>
+              Mua hàng ({chosen.length})
+            </button>
             <p className="secure-note">
-              <FontAwesomeIcon icon={faLock} /> Thông tin của bạn được mã hóa và bảo mật
+              <FontAwesomeIcon icon={faLock} /> Giá và phí vận chuyển được tính lại chính xác ở bước thanh toán
             </p>
           </aside>
         </div>

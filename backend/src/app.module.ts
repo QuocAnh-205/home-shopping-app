@@ -11,6 +11,7 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CategoriesModule } from './categories/categories.module';
+import { CheckoutModule } from './checkout/checkout.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
@@ -82,6 +83,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
     ShippingModule,
     ProductsModule,
     CartModule,
+    CheckoutModule,
     OrdersModule,
     ReviewsModule,
     NewsletterModule,

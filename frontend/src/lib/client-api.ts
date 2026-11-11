@@ -17,6 +17,9 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Mã lỗi nghiệp vụ ổn định từ backend (OUT_OF_STOCK, PRICE_CHANGED...) */
+    readonly code?: string,
+    readonly details?: unknown,
   ) {
     super(message);
   }
@@ -225,14 +228,14 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (res.status === 401 && token && !path.startsWith('/auth/')) saveSession(null);
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+    const body = (await res.json().catch(() => ({}))) as { message?: string | string[]; code?: string; details?: unknown };
     const raw = Array.isArray(body.message) ? body.message : body.message ? [body.message] : [];
     const translated = raw.map(translate);
     const serverMsg = translated.join(', ') || undefined;
     // Lỗi nghiệp vụ (4xx cụ thể hoặc đã có bản dịch) → hiện chi tiết; lỗi hạ tầng → thông điệp chung
     const specific = [400, 404, 409].includes(res.status) || translated.some((t, i) => t !== raw[i]);
     const message = specific ? serverMsg : ERROR_VI[res.status] ?? serverMsg;
-    throw new ApiError(res.status, message ?? `Yêu cầu thất bại (${res.status})`);
+    throw new ApiError(res.status, message ?? `Yêu cầu thất bại (${res.status})`, body.code, body.details);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }

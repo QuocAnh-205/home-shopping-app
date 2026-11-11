@@ -110,6 +110,11 @@ export class CartService {
     await this.redis.client.multi().hset(key, productId, next).expire(key, CART_TTL_SECONDS).exec();
   }
 
+  /** Xóa các sản phẩm vừa đặt hàng khỏi giỏ (mua một phần giỏ: phần còn lại giữ nguyên) */
+  async removeItems(userId: string, productIds: string[]): Promise<void> {
+    if (productIds.length) await this.redis.client.hdel(CartService.key(userId), ...productIds);
+  }
+
   async removeItem(userId: string, productId: string): Promise<CartView> {
     await this.redis.client.hdel(CartService.key(userId), productId);
     return this.get(userId);

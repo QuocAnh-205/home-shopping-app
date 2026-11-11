@@ -110,7 +110,7 @@ function OrderList() {
               <span>
                 {formatDate(o.createdAt)} ·{" "}
                 {o.items
-                  .map((i) => `${i.product.name} ×${i.quantity}`)
+                  .map((i) => `${i.productName} ×${i.quantity}`)
                   .join(", ")}
               </span>
             </span>

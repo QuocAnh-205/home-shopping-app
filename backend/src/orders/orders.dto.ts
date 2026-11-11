@@ -4,19 +4,6 @@ import { IsEnum, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
-export class CreateOrderDto {
-  @IsString()
-  @Transform(trim)
-  @MinLength(10)
-  @MaxLength(500)
-  @Matches(/^[^<>]*$/, { message: 'shippingAddress must not contain HTML' })
-  shippingAddress: string;
-
-  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/[\s.-]/g, '') : value))
-  @Matches(/^(\+84|0)[0-9]{9,10}$/, { message: 'phone must be a valid Vietnamese phone number' })
-  phone: string;
-}
-
 export class ListOrdersQuery {
   @IsOptional()
   @Type(() => Number)
