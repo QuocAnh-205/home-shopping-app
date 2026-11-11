@@ -1,0 +1,91 @@
+# ============================================================
+# Rollback production THỦ CÔNG – bấm nút, không SSH vào gõ lệnh
+#   GitHub → Actions → "Rollback Production" → Run workflow
+#   - Để trống ô tag  → quay về bản chạy TRƯỚC bản hiện tại (.deploy/previous_tag trên EC2)
+#   - Nhập commit SHA → chạy lại đúng image đó (image trên Docker Hub được tag theo commit SHA)
+# Dùng lại rolling update của scripts/deploy.sh → không downtime. (Rollback TỰ ĐỘNG khi health check
+# fail đã có sẵn trong pipeline chính.)
+# ============================================================
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Commit SHA của bản muốn quay về (để trống = bản trước đó)"
+        required: false
+        default: ""
+
+concurrency:
+  group: production-refs/heads/main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  APP_DIR: /opt/homeshop
+
+jobs:
+  rollback:
+    name: "Rollback production"
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SG_ID: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+      TARGET: ${{ inputs.image_tag }}
+    steps:
+      - name: Kiểm tra tag
+        run: |
+          if [ -n "$TARGET" ] && ! printf '%s' "$TARGET" | grep -Eq '^[0-9a-f]{7,40}$'; then
+            echo "::error::Tag phải là commit SHA (hex)"; exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Kết nối EC2 (OIDC + mở tạm SSH + đồng bộ cấu hình)
+        id: ec2
+        uses: ./.github/actions/ec2-connect
+        with:
+          role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          sg-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          host: ${{ vars.EC2_HOST }}
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          ssh-known-hosts: ${{ secrets.EC2_SSH_KNOWN_HOSTS }}
+          env-file: ${{ secrets.PROD_ENV_FILE }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+          app-dir: ${{ env.APP_DIR }}
+
+      - name: Rollback (rolling update về bản cũ → health check)
+        run: |
+          # shellcheck disable=SC2029
+          ssh prod "bash $APP_DIR/scripts/deploy.sh --rollback $TARGET"
+          NOW="$(ssh prod "cat $APP_DIR/.deploy/current_tag")"
+          echo "### ⏪ Production đã quay về \`${NOW::7}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Kiểm tra qua Internet
+        run: |
+          for _ in 1 2 3 4 5; do
+            body="$(curl -s --max-time 10 "${{ vars.APP_URL }}/api/health" || true)"
+            printf '%s' "$body" | grep -q '"status":"ok"' && { echo "$body"; exit 0; }
+            sleep 5
+          done
+          echo "::error::Health check thất bại sau rollback"; exit 1
+
+      - name: Đóng port 22 của runner
+        if: always() && steps.ec2.outputs.runner-ip != ''
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "$SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.ec2.outputs.runner-ip }}/32}]" || true
+          rm -f ~/.ssh/deploy_key

@@ -3,7 +3,8 @@
 # Zero-downtime deploy + auto-rollback (chạy trên EC2, được GitHub Actions gọi qua SSH)
 #
 #   Usage: scripts/deploy.sh <image_tag>        (SKIP_PULL=1: dùng image đã docker load sẵn)
-#   Exit:  0 = deploy thành công
+#          scripts/deploy.sh --rollback [tag]   (rollback THỦ CÔNG, mặc định về bản trước – workflow rollback.yml)
+#   Exit:  0 = deploy / rollback thủ công thành công
 #          2 = bản mới lỗi → đã rollback về bản trước
 #          1 = lỗi nghiêm trọng (migration fail / rollback fail / thiếu cấu hình)
 #
@@ -16,7 +17,13 @@ set -Eeuo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$APP_DIR"
 
-NEW_TAG="${1:?Usage: deploy.sh <image_tag>}"
+MODE="deploy"
+if [ "${1:-}" = "--rollback" ]; then
+  MODE="rollback"
+  shift
+fi
+NEW_TAG="${1:-}"
+[ "$MODE" = "rollback" ] || [ -n "$NEW_TAG" ] || { echo "Usage: deploy.sh <image_tag> | deploy.sh --rollback [tag]"; exit 1; }
 PROJECT="homeshop"
 STATE_DIR="$APP_DIR/.deploy"
 CURRENT_FILE="$STATE_DIR/current_tag"
@@ -250,4 +257,28 @@ main() {
   log "Deploy $NEW_TAG completed. Disk usage: $(df -h / | awk 'NR==2{print $5}')"
 }
 
-main
+# Rollback thủ công (bấm nút trên GitHub Actions): KHÔNG chạy migration – schema mới vẫn tương thích ngược
+# vì migration chỉ thêm cột/bảng (expand); dữ liệu không bị đụng.
+manual_rollback() {
+  local current="" target="$NEW_TAG"
+  [ -f "$CURRENT_FILE" ] && current="$(cat "$CURRENT_FILE")"
+  [ -n "$target" ] || { [ -f "$PREVIOUS_FILE" ] && target="$(cat "$PREVIOUS_FILE")"; }
+  [ -n "$target" ] || fail "Không có bản trước để rollback (chưa có .deploy/previous_tag)"
+  [ "$target" != "$current" ] || fail "Bản $target đang chạy rồi"
+  log "===== MANUAL ROLLBACK $current → $target ====="
+  IMAGE_TAG="$target" compose pull --quiet "${APP_SERVICES[@]}" || fail "Cannot pull images for $target"
+  for svc in "${APP_SERVICES[@]}"; do
+    rolling_update "$svc" "$target" || fail "Rollback of $svc failed - bản $current vẫn đang chạy"
+  done
+  persist_tag "$target"
+  http_health || fail "Service unhealthy after manual rollback"
+  [ -n "$current" ] && echo "$current" > "$PREVIOUS_FILE"
+  echo "$target" > "$CURRENT_FILE"
+  log "Manual rollback completed, running version: $target"
+}
+
+if [ "$MODE" = "rollback" ]; then
+  manual_rollback
+else
+  main
+fi
