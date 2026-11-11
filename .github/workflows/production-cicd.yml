@@ -183,11 +183,13 @@ jobs:
           PGPASSWORD: ci-password
         run: |
           set -euo pipefail
-          pg_dump -d homeshop_ci --no-owner --no-privileges --clean --if-exists --quote-all-identifiers | gzip -9 > backup.sql.gz
+          # Dùng đúng image postgres:16 như production (pg_dump của runner là bản mới hơn, sinh lệnh SET mà PG16 không hiểu)
+          pg() { docker run --rm -i --network host -e PGHOST -e PGUSER -e PGPASSWORD postgres:16-alpine "$@"; }
+          pg pg_dump -d homeshop_ci --no-owner --no-privileges --clean --if-exists --quote-all-identifiers | gzip -9 > backup.sql.gz
           gzip -t backup.sql.gz
           gunzip -c backup.sql.gz | tail -n 5 | grep -q "PostgreSQL database dump complete"
           psql -d homeshop_ci -qc 'CREATE DATABASE homeshop_restore'
-          gunzip -c backup.sql.gz | psql -d homeshop_restore -q -v ON_ERROR_STOP=1 --single-transaction >/dev/null
+          gunzip -c backup.sql.gz | pg psql -d homeshop_restore -q -v ON_ERROR_STOP=1 --single-transaction >/dev/null
           q="SELECT string_agg(t || '=' || n, ' ' ORDER BY t) FROM (
                SELECT 'users' t, count(*) n FROM users UNION ALL SELECT 'products', count(*) FROM products
                UNION ALL SELECT 'orders', count(*) FROM orders UNION ALL SELECT 'order_items', count(*) FROM order_items
