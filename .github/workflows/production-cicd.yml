@@ -1,6 +1,8 @@
 # ============================================================
 # Home Shopping App - Production CI/CD (DevSecOps)
-# 1. Security/Quality ‖ Integration Test ‖ IaC Scan → 2. Build, Scan & Push → 3. Deploy + Auto-Rollback → 4. Notification
+# 1. Security/Quality ‖ Integration Test ‖ IaC Scan → 2. Build & Trivy Scan (+ Push khi ở main)
+# → 3a. Staging + Smoke Test → 3b. Production (zero-downtime + auto-rollback) → 4. Notification
+# Pull request: chạy 1 + 2 (build image, KHÔNG push, KHÔNG deploy) – là các required check của nhánh main
 # ============================================================
 name: Production CI/CD
 
@@ -174,6 +176,29 @@ jobs:
         working-directory: backend
         run: npm run test:e2e -- --ci
 
+      - name: Diễn tập backup & restore (pg_dump giống backup-db.sh → restore sang DB mới → so khớp dữ liệu)
+        env:
+          PGHOST: localhost
+          PGUSER: homeshop
+          PGPASSWORD: ci-password
+        run: |
+          set -euo pipefail
+          # Dùng đúng image postgres:16 như production (pg_dump của runner là bản mới hơn, sinh lệnh SET mà PG16 không hiểu)
+          pg() { docker run --rm -i --network host -e PGHOST -e PGUSER -e PGPASSWORD postgres:16-alpine "$@"; }
+          pg pg_dump -d homeshop_ci --no-owner --no-privileges --clean --if-exists --quote-all-identifiers | gzip -9 > backup.sql.gz
+          gzip -t backup.sql.gz
+          gunzip -c backup.sql.gz | tail -n 5 | grep -q "PostgreSQL database dump complete"
+          psql -d homeshop_ci -qc 'CREATE DATABASE homeshop_restore'
+          gunzip -c backup.sql.gz | pg psql -d homeshop_restore -q -v ON_ERROR_STOP=1 --single-transaction >/dev/null
+          q="SELECT string_agg(t || '=' || n, ' ' ORDER BY t) FROM (
+               SELECT 'users' t, count(*) n FROM users UNION ALL SELECT 'products', count(*) FROM products
+               UNION ALL SELECT 'orders', count(*) FROM orders UNION ALL SELECT 'order_items', count(*) FROM order_items
+               UNION ALL SELECT 'migrations', count(*) FROM _prisma_migrations) x"
+          src="$(psql -d homeshop_ci -tAc "$q")"; dst="$(psql -d homeshop_restore -tAc "$q")"
+          echo "Gốc:      $src"; echo "Restore:  $dst"
+          [ "$src" = "$dst" ] || { echo "::error::Dữ liệu sau restore không khớp"; exit 1; }
+          echo "### 💾 Backup/restore drill OK ($(du -h backup.sql.gz | cut -f1)): $dst" >> "$GITHUB_STEP_SUMMARY"
+
   # ----------------------------------------------------------
   # JOB 1c: IaC & config scan (Terraform, Dockerfile, Shell, Prometheus, Compose)
   # ----------------------------------------------------------
@@ -237,6 +262,8 @@ jobs:
           docker compose -f docker-compose.local.yml config -q
           docker compose -f docker-compose.prod.yml --env-file .env.ci config -q
           docker compose -f monitoring/docker-compose.monitoring.yml --env-file .env.ci config -q
+          { echo IMAGE_TAG=ci; echo STAGING_URL=https://staging.ci; echo STAGING_JWT_SECRET=x; } > .env.staging.ci
+          docker compose -f docker-compose.staging.yml --env-file .env.ci --env-file .env.staging.ci config -q
 
   # ----------------------------------------------------------
   # JOB 2: Build, Trivy Scan & Push (matrix FE/BE chạy song song)
@@ -244,7 +271,6 @@ jobs:
   build-scan-push:
     name: "2 · Build, Scan & Push (${{ matrix.service }})"
     needs: [security-quality, integration-test, iac-scan]
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -268,6 +294,7 @@ jobs:
           fi
 
       - name: Kiểm tra cấu hình Docker Hub
+        if: github.event_name != 'pull_request'
         env:
           DH_USER: ${{ vars.DOCKERHUB_USERNAME }}
           DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -284,6 +311,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login Docker Hub
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
@@ -339,26 +367,85 @@ jobs:
           sarif_file: trivy-${{ matrix.service }}.sarif
           category: trivy-${{ matrix.service }}
 
-      - name: Push image (tag commit SHA + latest)
+      - name: Push image (tag commit SHA + số phiên bản + latest)
+        # Pull request chỉ build + scan để chứng minh image build được; chỉ main mới đẩy lên registry
+        if: github.event_name != 'pull_request'
         env:
           IMAGE: ${{ steps.meta.outputs.image }}
+          VERSION: 1.0.${{ github.run_number }}
         run: |
           docker tag "$IMAGE:${GITHUB_SHA}" "$IMAGE:latest"
-          for tag in "${GITHUB_SHA}" latest; do
+          docker tag "$IMAGE:${GITHUB_SHA}" "$IMAGE:$VERSION"
+          for tag in "${GITHUB_SHA}" "$VERSION" latest; do
             for attempt in 1 2 3; do
               docker push "$IMAGE:$tag" && break
               echo "Push $IMAGE:$tag failed (attempt $attempt), retrying..."; sleep $((attempt * 5))
               [ "$attempt" = 3 ] && exit 1
             done
           done
-          echo "### 🐳 ${{ matrix.service }}: \`$IMAGE:${GITHUB_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 🐳 ${{ matrix.service }}: \`$IMAGE:${GITHUB_SHA}\` = \`$IMAGE:$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
 
   # ----------------------------------------------------------
-  # JOB 3: Zero-Downtime Deploy + Auto-Rollback trên EC2
+  # JOB 3a: STAGING – cùng image (commit SHA) chạy trên stack staging riêng, smoke test qua Nginx thật.
+  # Staging fail → production KHÔNG được deploy.
+  # ----------------------------------------------------------
+  deploy-staging:
+    name: "3a · Deploy Staging + Smoke Test"
+    needs: build-scan-push
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Không khai báo environment: role AWS (OIDC) chỉ tin ref main / environment production (terraform/main.tf)
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      url: ${{ steps.url.outputs.url }}
+    env:
+      SG_ID: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Kết nối EC2 (OIDC + mở tạm SSH + đồng bộ cấu hình)
+        id: ec2
+        uses: ./.github/actions/ec2-connect
+        with:
+          role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          sg-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          host: ${{ vars.EC2_HOST }}
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          ssh-known-hosts: ${{ secrets.EC2_SSH_KNOWN_HOSTS }}
+          env-file: ${{ secrets.PROD_ENV_FILE }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+          app-dir: ${{ env.APP_DIR }}
+
+      - name: Deploy staging (migrate DB staging → chạy → smoke test)
+        run: ssh prod "bash $APP_DIR/scripts/deploy-staging.sh ${GITHUB_SHA}"
+
+      - name: Staging URL
+        id: url
+        run: |
+          URL="$(printf '%s' "${{ vars.APP_URL }}" | sed -E 's#^https://#https://staging.#')"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "### 🧪 Staging: $URL (version \`${GITHUB_SHA::7}\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Đóng port 22 của runner
+        if: always() && steps.ec2.outputs.runner-ip != ''
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "$SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.ec2.outputs.runner-ip }}/32}]" || true
+          rm -f ~/.ssh/deploy_key
+
+  # ----------------------------------------------------------
+  # JOB 3b: PRODUCTION – Zero-Downtime Deploy + Auto-Rollback trên EC2 (chỉ chạy khi staging xanh)
   # ----------------------------------------------------------
   deploy:
-    name: "3 · Deploy to EC2 (zero-downtime + auto-rollback)"
-    needs: build-scan-push
+    name: "3b · Deploy Production (zero-downtime + auto-rollback)"
+    needs: deploy-staging
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -372,7 +459,6 @@ jobs:
       status: ${{ steps.deploy.outputs.status }}
       previous_tag: ${{ steps.deploy.outputs.previous_tag }}
     env:
-      EC2_HOST: ${{ vars.EC2_HOST }}
       SG_ID: ${{ secrets.AWS_SECURITY_GROUP_ID }}
     steps:
       - name: Checkout
@@ -399,59 +485,20 @@ jobs:
             exit 1
           fi
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Kết nối EC2 (OIDC + mở tạm SSH + đồng bộ cấu hình)
+        id: ec2
+        uses: ./.github/actions/ec2-connect
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: gha-deploy-${{ github.run_id }}
-
-      - name: Mở tạm port 22 cho IP của runner (Least Privilege)
-        id: sg
-        run: |
-          RUNNER_IP="$(curl -fsS --retry 3 https://checkip.amazonaws.com | tr -d '[:space:]')"
-          echo "::add-mask::$RUNNER_IP"
-          echo "runner_ip=$RUNNER_IP" >> "$GITHUB_OUTPUT"
-          aws ec2 authorize-security-group-ingress \
-            --group-id "$SG_ID" \
-            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description=gha-run-${GITHUB_RUN_ID}}]"
-
-      - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.EC2_SSH_KNOWN_HOSTS }}
-        run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          if [ -n "$SSH_KNOWN_HOSTS" ]; then
-            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          else
-            for _ in 1 2 3 4 5; do ssh-keyscan -T 10 -H "$EC2_HOST" > ~/.ssh/known_hosts 2>/dev/null && [ -s ~/.ssh/known_hosts ] && break; sleep 5; done
-          fi
-          cat > ~/.ssh/config <<EOF
-          Host prod
-            HostName ${EC2_HOST}
-            User ubuntu
-            IdentityFile ~/.ssh/deploy_key
-            IdentitiesOnly yes
-            StrictHostKeyChecking yes
-            ServerAliveInterval 30
-            ConnectTimeout 15
-          EOF
-
-      - name: Đồng bộ file cấu hình lên EC2
-        env:
-          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
-          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          rsync -az --delete-after --exclude 'alertmanager/alertmanager.yml' \
-            docker-compose.prod.yml nginx monitoring scripts prod:"$APP_DIR/"
-          ssh prod "chmod +x $APP_DIR/scripts/*.sh"
-          # .env được ghi qua stdin với umask 077 → không xuất hiện trong process list / log
-          printf '%s\nDOCKERHUB_USERNAME=%s\n' "$PROD_ENV_FILE" "$DOCKERHUB_USERNAME" | ssh prod "umask 077 && cat > $APP_DIR/.env"
-          printf '%s' "$DOCKERHUB_TOKEN" | ssh prod "docker login -u '$DOCKERHUB_USERNAME' --password-stdin >/dev/null"
+          sg-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          host: ${{ vars.EC2_HOST }}
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          ssh-known-hosts: ${{ secrets.EC2_SSH_KNOWN_HOSTS }}
+          env-file: ${{ secrets.PROD_ENV_FILE }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+          app-dir: ${{ env.APP_DIR }}
 
       - name: Deploy (migrate → rolling update → health check 30s → rollback nếu lỗi)
         id: deploy
@@ -481,11 +528,11 @@ jobs:
           echo "::warning::Public endpoint trả về $code (kiểm tra DNS/TLS)"
 
       - name: Đóng port 22 của runner
-        if: always() && steps.sg.outputs.runner_ip != ''
+        if: always() && steps.ec2.outputs.runner-ip != ''
         run: |
           aws ec2 revoke-security-group-ingress \
             --group-id "$SG_ID" \
-            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.sg.outputs.runner_ip }}/32}]" || true
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.ec2.outputs.runner-ip }}/32}]" || true
           rm -f ~/.ssh/deploy_key
 
   # ----------------------------------------------------------
@@ -493,7 +540,7 @@ jobs:
   # ----------------------------------------------------------
   notify:
     name: "4 · Notification"
-    needs: [security-quality, integration-test, iac-scan, build-scan-push, deploy]
+    needs: [security-quality, integration-test, iac-scan, build-scan-push, deploy-staging, deploy]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -507,6 +554,7 @@ jobs:
           R_ITEST: ${{ needs.integration-test.result }}
           R_IAC: ${{ needs.iac-scan.result }}
           R_BUILD: ${{ needs.build-scan-push.result }}
+          R_STAGING: ${{ needs.deploy-staging.result }}
           R_DEPLOY: ${{ needs.deploy.result }}
           DEPLOY_STATUS: ${{ needs.deploy.outputs.status }}
           PREV_TAG: ${{ needs.deploy.outputs.previous_tag }}
@@ -534,9 +582,11 @@ jobs:
             STATUS="❌ FAILED tại IaC & Config Scan"; COLOR=15158332
           elif [ "$R_BUILD" = "failure" ]; then
             STATUS="❌ FAILED tại Build/Trivy Scan"; COLOR=15158332
+          elif [ "$R_STAGING" = "failure" ]; then
+            STATUS="❌ FAILED tại Staging (production giữ nguyên)"; COLOR=15158332
           elif [ "$R_DEPLOY" = "failure" ]; then
             STATUS="❌ DEPLOY FAILED"; COLOR=15158332
-          elif [ "$EVENT" = "pull_request" ] && [ "$R_SECURITY" = "success" ] && [ "$R_ITEST" = "success" ] && [ "$R_IAC" = "success" ]; then
+          elif [ "$EVENT" = "pull_request" ] && [ "$R_SECURITY" = "success" ] && [ "$R_ITEST" = "success" ] && [ "$R_IAC" = "success" ] && [ "$R_BUILD" = "success" ]; then
             STATUS="🔍 PR CHECK PASSED"; COLOR=3447003
           else
             STATUS="⏹️ CANCELLED / SKIPPED"; COLOR=9807270
@@ -548,7 +598,7 @@ jobs:
               --arg repo "$GITHUB_REPOSITORY" --arg branch "$GITHUB_REF_NAME" \
               --arg author "$AUTHOR" --arg sha "$SHORT_SHA" --arg msg "$MSG_FIRST_LINE" \
               --arg when "$WHEN" --arg run "$RUN_URL" --arg app "${APP_URL:-n/a}" \
-              --arg jobs "Security: $R_SECURITY · Test: $R_ITEST · IaC: $R_IAC · Build: $R_BUILD · Deploy: $R_DEPLOY" \
+              --arg jobs "Security: $R_SECURITY · Test: $R_ITEST · IaC: $R_IAC · Build: $R_BUILD · Staging: $R_STAGING · Deploy: $R_DEPLOY" \
               '{username: "Home Shopping CI/CD",
                 embeds: [{title: $title, url: $run, color: $color,
                   fields: [
