@@ -1,0 +1,2 @@
+# Báo động giả: UUID mẫu dùng làm Idempotency-Key trong unit test (không phải secret)
+75ae45af6d8e4500ba6b31d9429bb43266f6205c:backend/src/orders/orders.service.spec.ts:generic-api-key:17

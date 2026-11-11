@@ -14,7 +14,7 @@ describe('OrdersService.create', () => {
   const userId = '7f0c2f4e-1b1a-4d3e-9a51-3c4f7e1d2a10';
   const orderId = '2b0f8a1c-3d4e-4f50-8a6b-7c8d9e0f1a2b';
   const productId = 'b8f3f5a2-55a1-4b8e-8f3e-0c1f2a3b4c5d';
-  const key = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const idempotencyUuid = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
   const tx = {
     product: { updateMany: jest.fn(), findUnique: jest.fn() },
@@ -75,19 +75,19 @@ describe('OrdersService.create', () => {
   it('returns the existing order for a replayed Idempotency-Key without recomputing', async () => {
     const existing = { id: orderId, userId, items: [] };
     prisma.order.findUnique.mockResolvedValue(existing);
-    await expect(service.create(userId, key, {})).resolves.toBe(existing);
+    await expect(service.create(userId, idempotencyUuid, {})).resolves.toBe(existing);
     expect(checkout.build).not.toHaveBeenCalled();
   });
 
   it("rejects another user's Idempotency-Key", async () => {
     prisma.order.findUnique.mockResolvedValue({ id: orderId, userId: 'someone-else' });
-    await expect(service.create(userId, key, {})).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    await expect(service.create(userId, idempotencyUuid, {})).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
   });
 
   it('creates the order from server-side prices, decrements stock conditionally and removes only the bought items from the cart', async () => {
     checkout.build.mockResolvedValue(plan());
 
-    await service.create(userId, key, { expectedTotal: 2_500_000 });
+    await service.create(userId, idempotencyUuid, { expectedTotal: 2_500_000 });
 
     expect(tx.product.updateMany).toHaveBeenCalledWith({
       where: { id: productId, isActive: true, stock: { gte: 2 }, price: 1_250_000 },
@@ -113,7 +113,7 @@ describe('OrdersService.create', () => {
   it('online payment → AWAITING_PAYMENT with a 15-minute hold', async () => {
     checkout.build.mockResolvedValue(plan(preview({ paymentMethod: PaymentMethod.VNPAY })));
     const before = Date.now();
-    await service.create(userId, key, {});
+    await service.create(userId, idempotencyUuid, {});
     const data = tx.order.create.mock.calls[0][0].data;
     expect(data.status).toBe('AWAITING_PAYMENT');
     expect(data.paymentExpiresAt.getTime()).toBeGreaterThanOrEqual(before + 15 * 60_000 - 1000);
@@ -121,7 +121,7 @@ describe('OrdersService.create', () => {
 
   it('refuses with PRICE_CHANGED when the total the customer saw is stale', async () => {
     checkout.build.mockResolvedValue(plan());
-    await expect(service.create(userId, key, { expectedTotal: 2_400_000 })).rejects.toMatchObject({
+    await expect(service.create(userId, idempotencyUuid, { expectedTotal: 2_400_000 })).rejects.toMatchObject({
       code: 'PRICE_CHANGED',
       details: expect.objectContaining({ expectedTotal: 2_400_000, total: 2_500_000 }),
     });
@@ -130,7 +130,7 @@ describe('OrdersService.create', () => {
 
   it('surfaces the first checkout issue with a clear code', async () => {
     checkout.build.mockResolvedValue(plan(preview({ canPlaceOrder: false, issues: [{ code: 'OUT_OF_STOCK', message: 'Nồi chiên chỉ còn 1 sản phẩm', productId }] })));
-    const err: AppError = await service.create(userId, key, {}).catch((e) => e);
+    const err: AppError = await service.create(userId, idempotencyUuid, {}).catch((e) => e);
     expect(err).toBeInstanceOf(AppError);
     expect(err.code).toBe('OUT_OF_STOCK');
     expect(err.getStatus()).toBe(409);
@@ -145,7 +145,7 @@ describe('OrdersService.create', () => {
     tx.product.updateMany.mockResolvedValue({ count: 0 });
     tx.product.findUnique.mockResolvedValue(row);
 
-    await expect(service.create(userId, key, {})).rejects.toMatchObject({ code });
+    await expect(service.create(userId, idempotencyUuid, {})).rejects.toMatchObject({ code });
     expect(tx.order.create).not.toHaveBeenCalled();
     expect(cart.removeItems).not.toHaveBeenCalled();
   });
@@ -154,6 +154,6 @@ describe('OrdersService.create', () => {
     checkout.build.mockResolvedValue(plan());
     (prisma.$transaction as jest.Mock).mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }));
     prisma.order.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: orderId, userId });
-    await expect(service.create(userId, key, {})).resolves.toMatchObject({ id: orderId });
+    await expect(service.create(userId, idempotencyUuid, {})).resolves.toMatchObject({ id: orderId });
   });
 });
