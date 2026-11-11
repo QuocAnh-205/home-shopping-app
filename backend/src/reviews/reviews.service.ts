@@ -75,7 +75,7 @@ export class ReviewsService {
   async upsert(slug: string, userId: string, dto: UpsertReviewDto): Promise<ReviewView> {
     const productId = await this.products.idBySlug(slug);
     const purchased = await this.prisma.orderItem.count({
-      where: { productId, order: { userId, status: { not: OrderStatus.CANCELLED } } },
+      where: { productId, order: { userId, status: { notIn: [OrderStatus.CANCELLED, OrderStatus.AWAITING_PAYMENT] } } },
     });
 
     const review = await this.prisma.$transaction(async (tx) => {

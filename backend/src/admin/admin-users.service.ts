@@ -3,6 +3,7 @@ import { OrderStatus, Prisma, Role } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { CartService } from '../cart/cart.service';
+import { REVENUE_STATUSES } from '../orders/order-state';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { ListUsersQuery } from './admin.dto';
@@ -11,7 +12,7 @@ const SESSION_REVOKE_TTL_SECONDS = 30 * 24 * 3600;
 /** Email của tài khoản đã tự xóa (AccountService.deleteAccount ẩn danh hóa thành deleted-<id>@deleted.invalid) */
 const DELETED_SUFFIX = '@deleted.invalid';
 const NOT_DELETED: Prisma.UserWhereInput = { NOT: { email: { endsWith: DELETED_SUFFIX } } };
-const SPENDING_STATUSES: OrderStatus[] = [OrderStatus.PAID, OrderStatus.SHIPPING, OrderStatus.COMPLETED];
+const SPENDING_STATUSES: OrderStatus[] = REVENUE_STATUSES;
 
 const userListSelect = {
   id: true,

@@ -10,13 +10,28 @@ import { apiFetch } from '@/lib/client-api';
 import { NEXT_STATUSES, STATUS_LABEL, formatPrice, shortId, type AdminOrder, type OrderStatus } from '@/lib/types';
 import { Loading, Notice, Pager, useDebounced } from './ui';
 
-const FILTERS: (OrderStatus | '')[] = ['', 'PENDING', 'PAID', 'SHIPPING', 'COMPLETED', 'CANCELLED'];
+const FILTERS: (OrderStatus | '')[] = [
+  '',
+  'AWAITING_PAYMENT',
+  'PENDING',
+  'PROCESSING',
+  'SHIPPING',
+  'DELIVERED',
+  'COMPLETED',
+  'RETURN_REQUESTED',
+  'RETURNED',
+  'CANCELLED',
+];
 const ACTION_LABEL: Record<OrderStatus, string> = {
+  AWAITING_PAYMENT: '',
   PENDING: '',
-  PAID: 'Xác nhận thanh toán',
-  SHIPPING: 'Giao hàng',
-  COMPLETED: 'Hoàn tất',
+  PROCESSING: 'Xác nhận đơn',
+  SHIPPING: 'Giao cho vận chuyển',
+  DELIVERED: 'Đã giao',
+  COMPLETED: 'Hoàn thành',
   CANCELLED: 'Hủy',
+  RETURN_REQUESTED: '',
+  RETURNED: '',
 };
 
 export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
@@ -56,7 +71,10 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
     setBusy(order.id);
     setMessage(null);
     try {
-      await apiFetch(`/admin/orders/${order.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+      await apiFetch(`/admin/orders/${order.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: next, ...(next === 'CANCELLED' ? { note: 'Cửa hàng hủy đơn' } : {}) }),
+      });
       setMessage({ ok: true, text: `Đơn #${shortId(order.id)} → ${STATUS_LABEL[next]}` });
     } catch (err) {
       setMessage({ ok: false, text: (err as Error).message });

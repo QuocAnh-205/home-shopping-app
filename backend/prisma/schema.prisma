@@ -13,12 +13,46 @@ enum Role {
   ADMIN
 }
 
+/// Vòng đời đơn hàng (state machine trong orders/order-state.ts)
 enum OrderStatus {
+  /// Chờ thanh toán (đơn thanh toán online, giữ hàng tối đa 15 phút)
+  AWAITING_PAYMENT
+  /// Chờ xác nhận
   PENDING
-  PAID
+  /// Đang chuẩn bị hàng
+  PROCESSING
+  /// Đang giao
   SHIPPING
+  /// Đã giao
+  DELIVERED
+  /// Hoàn thành (khách bấm "Đã nhận hàng" hoặc tự động sau N ngày)
   COMPLETED
   CANCELLED
+  /// Khách yêu cầu trả hàng/hoàn tiền, chờ cửa hàng duyệt
+  RETURN_REQUESTED
+  /// Đã trả hàng/hoàn tiền
+  RETURNED
+}
+
+enum ActorType {
+  CUSTOMER
+  ADMIN
+  SYSTEM
+}
+
+enum PaymentMethod {
+  COD
+  VNPAY
+  MOMO
+  VIETQR
+}
+
+/// Trạng thái tiền của cả đơn (từng lần thử thanh toán nằm ở bảng payments)
+enum OrderPaymentStatus {
+  UNPAID
+  PAID
+  REFUND_PENDING
+  REFUNDED
 }
 
 enum Gender {
@@ -197,13 +231,45 @@ model Order {
   shippingAddress String      @map("shipping_address")
   phone           String
   idempotencyKey  String      @unique @map("idempotency_key")
+  paymentMethod   PaymentMethod      @default(COD) @map("payment_method")
+  paymentStatus   OrderPaymentStatus @default(UNPAID) @map("payment_status")
+  paidAt          DateTime?          @map("paid_at")
+  /// Đơn online chưa trả tiền: quá hạn này job nền tự hủy, hoàn tồn kho và voucher
+  paymentExpiresAt DateTime?         @map("payment_expires_at")
+  cancelReason    String?            @map("cancel_reason") @db.VarChar(255)
+  cancelledBy     ActorType?         @map("cancelled_by")
+  confirmedAt     DateTime?          @map("confirmed_at")
+  shippedAt       DateTime?          @map("shipped_at")
+  deliveredAt     DateTime?          @map("delivered_at")
+  completedAt     DateTime?          @map("completed_at")
+  cancelledAt     DateTime?          @map("cancelled_at")
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
   items           OrderItem[]
+  history         OrderStatusHistory[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  @@index([userId, status, createdAt])
+  @@index([status, paymentExpiresAt])
+  @@index([status, deliveredAt])
   @@map("orders")
+}
+
+/// Lịch sử trạng thái đơn (timeline): ai đổi, lúc nào, ghi chú
+model OrderStatusHistory {
+  id         BigInt       @id @default(autoincrement())
+  orderId    String       @map("order_id") @db.Uuid
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+  actorType  ActorType    @map("actor_type")
+  actorId    String?      @map("actor_id") @db.Uuid
+  note       String?      @db.VarChar(500)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
 }
 
 model OrderItem {

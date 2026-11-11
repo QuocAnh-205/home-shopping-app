@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { AccountModule } from './account/account.module';
 import { AdminModule } from './admin/admin.module';
@@ -62,6 +63,7 @@ import { StorageModule } from './storage/storage.module';
       // Chỉ test e2e được tắt (env.validation chặn cờ này ở production)
       skipIf: () => process.env.THROTTLE_DISABLED === 'true',
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,
     AccountModule,

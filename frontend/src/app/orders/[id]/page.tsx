@@ -3,8 +3,11 @@
 import {
   faArrowLeft,
   faBan,
+  faBoxOpen,
   faCalendar,
+  faCartPlus,
   faClockRotateLeft,
+  faCreditCard,
   faLocationDot,
   faPhone,
   faReceipt,
@@ -14,20 +17,36 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { use, useCallback, useEffect, useState } from 'react';
 import { RequireAuth } from '@/components/RequireAuth';
 import { STATUS_ICON, StatusBadge } from '@/components/StatusBadge';
-import { apiFetch } from '@/lib/client-api';
-import { STATUS_LABEL, formatDate, formatPrice, shortId, type Order, type OrderStatus } from '@/lib/types';
+import { apiFetch, notifyCartChanged } from '@/lib/client-api';
+import {
+  CANCEL_REASONS,
+  ORDER_FLOW,
+  PAYMENT_METHOD_LABEL,
+  PAYMENT_STATUS_LABEL,
+  STATUS_LABEL,
+  formatDate,
+  formatPrice,
+  shortId,
+  type ActorType,
+  type Order,
+} from '@/lib/types';
 
-const FLOW: OrderStatus[] = ['PENDING', 'PAID', 'SHIPPING', 'COMPLETED'];
 const UUID_RE = /^[0-9a-f-]{36}$/i;
+const ACTOR_LABEL: Record<ActorType, string> = { CUSTOMER: 'Bạn', ADMIN: 'Cửa hàng', SYSTEM: 'Hệ thống' };
+const CUSTOMER_CANCELLABLE = ['AWAITING_PAYMENT', 'PENDING'];
 
 function OrderDetail({ id }: { id: string }) {
+  const router = useRouter();
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState<string>(CANCEL_REASONS[0]);
 
   const load = useCallback(() => {
     apiFetch<Order>(`/orders/${id}`)
@@ -37,15 +56,33 @@ function OrderDetail({ id }: { id: string }) {
 
   useEffect(load, [load]);
 
-  async function cancel() {
+  async function act(path: string, body?: unknown) {
     setBusy(true);
     setError(null);
     try {
-      setOrder(await apiFetch<Order>(`/orders/${id}/cancel`, { method: 'POST' }));
-      setConfirming(false);
+      setOrder(await apiFetch<Order>(`/orders/${id}/${path}`, { method: 'POST', body: body ? JSON.stringify(body) : undefined }));
+      setCancelling(false);
     } catch (err) {
       setError((err as Error).message);
       load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function buyAgain() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetch<{ added: number; skipped: { name: string; reason: string }[] }>(`/orders/${id}/buy-again`, { method: 'POST' });
+      notifyCartChanged();
+      if (res.added > 0) {
+        router.push('/cart');
+        return;
+      }
+      setNotice(`Không thêm được sản phẩm nào: ${res.skipped.map((s) => `${s.name} (${s.reason.toLowerCase()})`).join(', ')}`);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -66,7 +103,11 @@ function OrderDetail({ id }: { id: string }) {
     );
   }
 
-  const step = FLOW.indexOf(order.status);
+  const step = ORDER_FLOW.indexOf(order.status);
+  const offFlow = step === -1 && order.status !== 'AWAITING_PAYMENT';
+  const canCancel = CUSTOMER_CANCELLABLE.includes(order.status);
+  const canConfirm = order.status === 'SHIPPING' || order.status === 'DELIVERED';
+  const subtotal = order.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
 
   return (
     <>
@@ -81,15 +122,18 @@ function OrderDetail({ id }: { id: string }) {
           <FontAwesomeIcon icon={faTriangleExclamation} /> {error}
         </p>
       )}
+      {notice && <p className="alert alert-info">{notice}</p>}
 
       <div className="panel" style={{ marginBottom: 20 }}>
-        {order.status === 'CANCELLED' ? (
+        {offFlow ? (
           <p className="alert" style={{ margin: 0 }}>
-            <FontAwesomeIcon icon={faBan} /> Đơn hàng đã hủy. Sản phẩm đã được hoàn lại kho.
+            <FontAwesomeIcon icon={order.status === 'CANCELLED' ? faBan : STATUS_ICON[order.status]} /> {STATUS_LABEL[order.status]}
+            {order.cancelReason && ` · Lý do: ${order.cancelReason}`}
+            {order.status === 'CANCELLED' && '. Sản phẩm đã được hoàn lại kho.'}
           </p>
         ) : (
           <ol className="timeline" aria-label="Tiến trình đơn hàng" style={{ margin: 0 }}>
-            {FLOW.map((s, i) => (
+            {ORDER_FLOW.map((s, i) => (
               <li key={s} className={i <= step ? 'done' : undefined} aria-current={i === step ? 'step' : undefined}>
                 <span className="dot">
                   <FontAwesomeIcon icon={STATUS_ICON[s]} />
@@ -102,38 +146,68 @@ function OrderDetail({ id }: { id: string }) {
       </div>
 
       <div className="cart-layout">
-        <div className="panel table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Sản phẩm</th>
-                <th>Đơn giá</th>
-                <th>SL</th>
-                <th>Thành tiền</th>
-              </tr>
-            </thead>
-            <tbody>
-              {order.items.map((i) => (
-                <tr key={i.id}>
-                  <td>
-                    <Link className="link" href={`/products/${i.product.slug}`}>
-                      {i.product.name}
-                    </Link>
-                  </td>
-                  <td>{formatPrice(i.unitPrice)}</td>
-                  <td>×{i.quantity}</td>
-                  <td>{formatPrice(Number(i.unitPrice) * i.quantity)}</td>
+        <div className="stack">
+          <div className="panel table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Sản phẩm</th>
+                  <th>Đơn giá</th>
+                  <th>SL</th>
+                  <th>Thành tiền</th>
                 </tr>
+              </thead>
+              <tbody>
+                {order.items.map((i) => (
+                  <tr key={i.id}>
+                    <td>
+                      <Link className="link" href={`/products/${i.product.slug}`}>
+                        {i.product.name}
+                      </Link>
+                    </td>
+                    <td>{formatPrice(i.unitPrice)}</td>
+                    <td>×{i.quantity}</td>
+                    <td>{formatPrice(i.unitPrice * i.quantity)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                {subtotal !== order.totalAmount && (
+                  <tr>
+                    <td colSpan={3}>Tạm tính</td>
+                    <td>{formatPrice(subtotal)}</td>
+                  </tr>
+                )}
+                <tr>
+                  <td colSpan={3}>Tổng cộng</td>
+                  <td className="price">{formatPrice(order.totalAmount)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div className="panel">
+            <h2 className="panel-title">
+              <span className="fa-icon-wrap">
+                <FontAwesomeIcon icon={faClockRotateLeft} />
+              </span>
+              Lịch sử đơn hàng
+            </h2>
+            <ol className="order-history">
+              {[...order.history].reverse().map((h, i) => (
+                <li key={`${h.createdAt}-${i}`} className={i === 0 ? 'current' : undefined}>
+                  <time>{formatDate(h.createdAt)}</time>
+                  <div>
+                    <strong>{STATUS_LABEL[h.toStatus]}</strong>
+                    <span className="muted small"> · {ACTOR_LABEL[h.actorType]}</span>
+                    {h.note && <div className="muted small">{h.note}</div>}
+                  </div>
+                </li>
               ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={3}>Tổng cộng</td>
-                <td className="price">{formatPrice(order.totalAmount)}</td>
-              </tr>
-            </tfoot>
-          </table>
+            </ol>
+          </div>
         </div>
+
         <aside className="panel stack">
           <h2 className="panel-title" style={{ margin: 0 }}>
             <span className="fa-icon-wrap">
@@ -147,36 +221,61 @@ function OrderDetail({ id }: { id: string }) {
             </dt>
             <dd>{formatDate(order.createdAt)}</dd>
             <dt>
-              <FontAwesomeIcon icon={faClockRotateLeft} fixedWidth /> Cập nhật
-            </dt>
-            <dd>{formatDate(order.updatedAt)}</dd>
-            <dt>
               <FontAwesomeIcon icon={faPhone} fixedWidth /> Điện thoại
             </dt>
             <dd>{order.phone}</dd>
+            <dt>
+              <FontAwesomeIcon icon={faCreditCard} fixedWidth /> Thanh toán
+            </dt>
+            <dd>
+              {PAYMENT_METHOD_LABEL[order.paymentMethod]}
+              <div className="muted small">{PAYMENT_STATUS_LABEL[order.paymentStatus]}</div>
+            </dd>
           </dl>
           <p className="address" style={{ margin: 0 }}>
             <FontAwesomeIcon icon={faLocationDot} />
             {order.shippingAddress}
           </p>
-          {order.status === 'PENDING' &&
-            (confirming ? (
-              <div className="confirm">
-                <p>Bạn chắc chắn muốn hủy đơn này?</p>
+
+          {canConfirm && (
+            <button className="btn btn-block" disabled={busy} onClick={() => act('received')}>
+              {busy ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faBoxOpen} />} Đã nhận được hàng
+            </button>
+          )}
+
+          {canCancel &&
+            (cancelling ? (
+              <div className="confirm stack">
+                <label className="field">
+                  <span>Lý do hủy đơn</span>
+                  <select className="input" value={reason} onChange={(e) => setReason(e.target.value)}>
+                    {CANCEL_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <div className="row">
-                  <button className="btn btn-danger btn-sm" disabled={busy} onClick={cancel}>
+                  <button className="btn btn-danger btn-sm" disabled={busy} onClick={() => act('cancel', { reason })}>
                     {busy && <FontAwesomeIcon icon={faSpinner} spin />} Xác nhận hủy
                   </button>
-                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setConfirming(false)}>
+                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setCancelling(false)}>
                     Không
                   </button>
                 </div>
               </div>
             ) : (
-              <button className="btn btn-ghost btn-block" onClick={() => setConfirming(true)}>
+              <button className="btn btn-ghost btn-block" onClick={() => setCancelling(true)}>
                 <FontAwesomeIcon icon={faBan} /> Hủy đơn hàng
               </button>
             ))}
+
+          {!canCancel && (
+            <button className="btn btn-ghost btn-block" disabled={busy} onClick={buyAgain}>
+              <FontAwesomeIcon icon={faCartPlus} /> Mua lại
+            </button>
+          )}
         </aside>
       </div>
       <p style={{ marginTop: 20 }}>

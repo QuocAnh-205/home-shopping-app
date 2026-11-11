@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma, Role } from '@prisma/client';
+import { REVENUE_STATUSES } from '../orders/order-state';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductView, ProductsService } from '../products/products.service';
 import { StorageService } from '../storage/storage.service';
@@ -77,8 +78,7 @@ export interface DashboardStats {
   generatedAt: string;
 }
 
-// Doanh thu chỉ tính đơn đã thanh toán trở đi (PENDING có thể bị hủy, CANCELLED đã hoàn kho)
-const REVENUE_STATUSES: OrderStatus[] = [OrderStatus.PAID, OrderStatus.SHIPPING, OrderStatus.COMPLETED];
+// Doanh thu: đơn shop đã xác nhận trở đi, không tính đơn hủy / đã trả hàng (order-state.ts)
 const REVENUE = Prisma.sql`o.status::text = ANY(${REVENUE_STATUSES as string[]})`;
 /** Ngày theo giờ Việt Nam: created_at lưu UTC (timestamp without time zone) */
 const LOCAL_DAY = Prisma.sql`(o.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`;
@@ -189,7 +189,7 @@ export class AdminService {
         COUNT(*) FILTER (WHERE rev AND d <= ${TODAY} - 30 AND d > ${TODAY} - 60)::int                        AS paid_orders_prev_30d,
         COALESCE((
           SELECT SUM(oi.quantity) FROM order_items oi JOIN o ON o.id = oi.order_id
-          WHERE o.status <> 'CANCELLED' AND o.d > ${TODAY} - 30
+          WHERE o.status NOT IN ('CANCELLED', 'RETURNED', 'AWAITING_PAYMENT') AND o.d > ${TODAY} - 30
         ), 0)::int                                                                                           AS units_30d
       FROM o`;
     return row;
@@ -238,7 +238,7 @@ export class AdminService {
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN products p ON p.id = oi.product_id
-      WHERE o.status <> 'CANCELLED' AND ${LOCAL_DAY} > ${TODAY} - 30
+      WHERE o.status NOT IN ('CANCELLED', 'RETURNED', 'AWAITING_PAYMENT') AND ${LOCAL_DAY} > ${TODAY} - 30
       GROUP BY p.id
       ORDER BY SUM(oi.quantity * oi.unit_price) DESC
       LIMIT 5`;

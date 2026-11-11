@@ -651,9 +651,25 @@ select.input {
   color: var(--warn);
 }
 
-.status-paid {
+.status-awaiting_payment,
+.status-return_requested {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.status-processing {
   background: var(--info-soft);
   color: var(--info);
+}
+
+.status-delivered {
+  background: var(--ok-soft);
+  color: var(--accent);
+}
+
+.status-returned {
+  background: var(--surface-3);
+  color: var(--text-2);
 }
 
 .status-shipping {
@@ -3668,8 +3684,22 @@ select.input {
   color: var(--st-pending-ink);
 }
 
-.seg-paid {
+.seg-paid,
+.seg-processing {
   background: var(--st-paid);
+}
+
+.seg-awaiting_payment,
+.seg-return_requested {
+  background: var(--danger);
+}
+
+.seg-delivered {
+  background: var(--accent);
+}
+
+.seg-returned {
+  background: var(--muted);
 }
 
 .seg-shipping {
@@ -4964,4 +4994,70 @@ button.stat-tile:hover {
   .admin-toolbar .btn {
     flex: 1 1 140px;
   }
+}
+
+/* ---------------- Đơn mua: tab kiểu Shopee + lịch sử trạng thái ---------------- */
+.order-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+
+.order-tabs button {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.order-tabs button.active {
+  border-bottom-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.order-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.order-history li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 12px;
+  padding: 0 0 14px 18px;
+  border-left: 2px solid var(--border);
+}
+
+.order-history li::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.order-history li.current::before {
+  background: var(--accent);
+}
+
+.order-history li.current strong {
+  color: var(--accent);
+}
+
+.order-history time {
+  color: var(--muted);
+  font-size: 0.85rem;
 }

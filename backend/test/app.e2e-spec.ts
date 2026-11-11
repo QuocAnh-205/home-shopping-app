@@ -12,6 +12,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { MailMessage, MailService } from '../src/mail/mail.service';
+import { OrderJobsService } from '../src/orders/order-jobs.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Home Shopping API (e2e)', () => {
@@ -166,11 +167,23 @@ describe('Home Shopping API (e2e)', () => {
     const pending = orders.body.find((o: { status: string; items: { quantity: number }[] }) => o.status === 'PENDING' && o.items[0].quantity === 2);
     const before = (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock;
 
-    const res = await http().post(`/api/orders/${pending.id}/cancel`).set(auth(aliceToken)).expect(200);
+    const res = await http()
+      .post(`/api/orders/${pending.id}/cancel`)
+      .set(auth(aliceToken))
+      .send({ reason: 'Muốn thay đổi địa chỉ giao hàng' })
+      .expect(200);
 
-    expect(res.body.status).toBe('CANCELLED');
+    expect(res.body).toMatchObject({ status: 'CANCELLED', cancelReason: 'Muốn thay đổi địa chỉ giao hàng', cancelledBy: 'CUSTOMER' });
+    // Timeline: Đặt hàng → Đã hủy (kèm lý do)
+    expect(res.body.history.map((h: { toStatus: string }) => h.toStatus)).toEqual(['PENDING', 'CANCELLED']);
+    expect(res.body.history[1]).toMatchObject({ actorType: 'CUSTOMER', note: 'Muốn thay đổi địa chỉ giao hàng' });
     expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock).toBe(before + 2);
-    await http().post(`/api/orders/${pending.id}/cancel`).set(auth(aliceToken)).expect(409);
+    const again = await http().post(`/api/orders/${pending.id}/cancel`).set(auth(aliceToken)).expect(409);
+    expect(again.body.code).toBe('INVALID_TRANSITION');
+
+    const tab = await http().get('/api/orders').query({ tab: 'cancelled' }).set(auth(aliceToken)).expect(200);
+    expect(tab.body.every((o: { status: string }) => o.status === 'CANCELLED')).toBe(true);
+    await http().get('/api/orders').query({ tab: 'khong-co' }).set(auth(aliceToken)).expect(400);
   });
 
   it('customers cannot read other customers orders', async () => {
@@ -179,15 +192,40 @@ describe('Home Shopping API (e2e)', () => {
   });
 
   it('admin moves an order through its lifecycle and invalid transitions are rejected', async () => {
+    await http().put('/api/cart/items').set(auth(aliceToken)).send({ productId, quantity: 1 }).expect(200);
+    const placed = await http().post('/api/orders').set(auth(aliceToken)).set('Idempotency-Key', randomUUID()).send(shipping).expect(201);
     const list = await http().get('/api/admin/orders').query({ status: 'PENDING' }).set(auth(adminToken)).expect(200);
-    const order = list.body.items.find((o: { user: { email: string } }) => o.user.email.endsWith(`${run}@e2e.test`));
+    const order = list.body.items.find((o: { id: string }) => o.id === placed.body.id);
     expect(order).toBeDefined();
 
-    for (const status of ['PAID', 'SHIPPING', 'COMPLETED']) {
-      const res = await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status }).expect(200);
+    // Admin không được nhảy cóc Chờ xác nhận → Đang giao
+    const skip = await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status: 'SHIPPING' }).expect(409);
+    expect(skip.body.code).toBe('INVALID_TRANSITION');
+    // Khách không tự hủy được khi shop đã chuẩn bị hàng
+    await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status: 'PROCESSING' }).expect(200);
+    await http().post(`/api/orders/${order.id}/cancel`).set(auth(aliceToken)).expect(409);
+
+    for (const status of ['SHIPPING', 'DELIVERED']) {
+      const res = await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status, note: `bước ${status}` }).expect(200);
       expect(res.body.status).toBe(status);
     }
-    await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status: 'CANCELLED' }).expect(400);
+    const delivered = await http().get(`/api/orders/${order.id}`).set(auth(aliceToken)).expect(200);
+    // COD: tiền được thu khi giao
+    expect(delivered.body).toMatchObject({ paymentMethod: 'COD', paymentStatus: 'PAID', deliveredAt: expect.any(String) });
+
+    // Khách bấm "Đã nhận hàng"
+    const received = await http().post(`/api/orders/${order.id}/received`).set(auth(aliceToken)).expect(200);
+    expect(received.body.status).toBe('COMPLETED');
+    expect(received.body.history.map((h: { toStatus: string }) => h.toStatus)).toEqual(['PENDING', 'PROCESSING', 'SHIPPING', 'DELIVERED', 'COMPLETED']);
+    await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status: 'CANCELLED' }).expect(409);
+
+    // "Mua lại" thêm sản phẩm vào giỏ
+    await http().delete('/api/cart').set(auth(aliceToken)).expect(204);
+    const again = await http().post(`/api/orders/${order.id}/buy-again`).set(auth(aliceToken)).expect(200);
+    expect(again.body).toEqual({ added: 1, skipped: [] });
+    expect((await http().get('/api/cart').set(auth(aliceToken)).expect(200)).body.items[0].productId).toBe(productId);
+    await http().delete('/api/cart').set(auth(aliceToken)).expect(204);
+    await http().post(`/api/orders/${order.id}/buy-again`).set(auth(bobToken)).expect(404);
 
     const stats = await http().get('/api/admin/stats').set(auth(adminToken)).expect(200);
     expect(stats.body.revenueDaily).toHaveLength(30);
@@ -195,6 +233,24 @@ describe('Home Shopping API (e2e)', () => {
     expect(Number(stats.body.kpis.revenueToday)).toBeGreaterThan(0);
     expect(stats.body.revenueByCategory.some((c: { slug: string }) => c.slug === `e2e-${run}`)).toBe(true);
     expect(stats.body.recentOrders.length).toBeGreaterThan(0);
+  });
+
+  it('delivered orders auto-complete after N days (background job)', async () => {
+    await http().put('/api/cart/items').set(auth(bobToken)).send({ productId, quantity: 1 }).expect(200);
+    const placed = await http().post('/api/orders').set(auth(bobToken)).set('Idempotency-Key', randomUUID()).send(shipping).expect(201);
+    for (const status of ['PROCESSING', 'SHIPPING', 'DELIVERED']) {
+      await http().patch(`/api/admin/orders/${placed.body.id}/status`).set(auth(adminToken)).send({ status }).expect(200);
+    }
+    const jobs = app.get(OrderJobsService);
+    // Mới giao: chưa tới hạn
+    await jobs.runAutoComplete();
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: placed.body.id } })).status).toBe('DELIVERED');
+
+    await prisma.order.update({ where: { id: placed.body.id }, data: { deliveredAt: new Date(Date.now() - (jobs.autoCompleteDays + 1) * 86_400_000) } });
+    await jobs.runAutoComplete();
+    const done = await http().get(`/api/orders/${placed.body.id}`).set(auth(bobToken)).expect(200);
+    expect(done.body.status).toBe('COMPLETED');
+    expect(done.body.history.at(-1)).toMatchObject({ toStatus: 'COMPLETED', actorType: 'SYSTEM' });
   });
 
   it('logout revokes the token immediately', async () => {
@@ -214,8 +270,8 @@ describe('Home Shopping API (e2e)', () => {
 
   it('tracks units sold through order create/cancel (best-seller data is real)', async () => {
     const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
-    // 1 (đơn mua đồng thời) + 2 (đơn idempotent) − 2 (đơn bị hủy) = 1
-    expect(product.soldCount).toBe(1);
+    // 1 (đơn mua đồng thời) + 2 (đơn idempotent) − 2 (đơn bị hủy) + 1 (đơn đi hết vòng đời) + 1 (đơn tự hoàn thành) = 3
+    expect(product.soldCount).toBe(3);
   });
 
   it('sale pricing: compare-at price must be higher and discount is computed', async () => {

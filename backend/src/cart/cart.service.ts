@@ -99,6 +99,17 @@ export class CartService {
     return this.get(userId);
   }
 
+  /** Cộng dồn số lượng (dùng cho "Mua lại"); tối đa 99 và không vượt tồn kho */
+  async addQuantity(userId: string, productId: string, quantity: number): Promise<void> {
+    const key = CartService.key(userId);
+    const current = Number.parseInt((await this.redis.client.hget(key, productId)) ?? '0', 10) || 0;
+    if (current === 0 && (await this.redis.client.hlen(key)) >= MAX_DISTINCT_ITEMS) return;
+    const product = await this.prisma.product.findUnique({ where: { id: productId }, select: { stock: true } });
+    const next = Math.min(current + quantity, 99, product?.stock ?? 0);
+    if (next <= 0) return;
+    await this.redis.client.multi().hset(key, productId, next).expire(key, CART_TTL_SECONDS).exec();
+  }
+
   async removeItem(userId: string, productId: string): Promise<CartView> {
     await this.redis.client.hdel(CartService.key(userId), productId);
     return this.get(userId);

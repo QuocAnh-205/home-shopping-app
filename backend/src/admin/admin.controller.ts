@@ -40,9 +40,10 @@ import {
   SetProductActiveDto,
   UpdateUserRoleDto,
 } from './admin.dto';
+import { STATUS_LABEL_VI } from '../orders/order-state';
 import { AdminService, DashboardStats } from './admin.service';
 
-const STATUS_VI: Record<string, string> = { PENDING: 'Chờ xác nhận', PAID: 'Đã thanh toán', SHIPPING: 'Đang giao', COMPLETED: 'Hoàn tất', CANCELLED: 'Đã hủy' };
+const STATUS_VI: Record<string, string> = STATUS_LABEL_VI;
 const csvName = (prefix: string) => `attachment; filename="${prefix}-${new Date().toISOString().slice(0, 10)}.csv"`;
 
 @ApiTags('admin')
@@ -104,14 +105,14 @@ export class AdminController {
   @Patch('orders/:id/status')
   async updateStatus(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateOrderStatusDto): Promise<AdminOrder> {
     const before = await this.orders.adminDetail(id);
-    const order = await this.orders.updateStatus(id, dto.status, req.user.sub);
+    const order = await this.orders.updateStatus(id, dto.status, req.user.sub, dto.note);
     await this.audit.log({
       actorId: req.user.sub,
       action: 'order.status',
       entityType: 'order',
       entityId: id,
       summary: `Đơn #${id.slice(0, 8)} (${order.user.email}): ${STATUS_VI[before.status]} → ${STATUS_VI[order.status]}`,
-      metadata: { from: before.status, to: order.status, total: order.totalAmount },
+      metadata: { from: before.status, to: order.status, total: order.totalAmount, note: dto.note },
     });
     return order;
   }

@@ -1,5 +1,17 @@
 export type Role = 'CUSTOMER' | 'ADMIN';
-export type OrderStatus = 'PENDING' | 'PAID' | 'SHIPPING' | 'COMPLETED' | 'CANCELLED';
+export type OrderStatus =
+  | 'AWAITING_PAYMENT'
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'SHIPPING'
+  | 'DELIVERED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'RETURN_REQUESTED'
+  | 'RETURNED';
+export type ActorType = 'CUSTOMER' | 'ADMIN' | 'SYSTEM';
+export type PaymentMethod = 'COD' | 'VNPAY' | 'MOMO' | 'VIETQR';
+export type OrderPaymentStatus = 'UNPAID' | 'PAID' | 'REFUND_PENDING' | 'REFUNDED';
 export type OAuthProvider = 'GOOGLE' | 'FACEBOOK';
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 export type AddressType = 'HOME' | 'OFFICE';
@@ -121,9 +133,29 @@ export interface OrderItem {
   product: { name: string; slug: string };
 }
 
+export interface OrderHistoryEntry {
+  fromStatus: OrderStatus | null;
+  toStatus: OrderStatus;
+  actorType: ActorType;
+  note: string | null;
+  createdAt: string;
+}
+
 export interface Order {
   id: string;
   status: OrderStatus;
+  paymentMethod: PaymentMethod;
+  paymentStatus: OrderPaymentStatus;
+  paidAt: string | null;
+  paymentExpiresAt: string | null;
+  cancelReason: string | null;
+  cancelledBy: ActorType | null;
+  confirmedAt: string | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  history: OrderHistoryEntry[];
   totalAmount: number;
   shippingAddress: string;
   phone: string;
@@ -240,21 +272,56 @@ export const SORT_OPTIONS = [
 export type SortValue = (typeof SORT_OPTIONS)[number]['value'];
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
+  AWAITING_PAYMENT: 'Chờ thanh toán',
   PENDING: 'Chờ xác nhận',
-  PAID: 'Đã thanh toán',
+  PROCESSING: 'Đang chuẩn bị hàng',
   SHIPPING: 'Đang giao',
-  COMPLETED: 'Hoàn tất',
+  DELIVERED: 'Đã giao',
+  COMPLETED: 'Hoàn thành',
   CANCELLED: 'Đã hủy',
+  RETURN_REQUESTED: 'Yêu cầu trả hàng',
+  RETURNED: 'Đã trả hàng/hoàn tiền',
 };
 
-/** Phải khớp ORDER_TRANSITIONS ở backend (backend vẫn là nơi kiểm tra cuối cùng) */
+/** Bước admin được bấm (khớp ORDER_RULES vai ADMIN ở backend; backend vẫn là nơi kiểm tra cuối cùng) */
 export const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
-  PENDING: ['PAID', 'CANCELLED'],
-  PAID: ['SHIPPING', 'CANCELLED'],
-  SHIPPING: ['COMPLETED'],
+  AWAITING_PAYMENT: ['CANCELLED'],
+  PENDING: ['PROCESSING', 'CANCELLED'],
+  PROCESSING: ['SHIPPING', 'CANCELLED'],
+  SHIPPING: ['DELIVERED'],
+  DELIVERED: ['COMPLETED'],
   COMPLETED: [],
   CANCELLED: [],
+  RETURN_REQUESTED: [],
+  RETURNED: [],
 };
+
+/** Tiến trình chuẩn hiển thị trên trang chi tiết đơn */
+export const ORDER_FLOW: OrderStatus[] = ['PENDING', 'PROCESSING', 'SHIPPING', 'DELIVERED', 'COMPLETED'];
+
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+  COD: 'Thanh toán khi nhận hàng',
+  VNPAY: 'VNPay (ATM / thẻ quốc tế / QR)',
+  MOMO: 'Ví MoMo',
+  VIETQR: 'Chuyển khoản ngân hàng (VietQR)',
+};
+
+export const PAYMENT_STATUS_LABEL: Record<OrderPaymentStatus, string> = {
+  UNPAID: 'Chưa thanh toán',
+  PAID: 'Đã thanh toán',
+  REFUND_PENDING: 'Đang hoàn tiền',
+  REFUNDED: 'Đã hoàn tiền',
+};
+
+/** Lý do hủy có sẵn (giống Shopee) */
+export const CANCEL_REASONS = [
+  'Muốn thay đổi địa chỉ giao hàng',
+  'Muốn nhập/thay đổi mã voucher',
+  'Muốn thay đổi sản phẩm trong đơn (số lượng, mẫu mã…)',
+  'Thủ tục thanh toán quá rắc rối',
+  'Tìm thấy giá rẻ hơn ở chỗ khác',
+  'Đổi ý, không muốn mua nữa',
+] as const;
 
 const vnd = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Ho_Chi_Minh' });

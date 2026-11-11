@@ -152,7 +152,17 @@ export function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-export const STATUS_ORDER: OrderStatus[] = ['PENDING', 'PAID', 'SHIPPING', 'COMPLETED', 'CANCELLED'];
+export const STATUS_ORDER: OrderStatus[] = [
+  'AWAITING_PAYMENT',
+  'PENDING',
+  'PROCESSING',
+  'SHIPPING',
+  'DELIVERED',
+  'COMPLETED',
+  'RETURN_REQUESTED',
+  'RETURNED',
+  'CANCELLED',
+];
 
 /**
  * Cơ cấu đơn theo trạng thái: thanh phân đoạn (1 tổng chia phần) + chú giải liệt kê tên, số, tỷ lệ.

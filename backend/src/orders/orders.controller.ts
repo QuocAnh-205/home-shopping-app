@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -15,8 +16,8 @@ import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CreateOrderDto } from './orders.dto';
-import { OrderWithItems, OrdersService } from './orders.service';
+import { CancelOrderDto, CreateOrderDto, MyOrdersQuery } from './orders.dto';
+import { BuyAgainResult, OrderWithItems, OrdersService } from './orders.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -42,9 +43,10 @@ export class OrdersController {
     return this.orders.create(req.user.sub, idempotencyKey.toLowerCase(), dto);
   }
 
+  /** ?tab=awaiting_payment|to_ship|shipping|completed|cancelled|return (tab "Đơn mua" kiểu Shopee) */
   @Get()
-  listMine(@Req() req: AuthenticatedRequest): Promise<OrderWithItems[]> {
-    return this.orders.listMine(req.user.sub);
+  listMine(@Req() req: AuthenticatedRequest, @Query() query: MyOrdersQuery): Promise<OrderWithItems[]> {
+    return this.orders.listMine(req.user.sub, query);
   }
 
   @Get(':id')
@@ -54,7 +56,21 @@ export class OrdersController {
 
   @Post(':id/cancel')
   @HttpCode(200)
-  cancel(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string): Promise<OrderWithItems> {
-    return this.orders.cancelMine(req.user.sub, id);
+  cancel(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelOrderDto): Promise<OrderWithItems> {
+    return this.orders.cancelMine(req.user.sub, id, dto.reason);
+  }
+
+  /** Nút "Đã nhận hàng" */
+  @Post(':id/received')
+  @HttpCode(200)
+  received(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string): Promise<OrderWithItems> {
+    return this.orders.confirmReceived(req.user.sub, id);
+  }
+
+  /** Nút "Mua lại": thêm sản phẩm của đơn vào giỏ */
+  @Post(':id/buy-again')
+  @HttpCode(200)
+  buyAgain(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string): Promise<BuyAgainResult> {
+    return this.orders.buyAgain(req.user.sub, id);
   }
 }

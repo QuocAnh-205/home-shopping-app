@@ -1,14 +1,20 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { BadRequestException, ConflictException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { ActorType, OrderStatus, Prisma } from '@prisma/client';
+import { AppError, ErrorCode } from '../common/errors';
 import { CartService } from '../cart/cart.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
 import type { AdminListOrdersQuery } from '../admin/admin.dto';
+import { OrderLifecycleService } from './order-lifecycle.service';
 import { CreateOrderDto } from './orders.dto';
 
 const orderInclude = {
   items: { include: { product: { select: { name: true, slug: true } } }, orderBy: { id: 'asc' } },
+  history: {
+    select: { fromStatus: true, toStatus: true, actorType: true, note: true, createdAt: true },
+    orderBy: { id: 'asc' },
+  },
 } satisfies Prisma.OrderInclude;
 
 const adminOrderInclude = {
@@ -27,17 +33,22 @@ export interface OrderPage {
   totalPages: number;
 }
 
-/**
- * Vòng đời đơn hàng (state machine). Mọi chuyển trạng thái ngoài bảng này đều bị từ chối,
- * kể cả với admin → không thể "hồi sinh" đơn đã hủy hay giao lại đơn đã hoàn tất.
- */
-export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
-  PENDING: [OrderStatus.PAID, OrderStatus.CANCELLED],
-  PAID: [OrderStatus.SHIPPING, OrderStatus.CANCELLED],
-  SHIPPING: [OrderStatus.COMPLETED],
-  COMPLETED: [],
-  CANCELLED: [],
+export { ORDER_TRANSITIONS } from './order-state';
+
+/** Nhóm trạng thái theo tab "Đơn mua" kiểu Shopee */
+export const ORDER_TABS: Readonly<Record<string, OrderStatus[]>> = {
+  awaiting_payment: [OrderStatus.AWAITING_PAYMENT],
+  to_ship: [OrderStatus.PENDING, OrderStatus.PROCESSING],
+  shipping: [OrderStatus.SHIPPING],
+  completed: [OrderStatus.DELIVERED, OrderStatus.COMPLETED],
+  cancelled: [OrderStatus.CANCELLED],
+  return: [OrderStatus.RETURN_REQUESTED, OrderStatus.RETURNED],
 };
+
+export interface BuyAgainResult {
+  added: number;
+  skipped: { productId: string; name: string; reason: string }[];
+}
 
 class OutOfStockError extends Error {
   constructor(readonly productId: string) {
@@ -54,6 +65,7 @@ export class OrdersService {
     private readonly cart: CartService,
     private readonly products: ProductsService,
     private readonly metrics: MetricsService,
+    private readonly lifecycle: OrderLifecycleService,
   ) {}
 
   /**
@@ -104,6 +116,7 @@ export class OrdersService {
               items: {
                 create: products.map((p) => ({ productId: p.id, quantity: cart.get(p.id)!, unitPrice: p.price })),
               },
+              history: { create: { toStatus: OrderStatus.PENDING, actorType: ActorType.CUSTOMER, actorId: userId, note: 'Đặt hàng' } },
             },
             include: orderInclude,
           });
@@ -131,9 +144,11 @@ export class OrdersService {
     }
   }
 
-  listMine(userId: string): Promise<OrderWithItems[]> {
+  /** Đơn của tôi; tab = nhóm trạng thái kiểu Shopee (ORDER_TABS) hoặc 1 trạng thái cụ thể */
+  listMine(userId: string, filter: { tab?: string; status?: OrderStatus } = {}): Promise<OrderWithItems[]> {
+    const statuses = filter.status ? [filter.status] : filter.tab ? ORDER_TABS[filter.tab] : undefined;
     return this.prisma.order.findMany({
-      where: { userId },
+      where: { userId, ...(statuses ? { status: { in: statuses } } : {}) },
       include: orderInclude,
       orderBy: { createdAt: 'desc' },
       take: 50,
@@ -142,19 +157,53 @@ export class OrdersService {
 
   async getMine(userId: string, id: string): Promise<OrderWithItems> {
     const order = await this.prisma.order.findFirst({ where: { id, userId }, include: orderInclude });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new AppError(ErrorCode.ORDER_NOT_FOUND, 'Không tìm thấy đơn hàng', HttpStatus.NOT_FOUND);
     return order;
   }
 
-  /** Khách chỉ được tự hủy khi đơn còn PENDING (chưa thanh toán/xử lý) */
-  async cancelMine(userId: string, id: string): Promise<OrderWithItems> {
-    const order = await this.prisma.order.findFirst({ where: { id, userId }, select: { status: true } });
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== OrderStatus.PENDING) {
-      throw new ConflictException(`Order in status ${order.status} can no longer be cancelled by customer`);
-    }
-    await this.transition(id, OrderStatus.PENDING, OrderStatus.CANCELLED, `customer:${userId}`);
+  private async assertOwner(userId: string, id: string): Promise<void> {
+    const order = await this.prisma.order.findFirst({ where: { id, userId }, select: { id: true } });
+    if (!order) throw new AppError(ErrorCode.ORDER_NOT_FOUND, 'Không tìm thấy đơn hàng', HttpStatus.NOT_FOUND);
+  }
+
+  /** Khách tự hủy khi đơn còn Chờ thanh toán / Chờ xác nhận (state machine chặn các trạng thái khác) */
+  async cancelMine(userId: string, id: string, reason?: string): Promise<OrderWithItems> {
+    await this.assertOwner(userId, id);
+    await this.lifecycle.transition(id, OrderStatus.CANCELLED, { type: ActorType.CUSTOMER, id: userId }, { note: reason || 'Khách hủy đơn' });
     return this.getMine(userId, id);
+  }
+
+  /** "Đã nhận hàng": Đang giao → Đã giao → Hoàn thành, hoặc Đã giao → Hoàn thành */
+  async confirmReceived(userId: string, id: string): Promise<OrderWithItems> {
+    await this.assertOwner(userId, id);
+    const actor = { type: ActorType.CUSTOMER, id: userId };
+    const { status } = await this.prisma.order.findUniqueOrThrow({ where: { id }, select: { status: true } });
+    if (status === OrderStatus.SHIPPING) await this.lifecycle.transition(id, OrderStatus.DELIVERED, actor, { note: 'Khách xác nhận đã nhận hàng' });
+    await this.lifecycle.transition(id, OrderStatus.COMPLETED, actor, { note: 'Khách xác nhận đã nhận hàng' });
+    return this.getMine(userId, id);
+  }
+
+  /** "Mua lại": thêm các sản phẩm của đơn cũ vào giỏ (bỏ qua sản phẩm ngừng bán / hết hàng) */
+  async buyAgain(userId: string, id: string): Promise<BuyAgainResult> {
+    const order = await this.getMine(userId, id);
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: order.items.map((i) => i.productId) } },
+      select: { id: true, name: true, stock: true, isActive: true },
+    });
+    const byId = new Map(products.map((p) => [p.id, p]));
+    const result: BuyAgainResult = { added: 0, skipped: [] };
+    for (const item of order.items) {
+      const p = byId.get(item.productId);
+      if (!p || !p.isActive) {
+        result.skipped.push({ productId: item.productId, name: item.product.name, reason: 'Sản phẩm đã ngừng kinh doanh' });
+      } else if (p.stock <= 0) {
+        result.skipped.push({ productId: p.id, name: p.name, reason: 'Sản phẩm đã hết hàng' });
+      } else {
+        await this.cart.addQuantity(userId, p.id, Math.min(item.quantity, p.stock));
+        result.added++;
+      }
+    }
+    return result;
   }
 
   /** Bộ lọc dùng chung cho danh sách & xuất CSV của admin */
@@ -209,7 +258,7 @@ export class OrdersService {
 
   async adminDetail(id: string): Promise<AdminOrder> {
     const order = await this.prisma.order.findUnique({ where: { id }, include: adminOrderInclude });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new AppError(ErrorCode.ORDER_NOT_FOUND, 'Không tìm thấy đơn hàng', HttpStatus.NOT_FOUND);
     return order;
   }
 
@@ -218,39 +267,8 @@ export class OrdersService {
     return this.prisma.order.findMany({ where: await this.adminWhere(query), include: adminOrderInclude, orderBy: { createdAt: 'desc' }, take: 10_000 });
   }
 
-  async updateStatus(id: string, next: OrderStatus, actorId: string): Promise<AdminOrder> {
-    const order = await this.prisma.order.findUnique({ where: { id }, select: { status: true } });
-    if (!order) throw new NotFoundException('Order not found');
-    if (!ORDER_TRANSITIONS[order.status].includes(next)) {
-      throw new BadRequestException(`Invalid transition ${order.status} → ${next}`);
-    }
-    await this.transition(id, order.status, next, `admin:${actorId}`);
+  async updateStatus(id: string, next: OrderStatus, actorId: string, note?: string): Promise<AdminOrder> {
+    await this.lifecycle.transition(id, next, { type: ActorType.ADMIN, id: actorId }, { note });
     return this.prisma.order.findUniqueOrThrow({ where: { id }, include: adminOrderInclude });
-  }
-
-  /**
-   * Chuyển trạng thái bằng UPDATE có điều kiện trên trạng thái cũ (optimistic concurrency):
-   * 2 admin bấm cùng lúc → chỉ 1 người thắng, người còn lại nhận 409.
-   * Hủy đơn → hoàn lại tồn kho trong cùng transaction.
-   */
-  private async transition(id: string, from: OrderStatus, to: OrderStatus, actor: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.updateMany({ where: { id, status: from }, data: { status: to } });
-      if (updated.count !== 1) throw new ConflictException('Order was modified concurrently, please reload');
-
-      if (to === OrderStatus.CANCELLED) {
-        const items = await tx.orderItem.findMany({ where: { orderId: id }, select: { productId: true, quantity: true }, orderBy: { productId: 'asc' } });
-        for (const item of items) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity }, soldCount: { decrement: item.quantity } },
-          });
-        }
-      }
-    });
-
-    if (to === OrderStatus.CANCELLED) await this.products.invalidateCache();
-    this.metrics.orderStatusTransitions.inc({ from, to });
-    this.logger.log({ event: 'order.status_changed', orderId: id, from, to, actor });
   }
 }

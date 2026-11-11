@@ -1,6 +1,6 @@
 import { OrderStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -40,4 +40,35 @@ export class ListOrdersQuery {
 export class UpdateOrderStatusDto {
   @IsEnum(OrderStatus)
   status: OrderStatus;
+
+  /** Ghi chú hiển thị trên timeline đơn (vd. lý do hủy, mã vận đơn) */
+  @IsOptional()
+  @IsString()
+  @Transform(trim)
+  @MaxLength(255)
+  @Matches(/^[^<>]*$/)
+  note?: string;
+}
+
+export const ORDER_TAB_KEYS = ['awaiting_payment', 'to_ship', 'shipping', 'completed', 'cancelled', 'return'] as const;
+
+export class MyOrdersQuery {
+  @IsOptional()
+  @IsIn(ORDER_TAB_KEYS)
+  tab?: (typeof ORDER_TAB_KEYS)[number];
+
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+}
+
+export class CancelOrderDto {
+  /** Lý do hủy (frontend đưa danh sách lý do có sẵn như Shopee) */
+  @IsOptional()
+  @IsString()
+  @Transform(trim)
+  @MinLength(3)
+  @MaxLength(255)
+  @Matches(/^[^<>]*$/, { message: 'reason must not contain HTML' })
+  reason?: string;
 }

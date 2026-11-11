@@ -87,6 +87,37 @@ async function upsertDemoAccount({ email, fullName, password, role }) {
   return user;
 }
 
+/** Lịch sử trạng thái + mốc thời gian của 1 đơn mẫu (mỗi bước cách nhau vài giờ, không vượt quá hiện tại) */
+function orderTimeline(status, createdAt) {
+  const path = {
+    PENDING: ['PENDING'],
+    PROCESSING: ['PENDING', 'PROCESSING'],
+    SHIPPING: ['PENDING', 'PROCESSING', 'SHIPPING'],
+    DELIVERED: ['PENDING', 'PROCESSING', 'SHIPPING', 'DELIVERED'],
+    COMPLETED: ['PENDING', 'PROCESSING', 'SHIPPING', 'DELIVERED', 'COMPLETED'],
+    CANCELLED: ['PENDING', 'CANCELLED'],
+  }[status];
+  const field = { PROCESSING: 'confirmedAt', SHIPPING: 'shippedAt', DELIVERED: 'deliveredAt', COMPLETED: 'completedAt', CANCELLED: 'cancelledAt' };
+  const step = Math.max(1, Math.floor((Date.now() - createdAt.getTime()) / (path.length * 2)));
+  const fields = {};
+  const history = [];
+  let at = createdAt;
+  path.forEach((s, i) => {
+    if (i > 0) at = new Date(Math.min(at.getTime() + Math.min(step, 26 * 3600_000), Date.now()));
+    if (field[s]) fields[field[s]] = at;
+    history.push({
+      fromStatus: i === 0 ? null : path[i - 1],
+      toStatus: s,
+      actorType: i === 0 || s === 'CANCELLED' ? 'CUSTOMER' : s === 'COMPLETED' ? 'SYSTEM' : 'ADMIN',
+      note: i === 0 ? 'Đặt hàng' : s === 'CANCELLED' ? 'Muốn thay đổi địa chỉ giao hàng' : null,
+      createdAt: at,
+    });
+  });
+  if (status === 'DELIVERED' || status === 'COMPLETED') Object.assign(fields, { paymentStatus: 'PAID', paidAt: fields.deliveredAt });
+  if (status === 'CANCELLED') Object.assign(fields, { cancelledBy: 'CUSTOMER', cancelReason: 'Muốn thay đổi địa chỉ giao hàng' });
+  return { fields, history, updatedAt: at };
+}
+
 /** Lịch sử ~140 đơn hàng trong 60 ngày (giá theo bảng giá hiện tại) để dashboard có số liệu thật để phân tích */
 async function seedOrders(customers) {
   const catalog = await prisma.product.findMany({ select: { id: true, slug: true, price: true } });
@@ -100,9 +131,10 @@ async function seedOrders(customers) {
     const daysAgo = i < 4 ? 0 : Math.floor(Math.pow((h % 1000) / 1000, 1.4) * 60);
     const createdAt = new Date(Date.now() - daysAgo * 86_400_000 - ((h >>> 8) % 36_000) * 1000);
     const status =
-      daysAgo === 0 ? (h % 2 ? 'PENDING' : 'PAID')
-      : daysAgo <= 2 ? ['PENDING', 'PAID', 'SHIPPING'][h % 3]
-      : daysAgo <= 5 ? (h % 4 === 0 ? 'PAID' : 'SHIPPING')
+      daysAgo === 0 ? (h % 2 ? 'PENDING' : 'PROCESSING')
+      : daysAgo <= 2 ? ['PENDING', 'PROCESSING', 'SHIPPING'][h % 3]
+      : daysAgo <= 4 ? (h % 4 === 0 ? 'PROCESSING' : 'SHIPPING')
+      : daysAgo <= 5 ? 'DELIVERED'
       : h % 12 === 0 ? 'CANCELLED' : 'COMPLETED';
 
     const lines = new Map();
@@ -114,6 +146,7 @@ async function seedOrders(customers) {
     const items = [...lines.values()].map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price }));
     const total = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
 
+    const timeline = orderTimeline(status, createdAt);
     await prisma.order.create({
       data: {
         userId: customers[h % customers.length].id,
@@ -123,8 +156,10 @@ async function seedOrders(customers) {
         shippingAddress: ADDRESSES[h % ADDRESSES.length],
         phone: `09${String(10000000 + (h % 89999999)).slice(0, 8)}`,
         createdAt,
-        updatedAt: createdAt,
+        updatedAt: timeline.updatedAt,
+        ...timeline.fields,
         items: { create: items },
+        history: { create: timeline.history },
       },
     });
     created++;
