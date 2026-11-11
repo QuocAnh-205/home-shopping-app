@@ -224,13 +224,12 @@ function Checkout() {
             <FontAwesomeIcon icon={faLocationDot} /> Địa chỉ nhận hàng
           </h2>
           {address ? (
-            <p className="address" style={{ margin: 0 }}>
+            <div className="address" style={{ margin: 0, display: 'block' }}>
               <strong>
                 {address.fullName} · {address.phone}
               </strong>
-              <br />
-              {[address.street, address.ward, address.province].join(', ')}
-            </p>
+              <div>{[address.street, address.ward, address.province].join(', ')}</div>
+            </div>
           ) : (
             <p className="muted">Bạn chưa có địa chỉ nhận hàng.</p>
           )}

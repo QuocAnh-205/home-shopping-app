@@ -53,7 +53,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 const PERKS = [
-  { icon: faTruckFast, title: 'Giao nhanh 2 giờ', text: 'Nội thành, miễn phí mọi đơn' },
+  { icon: faTruckFast, title: 'Giao nhanh toàn quốc', text: 'Miễn phí vận chuyển đơn từ 500K' },
   { icon: faRotateLeft, title: 'Trả hàng 15 ngày', text: 'Yêu cầu ngay trong Đơn mua, hoàn tiền nhanh' },
   { icon: faShieldHalved, title: 'Chính hãng 100%', text: 'Bảo hành theo nhà sản xuất' },
   { icon: faMoneyBillWave, title: 'COD hoặc online', text: 'Kiểm tra hàng rồi trả tiền, hoặc VNPay / MoMo' },
@@ -213,7 +213,7 @@ export default async function ProductPage({ params }: Props) {
               Giao hàng & đổi trả
             </h2>
             <ul className="policy-list">
-              <li>Giao nhanh 2 giờ nội thành, 2–4 ngày toàn quốc. Miễn phí vận chuyển.</li>
+              <li>Giao 1–5 ngày tùy khu vực; phí và ngày nhận dự kiến hiển thị khi thanh toán. Miễn phí vận chuyển đơn từ 500.000₫.</li>
               <li>Được kiểm tra hàng trước khi thanh toán nếu chọn COD.</li>
               <li>Trả hàng/hoàn tiền trong 15 ngày kể từ khi nhận hàng (lỗi nhà sản xuất, giao sai mẫu…).</li>
               <li>Hỗ trợ kỹ thuật 8:00 – 21:00 mỗi ngày.</li>

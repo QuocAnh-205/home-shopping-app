@@ -116,19 +116,19 @@ export function Footer() {
 
         <div className="footer-policies">
           <span>
-            <FontAwesomeIcon icon={faTruckFast} /> Miễn phí giao hàng nội thành
+            <FontAwesomeIcon icon={faTruckFast} /> Miễn phí vận chuyển đơn từ 500.000₫
           </span>
           <span>
-            <FontAwesomeIcon icon={faRotateLeft} /> Đổi trả 30 ngày
+            <FontAwesomeIcon icon={faRotateLeft} /> Trả hàng 15 ngày
           </span>
           <span>
             <FontAwesomeIcon icon={faShieldHalved} /> Hàng chính hãng 100%
           </span>
           <span>
-            <FontAwesomeIcon icon={faMoneyBillWave} /> Thanh toán khi nhận hàng
+            <FontAwesomeIcon icon={faMoneyBillWave} /> COD, VNPay, MoMo
           </span>
           <span>
-            <FontAwesomeIcon icon={faHandHoldingDollar} /> Hoàn tiền nhanh trong 24h
+            <FontAwesomeIcon icon={faHandHoldingDollar} /> Hoàn tiền tự động khi hủy đơn
           </span>
         </div>
 

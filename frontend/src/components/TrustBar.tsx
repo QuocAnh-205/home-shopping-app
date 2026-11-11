@@ -2,7 +2,7 @@ import { faHeadset, faMoneyBillWave, faRotateLeft, faTruckFast } from '@fortawes
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 
 const ITEMS = [
-  { icon: faTruckFast, title: 'Giao nhanh 2 giờ', sub: 'Nội thành, miễn phí mọi đơn' },
+  { icon: faTruckFast, title: 'Giao nhanh toàn quốc', sub: 'Miễn phí ship đơn từ 500K' },
   { icon: faRotateLeft, title: 'Đổi trả 30 ngày', sub: 'Lỗi là đổi, không cần lý do' },
   { icon: faMoneyBillWave, title: 'COD & online', sub: 'Kiểm tra hàng rồi trả tiền, hoặc VNPay / MoMo' },
   { icon: faHeadset, title: 'Hỗ trợ 8h – 21h', sub: 'Tư vấn tận tâm mỗi ngày' },

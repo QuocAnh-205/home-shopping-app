@@ -75,7 +75,7 @@ const STEPS = [
 const FAQ = [
   {
     q: 'Bao lâu thì tôi nhận được hàng?',
-    a: 'Đơn nội thành đặt trước 16h được giao trong ngày; các tỉnh thành khác từ 2–4 ngày làm việc. Bạn theo dõi trạng thái đơn trong mục Đơn mua.',
+    a: 'Cùng tỉnh với kho (TP. Hồ Chí Minh) 1–2 ngày, cùng miền 2–3 ngày, khác miền 3–5 ngày. Phí vận chuyển và ngày nhận hàng dự kiến hiển thị ở trang thanh toán; đơn từ 500.000₫ được miễn phí vận chuyển.',
   },
   {
     q: 'Có những hình thức thanh toán nào?',
@@ -154,7 +154,7 @@ export default async function HomePage(props: Props) {
               </span>
               <h1>Không gian sống đẹp bắt đầu từ những món đồ nhỏ</h1>
               <p>
-                {summary ? `${summary.products} món` : 'Hàng trăm món'} đồ gia dụng, nội thất và thiết bị nhà bếp chính hãng — giao nhanh 2 giờ,
+                {summary ? `${summary.products} món` : 'Hàng trăm món'} đồ gia dụng, nội thất và thiết bị nhà bếp chính hãng — giao nhanh toàn quốc,
                 trả hàng 15 ngày.
               </p>
               <div className="row">
@@ -560,8 +560,8 @@ export default async function HomePage(props: Props) {
         <section className="section cta-band">
           <FontAwesomeIcon icon={faTruckFast} />
           <div>
-            <h2>Miễn phí giao hàng & lắp đặt</h2>
-            <p>Áp dụng cho mọi đơn nội thành – đặt trước 16h, nhận ngay trong ngày.</p>
+            <h2>Miễn phí vận chuyển đơn từ 500.000₫</h2>
+            <p>Kết hợp thêm voucher vận chuyển cho đơn nhỏ hơn – áp dụng ngay ở trang thanh toán.</p>
           </div>
           <Link href="/register" className="btn btn-dark">
             Tạo tài khoản miễn phí

@@ -55,24 +55,26 @@ function hash(str) {
   return h;
 }
 
-// Kích thước đóng gói mặc định theo danh mục (cm) và cân nặng khi catalog không ghi "Trọng lượng"
+// Cân nặng mặc định theo danh mục khi catalog không ghi "Trọng lượng"; hệ số thể tích (cm³/gram) của gói hàng:
+// đồ trang trí/chăn gối cồng kềnh hơn đồ điện cùng cân nặng
 const PACKAGE = {
-  'dien-gia-dung': { grams: 3000, dims: [40, 30, 30] },
-  'nha-bep': { grams: 1500, dims: [35, 25, 15] },
-  'ban-an': { grams: 1200, dims: [30, 30, 15] },
-  'phong-khach': { grams: 8000, dims: [60, 45, 40] },
-  'phong-ngu': { grams: 2500, dims: [50, 40, 20] },
-  'phong-tam': { grams: 1000, dims: [30, 20, 15] },
-  'trang-tri': { grams: 800, dims: [25, 25, 20] },
+  'dien-gia-dung': { grams: 2500, cm3PerGram: 3 },
+  'nha-bep': { grams: 1200, cm3PerGram: 3 },
+  'ban-an': { grams: 1000, cm3PerGram: 4 },
+  'phong-khach': { grams: 6000, cm3PerGram: 5 },
+  'phong-ngu': { grams: 2000, cm3PerGram: 6 },
+  'phong-tam': { grams: 800, cm3PerGram: 4 },
+  'trang-tri': { grams: 700, cm3PerGram: 6 },
 };
 
-/** "4.3 kg" / "160 g" trong thông số → gram (+10% bao bì) */
+/** "4.3 kg" / "160 g" trong thông số → gram (+10% bao bì); kích thước hộp suy từ cân nặng (hộp gần lập phương) */
 function packageOf(p) {
   const raw = p.specs?.['Trọng lượng'] ?? p.specs?.['Khối lượng'];
   const m = typeof raw === 'string' ? raw.replace(',', '.').match(/([\d.]+)\s*(kg|g)\b/i) : null;
-  const def = PACKAGE[p.cat] ?? { grams: 500, dims: [20, 20, 15] };
-  const grams = m ? Math.round(Number(m[1]) * (m[2].toLowerCase() === 'kg' ? 1000 : 1) * 1.1) : def.grams;
-  return { weightGrams: Math.max(50, grams), lengthCm: def.dims[0], widthCm: def.dims[1], heightCm: def.dims[2] };
+  const def = PACKAGE[p.cat] ?? { grams: 500, cm3PerGram: 4 };
+  const grams = Math.max(50, m ? Math.round(Number(m[1]) * (m[2].toLowerCase() === 'kg' ? 1000 : 1) * 1.1) : def.grams);
+  const side = Math.min(120, Math.max(8, Math.round(Math.cbrt(grams * def.cm3PerGram))));
+  return { weightGrams: grams, lengthCm: side, widthCm: side, heightCm: side };
 }
 
 function toProductData(p, categoryId) {
