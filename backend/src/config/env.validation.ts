@@ -30,8 +30,25 @@ export function validateEnv(config: Env): Env {
   for (const [id, secret] of [
     ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
     ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET'],
+    ['VNPAY_TMN_CODE', 'VNPAY_HASH_SECRET'],
   ] as const) {
     if (Boolean(config[id]) !== Boolean(config[secret])) errors.push(`${id} and ${secret} must be set together`);
+  }
+  // Cổng thanh toán: khóa bí mật chỉ đến từ biến môi trường; bộ khóa phải đầy đủ
+  for (const group of [
+    ['MOMO_PARTNER_CODE', 'MOMO_ACCESS_KEY', 'MOMO_SECRET_KEY'],
+    ['VIETQR_BANK_BIN', 'VIETQR_ACCOUNT_NO', 'VIETQR_ACCOUNT_NAME'],
+  ]) {
+    const set = group.filter((k) => config[k]);
+    if (set.length > 0 && set.length < group.length) errors.push(`${group.join(', ')} must be set together`);
+  }
+  if (config.VIETQR_BANK_BIN && !/^\d{6}$/.test(config.VIETQR_BANK_BIN)) errors.push('VIETQR_BANK_BIN must be a 6-digit Napas BIN (e.g. 970436)');
+  for (const key of ['PAYMENT_HOLD_MINUTES', 'ORDER_AUTO_COMPLETE_DAYS', 'RETURN_WINDOW_DAYS', 'SHIPPING_FREE_THRESHOLD', 'SHOP_PROVINCE_CODE']) {
+    if (config[key] !== undefined && config[key] !== '' && !/^\d+$/.test(config[key]!)) errors.push(`${key} must be a non-negative integer`);
+  }
+  if (config.PAYMENT_MOCK_ENABLED && !['true', 'false'].includes(config.PAYMENT_MOCK_ENABLED)) errors.push('PAYMENT_MOCK_ENABLED must be true or false');
+  for (const key of ['PAYMENT_IPN_BASE_URL', 'VNPAY_PAY_URL', 'VNPAY_API_URL', 'MOMO_ENDPOINT']) {
+    if (config[key] && !/^https?:\/\/[^\s]+$/.test(config[key]!)) errors.push(`${key} must be an http(s) URL`);
   }
 
   // Cờ chỉ dành cho test e2e: cấm tuyệt đối ở production

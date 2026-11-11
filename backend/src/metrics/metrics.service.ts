@@ -48,6 +48,20 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  readonly paymentsTotal = new Counter({
+    name: 'shop_payments_total',
+    help: 'Payment notifications by method and result (processed / failed / duplicate / amount_mismatch / invalid_signature...)',
+    labelNames: ['method', 'result'] as const,
+    registers: [this.registry],
+  });
+
+  readonly refundsTotal = new Counter({
+    name: 'shop_refunds_total',
+    help: 'Refund attempts by result',
+    labelNames: ['result'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({ app: 'home-shopping-backend' });
     collectDefaultMetrics({ register: this.registry });

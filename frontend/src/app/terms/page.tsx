@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: 'Điều khoản sử dụng' };
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Điều khoản sử dụng" updated="02/11/2026" path="/terms">
+    <LegalPage title="Điều khoản sử dụng" updated="11/11/2026" path="/terms">
       <p>Khi tạo tài khoản hoặc mua hàng tại Home Shopping App, bạn đồng ý với các điều khoản dưới đây.</p>
 
       <h2>1. Tài khoản</h2>
@@ -18,9 +18,15 @@ export default function TermsPage() {
 
       <h2>2. Đặt hàng & thanh toán</h2>
       <ul>
-        <li>Giá hiển thị đã gồm VAT. Đơn hàng thanh toán khi nhận hàng (COD).</li>
-        <li>Bạn có thể tự hủy đơn khi đơn còn ở trạng thái Chờ xác nhận hoặc Đã thanh toán (chưa giao).</li>
-        <li>Đổi trả miễn phí trong 30 ngày với sản phẩm lỗi do nhà sản xuất hoặc giao sai mẫu.</li>
+        <li>Giá hiển thị đã gồm VAT. Phí vận chuyển tính theo địa chỉ nhận và khối lượng gói hàng, hiển thị trước khi đặt; đơn đạt ngưỡng được miễn phí vận chuyển.</li>
+        <li>
+          Hình thức thanh toán: khi nhận hàng (COD) hoặc online qua VNPay, ví MoMo, chuyển khoản VietQR (theo các phương thức đang hiển thị ở trang thanh toán).
+          Đơn thanh toán online được giữ hàng 15 phút; quá hạn chưa thanh toán đơn tự hủy.
+        </li>
+        <li>Giá và ưu đãi được kiểm tra lại khi đặt hàng; nếu có thay đổi, bạn sẽ được thông báo trước khi đơn được tạo.</li>
+        <li>Bạn có thể tự hủy đơn khi đơn còn ở trạng thái Chờ thanh toán hoặc Chờ xác nhận. Đơn đã thanh toán online khi bị hủy được hoàn tiền về phương thức đã dùng.</li>
+        <li>Yêu cầu trả hàng/hoàn tiền trong 15 ngày kể từ khi nhận hàng, kèm lý do và hình ảnh; cửa hàng xem xét và phản hồi yêu cầu.</li>
+        <li>Voucher: mỗi đơn dùng tối đa 1 voucher giảm giá và 1 voucher vận chuyển; voucher được trả lại lượt khi đơn bị hủy.</li>
       </ul>
 
       <h2>3. Đánh giá sản phẩm</h2>

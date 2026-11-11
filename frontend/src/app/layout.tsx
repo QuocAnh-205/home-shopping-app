@@ -21,7 +21,7 @@ const font = Be_Vietnam_Pro({
 
 export const metadata: Metadata = {
   title: { default: 'Home Shopping — Đồ gia dụng & nội thất chính hãng', template: '%s | Home Shopping' },
-  description: 'Mua sắm đồ gia dụng, nội thất, thiết bị nhà bếp chính hãng. Giao nhanh 2 giờ, đổi trả 30 ngày, thanh toán khi nhận hàng.',
+  description: 'Mua sắm đồ gia dụng, nội thất, thiết bị nhà bếp chính hãng. Giao nhanh, trả hàng 15 ngày, thanh toán khi nhận hàng hoặc online.',
   icons: { icon: '/favicon.svg' },
 };
 

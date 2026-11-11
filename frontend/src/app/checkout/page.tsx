@@ -28,6 +28,7 @@ import {
   type CheckoutPreview,
   type CheckoutVoucherOption,
   type Order,
+  type PaymentInfo,
   type PaymentMethod,
 } from '@/lib/types';
 
@@ -166,6 +167,18 @@ function Checkout() {
         body: JSON.stringify({ ...selection, ...choice, expectedTotal: preview.pricing.total }),
       });
       notifyCartChanged();
+      if (order.status === 'AWAITING_PAYMENT') {
+        // Đơn đã tạo & giữ hàng; lấy link cổng thanh toán. Lỗi cổng → về trang đơn để "Thanh toán lại"
+        try {
+          const payment = await apiFetch<PaymentInfo | null>(`/orders/${order.id}/payments`, { method: 'POST', body: '{}' });
+          if (payment?.payUrl) {
+            window.location.assign(payment.payUrl);
+            return;
+          }
+        } catch {
+          /* hiển thị nút thanh toán lại ở trang đơn */
+        }
+      }
       router.replace(`/orders/${order.id}?placed=1`);
     } catch (err) {
       const e = err as ApiError;

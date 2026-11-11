@@ -19,6 +19,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, use, useCallback, useEffect, useState } from 'react';
+import { PaymentPanel } from '@/components/PaymentPanel';
 import { RequireAuth } from '@/components/RequireAuth';
 import { STATUS_ICON, StatusBadge } from '@/components/StatusBadge';
 import { apiFetch, notifyCartChanged } from '@/lib/client-api';
@@ -130,6 +131,8 @@ function OrderDetail({ id }: { id: string }) {
           <FontAwesomeIcon icon={faBoxOpen} /> Đặt hàng thành công! Cửa hàng sẽ xác nhận đơn trong thời gian sớm nhất.
         </p>
       )}
+
+      {order.status === 'AWAITING_PAYMENT' && <PaymentPanel order={order} onChanged={load} />}
 
       <div className="panel" style={{ marginBottom: 20 }}>
         {offFlow ? (

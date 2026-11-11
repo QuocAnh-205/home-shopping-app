@@ -21,6 +21,7 @@ import { MediaModule } from './media/media.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { RedisModule } from './redis/redis.module';
@@ -85,6 +86,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
     CartModule,
     CheckoutModule,
     OrdersModule,
+    PaymentsModule,
     ReviewsModule,
     NewsletterModule,
     AdminModule,

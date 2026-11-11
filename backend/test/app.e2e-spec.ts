@@ -13,6 +13,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { MailMessage, MailService } from '../src/mail/mail.service';
 import { OrderJobsService } from '../src/orders/order-jobs.service';
+import { PaymentJobsService } from '../src/payments/payment-jobs.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Home Shopping API (e2e)', () => {
@@ -570,6 +571,144 @@ describe('Home Shopping API (e2e)', () => {
       const res = await http().post('/api/checkout/preview').set(auth(aliceToken)).send({ ...buyNow(), addressId: other.body[0].id }).expect(404);
       expect(res.body.code).toBe('ADDRESS_NOT_FOUND');
       await http().post('/api/checkout/preview').send(buyNow()).expect(401);
+    });
+  });
+
+  describe('online payments (VNPay/MoMo qua cổng giả lập, IPN, hết hạn, hoàn tiền)', () => {
+    const buyNow = (paymentMethod: string) => ({ items: [{ productId, quantity: 1 }], paymentMethod });
+    const place = async (token: string, paymentMethod: string) =>
+      (await http().post('/api/orders').set(auth(token)).set('Idempotency-Key', randomUUID()).send(buyNow(paymentMethod)).expect(201)).body;
+    const pay = async (token: string, orderId: string, method?: string) =>
+      (await http().post(`/api/orders/${orderId}/payments`).set(auth(token)).send(method ? { method } : {}).expect(200)).body;
+    /** Giả lập server cổng gọi IPN về: lấy chữ ký từ link thanh toán server đã cấp */
+    const notify = (payUrl: string, result: 'success' | 'failed', amount?: number) => {
+      const q = new URL(payUrl).searchParams;
+      return http()
+        .post('/api/payments/mock/notify')
+        .send({ method: q.get('method'), txnRef: q.get('ref'), amount: amount ?? Number(q.get('amount')), result, sig: q.get('sig') });
+    };
+
+    beforeAll(async () => {
+      await prisma.product.update({ where: { id: productId }, data: { stock: 30, price: 450000 } });
+    });
+
+    it('lists payment methods; VietQR stays unavailable until bank details are configured', async () => {
+      const res = await http().get('/api/payments/methods').expect(200);
+      expect(res.body.map((m: { method: string; available: boolean }) => [m.method, m.available])).toEqual([
+        ['COD', true],
+        ['VNPAY', true],
+        ['MOMO', true],
+        ['VIETQR', false],
+      ]);
+      const placed = await http().post('/api/orders').set(auth(aliceToken)).set('Idempotency-Key', randomUUID()).send(buyNow('VIETQR')).expect(400);
+      expect(placed.body.code).toBe('PAYMENT_METHOD_UNAVAILABLE');
+    });
+
+    it('VNPay: awaiting payment, signed link, rejects bad signature / amount, confirms once via IPN', async () => {
+      const order = await place(aliceToken, 'VNPAY');
+      expect(order).toMatchObject({ status: 'AWAITING_PAYMENT', paymentMethod: 'VNPAY', paymentStatus: 'UNPAID', paymentExpiresAt: expect.any(String) });
+
+      const payment = await pay(aliceToken, order.id);
+      expect(payment).toMatchObject({ method: 'VNPAY', amount: order.totalAmount, status: 'PENDING', sandbox: true });
+      expect(payment.payUrl).toMatch(/\/payment\/mock\?/);
+      // Bấm "Thanh toán" lần nữa → cùng giao dịch, không tạo link mới
+      expect((await pay(aliceToken, order.id)).id).toBe(payment.id);
+      await http().post(`/api/orders/${order.id}/payments`).set(auth(bobToken)).send({}).expect(404);
+
+      // Chữ ký sai (giả mạo IPN)
+      const q = new URL(payment.payUrl).searchParams;
+      await http().post('/api/payments/mock/notify').send({ method: 'VNPAY', txnRef: q.get('ref'), amount: order.totalAmount, result: 'success', sig: 'f'.repeat(64) }).expect(400);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe('AWAITING_PAYMENT');
+
+      // Số tiền không khớp → từ chối, đơn vẫn chờ thanh toán (chữ ký sai vì số tiền là 1 phần chữ ký)
+      await notify(payment.payUrl, 'success', 1000).expect(400);
+
+      // Thanh toán thành công
+      const ok = await notify(payment.payUrl, 'success').expect(200);
+      expect(ok.body).toEqual({ result: 'ok' });
+      const paid = await http().get(`/api/orders/${order.id}`).set(auth(aliceToken)).expect(200);
+      expect(paid.body).toMatchObject({ status: 'PENDING', paymentStatus: 'PAID', paidAt: expect.any(String), paymentExpiresAt: null });
+      expect(paid.body.history.at(-1)).toMatchObject({ fromStatus: 'AWAITING_PAYMENT', toStatus: 'PENDING', actorType: 'SYSTEM', note: 'Thanh toán thành công qua VNPay' });
+
+      // Cổng gọi lại IPN nhiều lần → chỉ xử lý 1 lần
+      const again = await notify(payment.payUrl, 'success').expect(200);
+      expect(again.body).toEqual({ result: 'duplicate' });
+      const events = await prisma.paymentEvent.findMany({ where: { paymentId: payment.id }, orderBy: { id: 'asc' } });
+      expect(events.map((e) => e.result)).toEqual(['invalid_signature', 'invalid_signature', 'processed', 'duplicate']);
+      await http().post(`/api/orders/${order.id}/payments`).set(auth(aliceToken)).send({}).expect(409);
+    });
+
+    it('failed payment can be retried, and the customer can switch to MoMo or to COD', async () => {
+      const order = await place(bobToken, 'VNPAY');
+      const first = await pay(bobToken, order.id);
+      await notify(first.payUrl, 'failed').expect(200);
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: first.id } })).status).toBe('FAILED');
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe('AWAITING_PAYMENT');
+
+      // Thanh toán lại bằng MoMo: giao dịch mới
+      const momo = await pay(bobToken, order.id, 'MOMO');
+      expect(momo).toMatchObject({ method: 'MOMO', status: 'PENDING' });
+      expect(momo.id).not.toBe(first.id);
+
+      // Đổi sang COD: không cần trả trước, đơn sang Chờ xác nhận, link MoMo bị đóng
+      const cod = await http().post(`/api/orders/${order.id}/payments`).set(auth(bobToken)).send({ method: 'COD' }).expect(200);
+      expect(cod.body).toEqual({});
+      const after = await http().get(`/api/orders/${order.id}`).set(auth(bobToken)).expect(200);
+      expect(after.body).toMatchObject({ status: 'PENDING', paymentMethod: 'COD', paymentExpiresAt: null });
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: momo.id } })).status).toBe('CANCELLED');
+      // Link cũ đã đóng: IPN thành công đến muộn → ghi nhận và tự hoàn tiền
+      await notify(momo.payUrl, 'success').expect(200);
+      expect(await prisma.refund.findFirst({ where: { paymentId: momo.id } })).toMatchObject({ status: 'SUCCEEDED', amount: order.totalAmount });
+    });
+
+    it('unpaid orders are cancelled after the hold window: stock and voucher come back; a late IPN is refunded', async () => {
+      const stockBefore = (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock;
+      const order = await place(aliceToken, 'MOMO');
+      const payment = await pay(aliceToken, order.id);
+      expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock).toBe(stockBefore - 1);
+
+      await prisma.order.update({ where: { id: order.id }, data: { paymentExpiresAt: new Date(Date.now() - 1000) } });
+      await http().post(`/api/orders/${order.id}/payments`).set(auth(aliceToken)).send({}).expect(409);
+      expect(await app.get(PaymentJobsService).runExpire()).toBeGreaterThanOrEqual(1);
+
+      const cancelled = await http().get(`/api/orders/${order.id}`).set(auth(aliceToken)).expect(200);
+      expect(cancelled.body).toMatchObject({ status: 'CANCELLED', cancelledBy: 'SYSTEM', cancelReason: 'Quá hạn thanh toán, đơn được hủy tự động' });
+      expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock).toBe(stockBefore);
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe('EXPIRED');
+
+      // Khách vẫn kịp trả tiền ở cổng → IPN đến sau khi đơn đã hủy → hoàn tiền tự động
+      await notify(payment.payUrl, 'success').expect(200);
+      const refunded = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { refunds: true } });
+      expect(refunded.paymentStatus).toBe('REFUNDED');
+      expect(refunded.refunds).toEqual([expect.objectContaining({ status: 'SUCCEEDED', amount: order.totalAmount })]);
+    });
+
+    it('cancelling a paid order refunds through the gateway; admins see payments, raw IPN events and refunds', async () => {
+      const order = await place(bobToken, 'VNPAY');
+      const payment = await pay(bobToken, order.id);
+      await notify(payment.payUrl, 'success').expect(200);
+
+      const res = await http().post(`/api/orders/${order.id}/cancel`).set(auth(bobToken)).send({ reason: 'Đổi ý, không muốn mua nữa' }).expect(200);
+      expect(res.body.status).toBe('CANCELLED');
+      const final = await http().get(`/api/orders/${order.id}`).set(auth(bobToken)).expect(200);
+      expect(final.body.paymentStatus).toBe('REFUNDED');
+
+      const admin = await http().get(`/api/admin/orders/${order.id}/payments`).set(auth(adminToken)).expect(200);
+      expect(admin.body[0]).toMatchObject({ status: 'SUCCEEDED', refunds: [expect.objectContaining({ status: 'SUCCEEDED' })] });
+      expect(admin.body[0].events[0]).toMatchObject({ kind: 'IPN', result: 'processed', signatureValid: true });
+      await http().get(`/api/admin/orders/${order.id}/payments`).set(auth(bobToken)).expect(403);
+      const refunds = await http().get('/api/admin/refunds').query({ status: 'SUCCEEDED' }).set(auth(adminToken)).expect(200);
+      expect(refunds.body.some((r: { orderId: string }) => r.orderId === order.id)).toBe(true);
+    });
+
+    it('admins can confirm a transfer manually (VietQR reconciliation path)', async () => {
+      const order = await place(aliceToken, 'VNPAY');
+      const payment = await pay(aliceToken, order.id);
+      const res = await http().post(`/api/admin/payments/${payment.id}/confirm`).set(auth(adminToken)).send({ note: 'Đã thấy tiền trong sao kê' }).expect(200);
+      expect(res.body.status).toBe('SUCCEEDED');
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).paymentStatus).toBe('PAID');
+      await http().post(`/api/admin/payments/${payment.id}/confirm`).set(auth(adminToken)).send({}).expect(200);
+      expect(await prisma.paymentEvent.count({ where: { paymentId: payment.id, kind: 'MANUAL' } })).toBe(2);
     });
   });
 

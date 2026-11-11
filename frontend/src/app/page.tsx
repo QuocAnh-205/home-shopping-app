@@ -68,7 +68,7 @@ const COLLECTIONS = [
 const STEPS = [
   { icon: faMagnifyingGlass, title: 'Chọn sản phẩm', text: 'Tìm theo không gian, mức giá hoặc gõ tên món đồ bạn cần.' },
   { icon: faCartPlus, title: 'Thêm vào giỏ', text: 'Giỏ hàng lưu theo tài khoản, mở trên máy nào cũng còn.' },
-  { icon: faWallet, title: 'Đặt hàng COD', text: 'Chọn địa chỉ từ sổ địa chỉ, thanh toán khi nhận hàng.' },
+  { icon: faWallet, title: 'Đặt hàng & thanh toán', text: 'Chọn địa chỉ, voucher và trả tiền khi nhận hàng (COD) hoặc thanh toán online.' },
   { icon: faStar, title: 'Nhận hàng & đánh giá', text: 'Theo dõi đơn trong "Đơn mua" và chia sẻ cảm nhận của bạn.' },
 ] as const;
 
@@ -78,16 +78,24 @@ const FAQ = [
     a: 'Đơn nội thành đặt trước 16h được giao trong ngày; các tỉnh thành khác từ 2–4 ngày làm việc. Bạn theo dõi trạng thái đơn trong mục Đơn mua.',
   },
   {
-    q: 'Tôi có được kiểm tra hàng trước khi thanh toán không?',
-    a: 'Có. Mọi đơn đều thanh toán khi nhận hàng (COD), bạn được mở hộp kiểm tra trước khi trả tiền.',
+    q: 'Có những hình thức thanh toán nào?',
+    a: 'Thanh toán khi nhận hàng (COD) – được mở hộp kiểm tra trước khi trả tiền; hoặc thanh toán online qua VNPay (thẻ ATM, Visa/Master, QR ngân hàng), ví MoMo, chuyển khoản bằng mã VietQR. Trang thanh toán chỉ hiện những phương thức cửa hàng đang hỗ trợ.',
   },
   {
-    q: 'Chính sách đổi trả như thế nào?',
-    a: 'Đổi trả miễn phí trong 30 ngày nếu sản phẩm lỗi do nhà sản xuất hoặc giao sai mẫu. Đồ điện gia dụng được bảo hành chính hãng 12–24 tháng.',
+    q: 'Thanh toán online xong nhưng đơn vẫn "Chờ thanh toán"?',
+    a: 'Đơn được giữ hàng 15 phút. Hệ thống chỉ xác nhận khi nhận được thông báo có chữ ký từ cổng thanh toán, thường trong vài giây. Nếu quá 15 phút chưa thanh toán, đơn tự hủy và hàng được trả về kho; tiền đã trừ (nếu có) được hoàn tự động về tài khoản của bạn.',
+  },
+  {
+    q: 'Voucher dùng thế nào?',
+    a: 'Ở trang thanh toán, mỗi đơn dùng được 1 voucher giảm giá và 1 voucher vận chuyển. Voucher chưa đủ điều kiện sẽ ghi rõ lý do (ví dụ "Mua thêm 50.000₫"). Hủy đơn thì voucher được trả lại lượt dùng.',
+  },
+  {
+    q: 'Chính sách trả hàng / hoàn tiền như thế nào?',
+    a: 'Bạn gửi yêu cầu Trả hàng/Hoàn tiền trong mục Đơn mua trong 15 ngày kể từ khi nhận hàng (kèm lý do và ảnh). Sau khi cửa hàng duyệt, tiền được hoàn về đúng phương thức đã thanh toán; đơn COD được hoàn bằng chuyển khoản. Đồ điện gia dụng được bảo hành chính hãng 12–24 tháng.',
   },
   {
     q: 'Làm sao để hủy đơn đã đặt?',
-    a: 'Vào Đơn mua, chọn đơn rồi bấm Hủy đơn. Bạn tự hủy được khi đơn còn ở trạng thái Chờ xác nhận hoặc Đã thanh toán (chưa giao).',
+    a: 'Vào Đơn mua, chọn đơn rồi bấm Hủy đơn và chọn lý do. Bạn tự hủy được khi đơn còn ở trạng thái Chờ thanh toán hoặc Chờ xác nhận; khi cửa hàng đã chuẩn bị hàng, vui lòng liên hệ cửa hàng. Đơn đã thanh toán online khi bị hủy sẽ được hoàn tiền tự động.',
   },
   {
     q: 'Tôi quên mật khẩu thì phải làm sao?',
@@ -147,7 +155,7 @@ export default async function HomePage(props: Props) {
               <h1>Không gian sống đẹp bắt đầu từ những món đồ nhỏ</h1>
               <p>
                 {summary ? `${summary.products} món` : 'Hàng trăm món'} đồ gia dụng, nội thất và thiết bị nhà bếp chính hãng — giao nhanh 2 giờ,
-                đổi trả 30 ngày.
+                trả hàng 15 ngày.
               </p>
               <div className="row">
                 <Link href="#products" className="btn btn-lg">

@@ -5154,3 +5154,32 @@ button.stat-tile:hover {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* ---------------- Thanh toán online ---------------- */
+.payment-panel {
+  margin-bottom: 20px;
+  border-color: var(--primary);
+}
+
+.payment-countdown {
+  color: var(--warn);
+}
+
+.vietqr {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+@media (max-width: 640px) {
+  .vietqr {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mock-gateway {
+  max-width: 520px;
+  margin: 40px auto;
+}

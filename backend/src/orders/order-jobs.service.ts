@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ActorType, OrderStatus } from '@prisma/client';
+import { withJobLock } from '../common/job-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { OrderLifecycleService } from './order-lifecycle.service';
@@ -29,7 +30,7 @@ export class OrderJobsService {
 
   @Cron(CronExpression.EVERY_30_MINUTES)
   async scheduledAutoComplete(): Promise<void> {
-    if (this.enabled) await this.withLock('job:orders:auto-complete', 600, () => this.runAutoComplete());
+    if (this.enabled) await withJobLock(this.redis, this.logger, 'job:orders:auto-complete', 600, () => this.runAutoComplete());
   }
 
   /** Đơn "Đã giao" quá N ngày mà khách chưa bấm "Đã nhận hàng" → tự Hoàn thành (như Shopee) */
@@ -54,18 +55,5 @@ export class OrderJobsService {
     }
     if (done) this.logger.log({ event: 'job.auto_complete', completed: done });
     return done;
-  }
-
-  async withLock(key: string, ttlSeconds: number, fn: () => Promise<unknown>): Promise<void> {
-    const token = `${process.pid}:${Date.now()}`;
-    const acquired = await this.redis.client.set(key, token, 'EX', ttlSeconds, 'NX').catch(() => null);
-    if (acquired !== 'OK') return;
-    try {
-      await fn();
-    } catch (err) {
-      this.logger.error({ event: 'job.failed', job: key, err: (err as Error).message });
-    } finally {
-      if ((await this.redis.client.get(key).catch(() => null)) === token) await this.redis.client.del(key).catch(() => undefined);
-    }
   }
 }

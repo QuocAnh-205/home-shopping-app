@@ -465,3 +465,19 @@ export function formatShortDay(isoDate: string): string {
   const [, m, d] = isoDate.split('-');
   return `${d}/${m}`;
 }
+
+export type PaymentStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'EXPIRED' | 'CANCELLED';
+
+export interface PaymentInfo {
+  id: string;
+  method: PaymentMethod;
+  amount: number;
+  status: PaymentStatus;
+  payUrl: string | null;
+  qr: { bankBin: string; accountNo: string; accountName: string; amount: number; content: string; imageUrl: string } | null;
+  expiresAt: string;
+  paidAt: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  sandbox: boolean;
+}

@@ -47,6 +47,23 @@ enum PaymentMethod {
   VIETQR
 }
 
+/// Trạng thái từng lần thử thanh toán
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  /// Cổng không hỗ trợ hoàn tự động (chuyển khoản / COD): cửa hàng hoàn tay rồi đánh dấu
+  MANUAL_REQUIRED
+}
+
 /// Trạng thái tiền của cả đơn (từng lần thử thanh toán nằm ở bảng payments)
 enum OrderPaymentStatus {
   UNPAID
@@ -313,6 +330,8 @@ model Order {
   voucherCode         String?        @map("voucher_code") @db.VarChar(32)
   shippingVoucherCode String?        @map("shipping_voucher_code") @db.VarChar(32)
   voucherUsages       VoucherUsage[]
+  payments            Payment[]
+  refunds             Refund[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -385,6 +404,80 @@ model VoucherUsage {
   @@index([voucherId, userId])
   @@index([orderId])
   @@map("voucher_usages")
+}
+
+/// Mỗi lần thử thanh toán online của 1 đơn (thanh toán lại / đổi phương thức = bản ghi mới)
+model Payment {
+  id            String        @id @default(uuid()) @db.Uuid
+  orderId       String        @map("order_id") @db.Uuid
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method        PaymentMethod
+  /// VND, phải khớp tổng tiền đơn lúc tạo; IPN báo số khác → từ chối
+  amount        Int
+  status        PaymentStatus @default(PENDING)
+  /// Mã tham chiếu gửi cổng (vnp_TxnRef / MoMo orderId / nội dung chuyển khoản)
+  txnRef        String        @unique @map("txn_ref") @db.VarChar(64)
+  /// Mã giao dịch phía cổng (vnp_TransactionNo / MoMo transId)
+  gatewayTxnId  String?       @map("gateway_txn_id") @db.VarChar(64)
+  payUrl        String?       @map("pay_url")
+  /// VietQR: ngân hàng, số tài khoản, nội dung, ảnh QR
+  qrData        Json?         @map("qr_data")
+  expiresAt     DateTime      @map("expires_at")
+  paidAt        DateTime?     @map("paid_at")
+  failureReason String?       @map("failure_reason") @db.VarChar(255)
+  /// Dữ liệu thô: lúc tạo giao dịch và lúc cổng xác nhận
+  rawCreate     Json?         @map("raw_create")
+  rawResult     Json?         @map("raw_result")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  events        PaymentEvent[]
+  refunds       Refund[]
+
+  @@index([orderId, createdAt])
+  @@index([status, expiresAt])
+  @@map("payments")
+}
+
+/// Nhật ký mọi callback/IPN nhận được (kể cả sai chữ ký, trùng lặp) – phục vụ đối soát
+model PaymentEvent {
+  id             BigInt        @id @default(autoincrement())
+  paymentId      String?       @map("payment_id") @db.Uuid
+  payment        Payment?      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  provider       PaymentMethod
+  /// IPN | MANUAL | REFUND | CREATE
+  kind           String        @db.VarChar(16)
+  signatureValid Boolean       @map("signature_valid")
+  /// processed | duplicate | failed | amount_mismatch | invalid_signature | unknown_ref | late_paid
+  result         String        @db.VarChar(32)
+  payload        Json
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  @@index([paymentId, createdAt])
+  @@index([createdAt])
+  @@map("payment_events")
+}
+
+model Refund {
+  id              String       @id @default(uuid()) @db.Uuid
+  orderId         String       @map("order_id") @db.Uuid
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// null = đơn COD đã thu tiền rồi trả hàng (hoàn tay)
+  paymentId       String?      @unique @map("payment_id") @db.Uuid
+  payment         Payment?     @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  amount          Int
+  status          RefundStatus @default(PENDING)
+  reason          String       @db.VarChar(255)
+  gatewayRefundId String?      @map("gateway_refund_id") @db.VarChar(64)
+  attempts        Int          @default(0)
+  lastError       String?      @map("last_error") @db.VarChar(500)
+  raw             Json?
+  completedAt     DateTime?    @map("completed_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@map("refunds")
 }
 
 /// Lịch sử trạng thái đơn (timeline): ai đổi, lúc nào, ghi chú

@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 const ITEMS = [
   { icon: faTruckFast, title: 'Giao nhanh 2 giờ', sub: 'Nội thành, miễn phí mọi đơn' },
   { icon: faRotateLeft, title: 'Đổi trả 30 ngày', sub: 'Lỗi là đổi, không cần lý do' },
-  { icon: faMoneyBillWave, title: 'Thanh toán COD', sub: 'Kiểm tra hàng rồi mới trả tiền' },
+  { icon: faMoneyBillWave, title: 'COD & online', sub: 'Kiểm tra hàng rồi trả tiền, hoặc VNPay / MoMo' },
   { icon: faHeadset, title: 'Hỗ trợ 8h – 21h', sub: 'Tư vấn tận tâm mỗi ngày' },
 ];
 
