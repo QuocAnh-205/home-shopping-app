@@ -81,12 +81,13 @@ export class AdminController {
     res.setHeader('Content-Disposition', csvName('don-hang'));
     const rows = await this.orders.adminExport(query);
     return toCsv([
-      ['Mã đơn', 'Ngày đặt', 'Khách hàng', 'Email', 'SĐT nhận', 'Địa chỉ giao', 'Trạng thái', 'Số sản phẩm', 'Chi tiết', 'Tổng tiền (VND)'],
+      ['Mã đơn', 'Ngày đặt', 'Khách hàng', 'Email', 'Người nhận', 'SĐT nhận', 'Địa chỉ giao', 'Trạng thái', 'Số sản phẩm', 'Chi tiết', 'Tổng tiền (VND)'],
       ...rows.map((o) => [
         o.id,
         o.createdAt.toISOString(),
         o.user.fullName,
         o.user.email,
+        o.recipientName ?? o.user.fullName,
         o.phone,
         o.shippingAddress,
         STATUS_VI[o.status] ?? o.status,

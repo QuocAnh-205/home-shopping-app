@@ -1227,6 +1227,10 @@ describe('Home Shopping API (e2e)', () => {
 
       const byId = await http().get(`/api/admin/orders?q=${order.id.slice(0, 8)}`).set(auth(adminToken)).expect(200);
       expect(byId.body.items.map((o: { id: string }) => o.id)).toContain(order.id);
+      // Tên người nhận khách tự đặt trong sổ địa chỉ ("Khách E2E") khác tên tài khoản → admin vẫn tìm được
+      const byRecipient = await http().get(`/api/admin/orders?q=${encodeURIComponent('khách e2e')}&status=PENDING`).set(auth(adminToken)).expect(200);
+      expect(byRecipient.body.items.map((o: { id: string }) => o.id)).toContain(order.id);
+      expect(byRecipient.body.items.find((o: { id: string }) => o.id === order.id)).toMatchObject({ recipientName: 'Khách E2E', user: { fullName: 'E2E mgmt' } });
       const byEmail = await http().get(`/api/admin/orders?q=${encodeURIComponent(carolEmail())}`).set(auth(adminToken)).expect(200);
       expect(byEmail.body.summary.count).toBe(1);
       const old = await http().get('/api/admin/orders?from=2000-01-01&to=2000-01-31').set(auth(adminToken)).expect(200);

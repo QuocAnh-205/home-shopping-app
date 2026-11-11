@@ -110,7 +110,7 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
         <div className="admin-toolbar">
           <span className="input-wrap grow">
             <FontAwesomeIcon icon={faMagnifyingGlass} />
-            <input className="input input-sm" type="search" placeholder="Mã đơn, email, tên khách, SĐT, địa chỉ…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="input input-sm" type="search" placeholder="Mã đơn, tên người nhận / tài khoản, email, SĐT, địa chỉ…" value={q} onChange={(e) => setQ(e.target.value)} />
           </span>
           <label className="small date-field">
             Từ <input className="input input-sm" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
@@ -145,7 +145,7 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
               <thead>
                 <tr>
                   <th>Mã</th>
-                  <th>Khách hàng</th>
+                  <th>Người nhận / tài khoản</th>
                   <th>Ngày đặt</th>
                   <th className="num">SL</th>
                   <th className="num">Tổng</th>
@@ -163,8 +163,17 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
                         </button>
                       </td>
                       <td>
-                        {o.user.fullName}
-                        <div className="muted small">{o.user.email}</div>
+                        {o.recipientName && o.recipientName !== o.user.fullName ? (
+                          <>
+                            {o.recipientName}
+                            <div className="muted small">Tài khoản: {o.user.fullName}</div>
+                          </>
+                        ) : (
+                          o.recipientName ?? o.user.fullName
+                        )}
+                        <div className="muted small">
+                          {o.phone} · {o.user.email}
+                        </div>
                       </td>
                       <td className="small">{formatDateTime(o.createdAt)}</td>
                       <td className="num">{o.items.reduce((n, i) => n + i.quantity, 0)}</td>
@@ -198,7 +207,7 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
                           <div className="order-detail">
                             <div className="stack" style={{ gap: 4 }}>
                               <span>
-                                <FontAwesomeIcon icon={faUser} /> {o.user.fullName} · <FontAwesomeIcon icon={faEnvelope} /> {o.user.email}
+                                <FontAwesomeIcon icon={faUser} /> Tài khoản: {o.user.fullName} · <FontAwesomeIcon icon={faEnvelope} /> {o.user.email}
                                 {o.user.phone && ` · ${o.user.phone}`}
                               </span>
                               <span>
@@ -213,7 +222,8 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
                                 )}
                               </span>
                               <span>
-                                <FontAwesomeIcon icon={faPhone} /> Người nhận: {o.phone}
+                                <FontAwesomeIcon icon={faPhone} /> Người nhận: {o.recipientName ? `${o.recipientName} · ` : ''}
+                                {o.phone}
                               </span>
                               <span className="muted small">
                                 Mã đầy đủ: {o.id} · Cập nhật lần cuối {formatDateTime(o.updatedAt)}

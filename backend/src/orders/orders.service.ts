@@ -335,6 +335,9 @@ export class OrdersService {
       const or: Prisma.OrderWhereInput[] = [
         { user: { email: { contains: q, mode: 'insensitive' } } },
         { user: { fullName: { contains: q, mode: 'insensitive' } } },
+        // Tên người nhận khách tự đặt trong địa chỉ giao (có thể khác tên tài khoản)
+        { recipientName: { contains: q, mode: 'insensitive' } },
+        { user: { username: { contains: q.toLowerCase() } } },
         { phone: { contains: q.replace(/[\s.-]/g, '') } },
         { shippingAddress: { contains: q, mode: 'insensitive' } },
       ];
