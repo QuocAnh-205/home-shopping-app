@@ -44,6 +44,29 @@ compose() {
   docker compose -p "$PROJECT" -f docker-compose.prod.yml "${env_files[@]}" "$@"
 }
 
+# Sao lưu DB ngay trước khi chạy migration (chỉ khi có migration mới). Migration là forward-only:
+# nếu dữ liệu sau migrate có vấn đề, dừng backend rồi khôi phục bản local này:
+#   gunzip -c backups/pre-deploy-<...>.sql.gz | docker exec -i homeshop-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+pre_migration_backup() {
+  if IMAGE_TAG="$NEW_TAG" compose run --rm --no-deps -T backend npx prisma migrate status >/dev/null 2>&1; then
+    log "No pending migrations → skip pre-migration backup"
+    return 0
+  fi
+  local dir="$APP_DIR/backups" file
+  mkdir -p "$dir" && chmod 700 "$dir"
+  file="$dir/pre-deploy-$(date +%Y%m%d-%H%M%S)-${NEW_TAG:0:8}.sql.gz"
+  log "Pending migrations → dumping database to $file"
+  # shellcheck disable=SC2016 # biến được mở rộng bên trong container postgres
+  compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --clean --if-exists --quote-all-identifiers' \
+    | gzip -9 > "$file.partial" || fail "Pre-migration backup failed - nothing changed"
+  gzip -t "$file.partial" || fail "Pre-migration backup is corrupt - nothing changed"
+  gunzip -c "$file.partial" | tail -n 5 | grep -q "PostgreSQL database dump complete" || fail "Pre-migration backup incomplete - nothing changed"
+  mv "$file.partial" "$file"
+  # Giữ 5 bản pre-deploy gần nhất
+  find "$dir" -maxdepth 1 -name 'pre-deploy-*.sql.gz' -printf '%T@ %p\n' | sort -rn | tail -n +6 | cut -d' ' -f2- | xargs -r rm -f
+  log "Pre-migration backup OK ($(du -h "$file" | cut -f1))"
+}
+
 container_ids() {
   docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1" | sort
 }
@@ -176,7 +199,8 @@ main() {
   # 2. Data tier: chỉ recreate khi cấu hình thay đổi
   compose up -d --wait postgres redis || fail "Database/Redis failed to start"
 
-  # 3. Migration schema (forward-only, chạy trước khi đổi code → tương thích expand/contract)
+  # 3. Sao lưu rồi migration schema (forward-only, chạy trước khi đổi code → tương thích expand/contract)
+  pre_migration_backup
   log "Running prisma migrate deploy"
   IMAGE_TAG="$NEW_TAG" compose run --rm --no-deps -T backend npx prisma migrate deploy \
     || fail "Database migration failed - running version untouched"
