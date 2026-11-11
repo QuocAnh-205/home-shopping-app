@@ -21,6 +21,8 @@ import {
   faUserPen,
   faWallet,
   faBoxOpen,
+  faCodeCompare,
+  faShieldHalved,
   type IconDefinition,
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -161,6 +163,14 @@ export function MeHub({ profile }: { profile: AccountProfile }) {
           <Row href="/account?tab=bank" icon={faBuildingColumns} label="Tài khoản ngân hàng" />
           <Row href="/account?tab=password" icon={faKey} label="Đổi mật khẩu" />
           <Row href="/account?tab=linked" icon={faLink} label="Liên kết Google / Facebook" />
+        </ul>
+      </section>
+
+      <section className="me-section">
+        <h2 className="me-section-title">Tiện ích</h2>
+        <ul className="me-list">
+          <Row href="/warranty" icon={faShieldHalved} label="Tra cứu bảo hành điện tử" />
+          <Row href="/compare" icon={faCodeCompare} label="So sánh sản phẩm" />
         </ul>
       </section>
 

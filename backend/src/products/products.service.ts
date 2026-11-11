@@ -4,7 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
 import type { AdminProductSort, ListAdminProductsQuery } from '../admin/admin.dto';
-import { CreateProductDto, ListProductsQuery, ProductSort, UpdateProductDto } from './products.dto';
+import { deriveAttributes, MATERIAL_OPTIONS } from './product-attributes';
+import { CAPACITY_BUCKETS, CreateProductDto, ListProductsQuery, POWER_BUCKETS, ProductSort, UpdateProductDto } from './products.dto';
 
 const productInclude = { category: { select: { id: true, name: true, slug: true } } } satisfies Prisma.ProductInclude;
 type ProductRow = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
@@ -15,6 +16,17 @@ export type ProductView = Omit<ProductRow, 'imageKey' | 'ratingAvg'> & {
   ratingAvg: number;
   imageUrl: string | null;
 };
+
+/** 1 lựa chọn trong bộ chọn biến thể (mỗi biến thể là 1 SKU riêng) */
+export interface ProductVariantOption {
+  slug: string;
+  label: string;
+  price: number;
+  stock: number;
+  imageUrl: string | null;
+}
+
+export type ProductDetail = ProductView & { variants: ProductVariantOption[] };
 
 export interface ProductPage {
   items: ProductView[];
@@ -44,6 +56,20 @@ const ADMIN_ORDER_BY: Record<AdminProductSort, Prisma.ProductOrderByWithRelation
   best_selling: [{ soldCount: 'desc' }, { id: 'asc' }],
   top_rated: [{ ratingAvg: 'desc' }, { ratingCount: 'desc' }, { id: 'asc' }],
 };
+
+/** Số sản phẩm theo từng lựa chọn của bộ lọc kỹ thuật (chỉ hiện lựa chọn có hàng) */
+export interface ProductFacets {
+  materials: { value: string; count: number }[];
+  power: { value: string; count: number }[];
+  capacity: { value: string; count: number }[];
+  bulky: number;
+  withDimensions: number;
+}
+
+/** [gte, lt) → điều kiện Prisma trên 1 cột số */
+function rangeWhere(range: readonly [number | null, number | null]): Prisma.IntNullableFilter {
+  return { not: null, ...(range[0] !== null ? { gte: range[0] } : {}), ...(range[1] !== null ? { lt: range[1] } : {}) };
+}
 
 export interface StoreSummary {
   products: number;
@@ -75,6 +101,11 @@ export class ProductsService {
       query.sort,
       query.page,
       query.limit,
+      query.material ? encodeURIComponent(query.material) : '-',
+      query.power ?? '-',
+      query.capacity ?? '-',
+      query.maxLength ?? '-',
+      query.bulky ? 'bulky' : '-',
     ].join(':');
     const cached = await this.redis.getJson<ProductPage>(key);
     if (cached) return cached;
@@ -87,6 +118,11 @@ export class ProductsService {
       ...(query.minPrice !== undefined || query.maxPrice !== undefined
         ? { price: { ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}), ...(query.maxPrice !== undefined ? { lt: query.maxPrice } : {}) } }
         : {}),
+      ...(query.material ? { material: query.material } : {}),
+      ...(query.power ? { powerW: rangeWhere(POWER_BUCKETS[query.power]) } : {}),
+      ...(query.capacity ? { capacityMl: rangeWhere(CAPACITY_BUCKETS[query.capacity]) } : {}),
+      ...(query.maxLength ? { dimLengthCm: { not: null, lte: query.maxLength } } : {}),
+      ...(query.bulky ? { isBulky: true } : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
@@ -163,16 +199,34 @@ export class ProductsService {
     });
   }
 
-  async bySlug(slug: string): Promise<ProductView> {
+  async bySlug(slug: string): Promise<ProductDetail> {
     const key = `${CACHE_PREFIX}:slug:${slug}`;
-    const cached = await this.redis.getJson<ProductView>(key);
+    const cached = await this.redis.getJson<ProductDetail>(key);
     if (cached) return cached;
 
     const row = await this.prisma.product.findUnique({ where: { slug }, include: productInclude });
     if (!row || !row.isActive) throw new NotFoundException('Product not found');
     const [view] = await this.toViews([row]);
-    await this.redis.setJson(key, view, 120);
-    return view;
+    // Các SKU cùng nhóm biến thể (kể cả chính nó) theo giá tăng dần → bộ chọn màu / kích cỡ / dung tích
+    const siblings = row.variantGroup
+      ? await this.prisma.product.findMany({
+          where: { variantGroup: row.variantGroup, isActive: true },
+          select: { slug: true, variantLabel: true, name: true, price: true, stock: true, imageKey: true },
+          orderBy: [{ price: 'asc' }, { slug: 'asc' }],
+        })
+      : [];
+    const variants = await Promise.all(
+      siblings.map(async (v) => ({
+        slug: v.slug,
+        label: v.variantLabel ?? v.name,
+        price: v.price,
+        stock: v.stock,
+        imageUrl: await this.storage.getSignedImageUrl(v.imageKey),
+      })),
+    );
+    const detail: ProductDetail = { ...view, variants: variants.length > 1 ? variants : [] };
+    await this.redis.setJson(key, detail, 120);
+    return detail;
   }
 
   async idBySlug(slug: string): Promise<string> {
@@ -252,12 +306,50 @@ export class ProductsService {
     return { name: product.name };
   }
 
+  /** Trang so sánh: lấy theo danh sách slug, giữ thứ tự, bỏ sản phẩm đã ẩn */
+  async bySlugs(slugs: string[]): Promise<ProductView[]> {
+    const rows = await this.prisma.product.findMany({ where: { slug: { in: slugs }, isActive: true }, include: productInclude });
+    const views = await this.toViews(rows);
+    return slugs.map((slug) => views.find((v) => v.slug === slug)).filter((v): v is ProductView => Boolean(v));
+  }
+
+  /** Bộ lọc kỹ thuật: số sản phẩm cho từng lựa chọn trong danh mục đang xem (cache 5 phút) */
+  async facets(category?: string): Promise<ProductFacets> {
+    const key = `${CACHE_PREFIX}:facets:${category ?? 'all'}`;
+    const cached = await this.redis.getJson<ProductFacets>(key);
+    if (cached) return cached;
+    const base: Prisma.ProductWhereInput = { isActive: true, ...(category ? { category: { slug: category } } : {}) };
+    const count = (where: Prisma.ProductWhereInput) => this.prisma.product.count({ where: { ...base, ...where } });
+    const materials = await this.prisma.product.groupBy({ by: ['material'], where: { ...base, material: { not: null } }, _count: { _all: true } });
+    const result: ProductFacets = {
+      materials: MATERIAL_OPTIONS.map((value) => ({ value, count: materials.find((m) => m.material === value)?._count._all ?? 0 })).filter((m) => m.count > 0),
+      power: (
+        await Promise.all(Object.entries(POWER_BUCKETS).map(async ([value, range]) => ({ value, count: await count({ powerW: rangeWhere(range) }) })))
+      ).filter((b) => b.count > 0),
+      capacity: (
+        await Promise.all(Object.entries(CAPACITY_BUCKETS).map(async ([value, range]) => ({ value, count: await count({ capacityMl: rangeWhere(range) }) })))
+      ).filter((b) => b.count > 0),
+      bulky: await count({ isBulky: true }),
+      withDimensions: await count({ dimLengthCm: { not: null } }),
+    };
+    await this.redis.setJson(key, result, 300);
+    return result;
+  }
+
+  /** Thuộc tính chuẩn hóa (chất liệu, công suất, kích thước, cồng kềnh…) suy từ tên + thông số – cùng logic với seed */
+  private async attributesFor(name: string, specs: Record<string, string>, categoryId: number) {
+    const category = await this.prisma.category.findUnique({ where: { id: categoryId }, select: { slug: true } });
+    const { estimatedWeightGrams: _estimated, ...columns } = deriveAttributes({ name, categorySlug: category?.slug ?? null, specs });
+    return columns;
+  }
+
   async create(dto: CreateProductDto): Promise<ProductView> {
     ProductsService.assertPricing(dto.price, dto.compareAtPrice);
     const { compareAtPrice, specs, ...rest } = dto;
     const row = await this.prisma.product.create({
       data: {
         ...rest,
+        ...(await this.attributesFor(dto.name, specs ?? {}, dto.categoryId)),
         compareAtPrice: compareAtPrice ?? null,
         specs: (specs ?? {}) as Prisma.InputJsonValue,
         isHot: dto.isHot ?? false,
@@ -269,15 +361,23 @@ export class ProductsService {
   }
 
   async update(id: string, dto: UpdateProductDto): Promise<ProductView> {
-    const current = await this.prisma.product.findUnique({ where: { id }, select: { price: true, compareAtPrice: true } });
+    const current = await this.prisma.product.findUnique({
+      where: { id },
+      select: { price: true, compareAtPrice: true, name: true, specs: true, categoryId: true },
+    });
     if (!current) throw new NotFoundException('Product not found');
     const { compareAtPrice, specs, ...rest } = dto;
     ProductsService.assertPricing(dto.price ?? current.price, compareAtPrice === undefined ? current.compareAtPrice : compareAtPrice);
+    const attributes =
+      dto.name !== undefined || specs !== undefined || dto.categoryId !== undefined
+        ? await this.attributesFor(dto.name ?? current.name, specs ?? (current.specs as Record<string, string>), dto.categoryId ?? current.categoryId)
+        : {};
 
     const row = await this.prisma.product.update({
       where: { id },
       data: {
         ...rest,
+        ...attributes,
         ...(compareAtPrice !== undefined ? { compareAtPrice: compareAtPrice || null } : {}),
         ...(specs !== undefined ? { specs: specs as Prisma.InputJsonValue } : {}),
       },

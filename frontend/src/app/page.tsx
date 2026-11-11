@@ -22,6 +22,8 @@ import {
   faWallet,
   faWandMagicSparkles,
   faXmark,
+  faFilter,
+  faSliders,
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
@@ -31,13 +33,26 @@ import { SortSelect } from '@/components/SortSelect';
 import { Stars } from '@/components/Stars';
 import { TrustBar } from '@/components/TrustBar';
 import { categoryIcon, categoryImage } from '@/lib/icons';
-import { getBestSellers, getCategories, getDeals, getLatestReviews, getProducts, getStoreSummary } from '@/lib/server-api';
-import { PRICE_RANGES, SORT_OPTIONS, formatCompact, formatDay, initials, type SortValue } from '@/lib/types';
+import { getBestSellers, getCategories, getDeals, getFacets, getLatestReviews, getProducts, getStoreSummary } from '@/lib/server-api';
+import { CAPACITY_LABEL, POWER_LABEL, PRICE_RANGES, SORT_OPTIONS, formatCompact, formatDay, initials, type SortValue } from '@/lib/types';
+import { POLICY, SITE } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
 
 interface Props {
-  searchParams: Promise<{ page?: string; category?: string; q?: string; sort?: string; sale?: string; price?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    category?: string;
+    q?: string;
+    sort?: string;
+    sale?: string;
+    price?: string;
+    material?: string;
+    power?: string;
+    capacity?: string;
+    maxLength?: string;
+    bulky?: string;
+  }>;
 }
 
 /** Bộ sưu tập theo không gian: ảnh thật của sản phẩm tiêu biểu trong danh mục */
@@ -75,7 +90,7 @@ const STEPS = [
 const FAQ = [
   {
     q: 'Bao lâu thì tôi nhận được hàng?',
-    a: 'Cùng tỉnh với kho (TP. Hồ Chí Minh) 1–2 ngày, cùng miền 2–3 ngày, khác miền 3–5 ngày. Phí vận chuyển và ngày nhận hàng dự kiến hiển thị ở trang thanh toán; đơn từ 500.000₫ được miễn phí vận chuyển.',
+    a: `Cùng tỉnh với kho (TP. Hồ Chí Minh) 1–2 ngày, cùng miền 2–3 ngày, khác miền 3–5 ngày. Phí vận chuyển và ngày nhận hàng dự kiến hiển thị ở trang thanh toán; đơn từ ${(SITE.freeShipThreshold).toLocaleString('vi-VN')}₫ được miễn phí vận chuyển (riêng hàng cồng kềnh như sofa, tủ, nệm có phụ phí giao + lắp đặt tận nơi).`,
   },
   {
     q: 'Có những hình thức thanh toán nào?',
@@ -91,7 +106,11 @@ const FAQ = [
   },
   {
     q: 'Chính sách trả hàng / hoàn tiền như thế nào?',
-    a: 'Bạn gửi yêu cầu Trả hàng/Hoàn tiền trong mục Đơn mua trong 15 ngày kể từ khi nhận hàng (kèm lý do và ảnh). Sau khi cửa hàng duyệt, tiền được hoàn về đúng phương thức đã thanh toán; đơn COD được hoàn bằng chuyển khoản. Đồ điện gia dụng được bảo hành chính hãng 12–24 tháng.',
+    a: `Bạn gửi yêu cầu Trả hàng/Hoàn tiền trong mục Đơn mua trong ${SITE.returnDays} ngày kể từ khi nhận hàng (kèm lý do và ảnh). Sau khi cửa hàng duyệt, tiền được hoàn về đúng phương thức đã thanh toán; đơn COD được hoàn bằng chuyển khoản.`,
+  },
+  {
+    q: 'Sản phẩm được bảo hành bao lâu? Tra cứu ở đâu?',
+    a: `${POLICY.warranty}, tính từ ngày nhận hàng (thời hạn từng sản phẩm ghi trong bảng thông số). Tra cứu hạn bảo hành bất cứ lúc nào tại trang Tra cứu bảo hành bằng mã đơn + số điện thoại, không cần đăng nhập.`,
   },
   {
     q: 'Làm sao để hủy đơn đã đặt?',
@@ -113,20 +132,34 @@ export default async function HomePage(props: Props) {
 
   const categories = await getCategories().catch(() => []);
   const category = categories.some((c) => c.slug === searchParams.category) ? searchParams.category : undefined;
-  const landing = !q && !category && !onSale && !priceRange && page === 1;
+  const facets = await getFacets(category).catch(() => null);
+  // Bộ lọc kỹ thuật: chỉ nhận giá trị hợp lệ (có trong facets / khoảng định sẵn) → URL sai không làm hỏng trang
+  const tech = {
+    material: facets?.materials.some((m) => m.value === searchParams.material) ? searchParams.material : undefined,
+    power: searchParams.power && searchParams.power in POWER_LABEL ? searchParams.power : undefined,
+    capacity: searchParams.capacity && searchParams.capacity in CAPACITY_LABEL ? searchParams.capacity : undefined,
+    maxLength: (() => {
+      const n = Number.parseInt(searchParams.maxLength ?? '', 10);
+      return n >= 10 && n <= 500 ? n : undefined;
+    })(),
+    bulky: searchParams.bulky === '1' || undefined,
+  };
+  const techCount = Object.values(tech).filter(Boolean).length;
+  const landing = !q && !category && !onSale && !priceRange && page === 1 && techCount === 0;
 
   const [deals, best, reviews, list, fresh, topRated, summary] = await Promise.all([
     landing ? getDeals().catch(() => []) : Promise.resolve([]),
     landing ? getBestSellers().catch(() => []) : Promise.resolve([]),
     landing ? getLatestReviews().catch(() => []) : Promise.resolve([]),
-    getProducts({ page, category, q, sort, onSale, minPrice: priceRange?.min, maxPrice: priceRange?.max }).catch(() => null),
+    getProducts({ page, category, q, sort, onSale, minPrice: priceRange?.min, maxPrice: priceRange?.max, ...tech }).catch(() => null),
     landing ? getProducts({ page: 1, limit: 10, sort: 'newest' }).then((r) => r.items).catch(() => []) : Promise.resolve([]),
     landing ? getProducts({ page: 1, limit: 10, sort: 'top_rated' }).then((r) => r.items).catch(() => []) : Promise.resolve([]),
     landing ? getStoreSummary().catch(() => null) : Promise.resolve(null),
   ]);
 
-  const href = (params: { page?: number; category?: string | null; sale?: boolean; price?: string | null }) => {
+  const href = (params: { page?: number; category?: string | null; sale?: boolean; price?: string | null; tech?: Partial<typeof tech> | null }) => {
     const qs = new URLSearchParams();
+    const t: Partial<typeof tech> = params.tech === null ? {} : { ...tech, ...(params.tech ?? {}) };
     const c = params.category === null ? undefined : (params.category ?? category);
     const s = params.sale ?? onSale;
     const pr = params.price === null ? undefined : (params.price ?? priceRange?.id);
@@ -135,6 +168,11 @@ export default async function HomePage(props: Props) {
     if (s) qs.set('sale', '1');
     if (pr) qs.set('price', pr);
     if (sort !== 'newest') qs.set('sort', sort);
+    if (t.material) qs.set('material', t.material);
+    if (t.power) qs.set('power', t.power);
+    if (t.capacity) qs.set('capacity', t.capacity);
+    if (t.maxLength) qs.set('maxLength', String(t.maxLength));
+    if (t.bulky) qs.set('bulky', '1');
     if (params.page && params.page > 1) qs.set('page', String(params.page));
     const str = qs.toString();
     return `${str ? `/?${str}` : '/'}#products`;
@@ -155,7 +193,7 @@ export default async function HomePage(props: Props) {
               <h1>Không gian sống đẹp bắt đầu từ những món đồ nhỏ</h1>
               <p>
                 {summary ? `${summary.products} món` : 'Hàng trăm món'} đồ gia dụng, nội thất và thiết bị nhà bếp chính hãng — giao nhanh toàn quốc,
-                trả hàng 15 ngày.
+                {POLICY.returns.toLowerCase()}.
               </p>
               <div className="row">
                 <Link href="#products" className="btn btn-lg">
@@ -429,6 +467,122 @@ export default async function HomePage(props: Props) {
           <SortSelect value={sort} />
         </div>
 
+        {facets && (facets.materials.length > 0 || facets.power.length > 0 || facets.capacity.length > 0 || facets.withDimensions > 0) && (
+          <details className="tech-filters" open={techCount > 0}>
+            <summary>
+              <FontAwesomeIcon icon={faSliders} /> Bộ lọc nâng cao
+              {techCount > 0 && <span className="badge-count inline">{techCount}</span>}
+              <span className="muted small tech-filters-hint">Chất liệu · Công suất · Dung tích · Kích thước</span>
+            </summary>
+            <form action="/#products" className="tech-filters-form">
+              {category && <input type="hidden" name="category" value={category} />}
+              {q && <input type="hidden" name="q" value={q} />}
+              {onSale && <input type="hidden" name="sale" value="1" />}
+              {sort !== 'newest' && <input type="hidden" name="sort" value={sort} />}
+              {priceRange && <input type="hidden" name="price" value={priceRange.id} />}
+              {facets.materials.length > 0 && (
+                <label className="field">
+                  Chất liệu
+                  <select className="input" name="material" defaultValue={tech.material ?? ''}>
+                    <option value="">Tất cả</option>
+                    {facets.materials.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.value} ({m.count})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {facets.power.length > 0 && (
+                <label className="field">
+                  Công suất
+                  <select className="input" name="power" defaultValue={tech.power ?? ''}>
+                    <option value="">Tất cả</option>
+                    {facets.power.map((b) => (
+                      <option key={b.value} value={b.value}>
+                        {POWER_LABEL[b.value]} ({b.count})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {facets.capacity.length > 0 && (
+                <label className="field">
+                  Dung tích
+                  <select className="input" name="capacity" defaultValue={tech.capacity ?? ''}>
+                    <option value="">Tất cả</option>
+                    {facets.capacity.map((b) => (
+                      <option key={b.value} value={b.value}>
+                        {CAPACITY_LABEL[b.value]} ({b.count})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {facets.withDimensions > 0 && (
+                <label className="field">
+                  Chiều dài tối đa (cm)
+                  <input
+                    className="input"
+                    type="number"
+                    name="maxLength"
+                    min={10}
+                    max={500}
+                    inputMode="numeric"
+                    placeholder="VD: 180"
+                    defaultValue={tech.maxLength ?? ''}
+                  />
+                </label>
+              )}
+              {facets.bulky > 0 && (
+                <label className="checkbox tech-filters-bulky">
+                  <input type="checkbox" name="bulky" value="1" defaultChecked={Boolean(tech.bulky)} /> Chỉ hàng cồng kềnh (giao + lắp đặt)
+                </label>
+              )}
+              <div className="tech-filters-actions">
+                <button className="btn" type="submit">
+                  <FontAwesomeIcon icon={faFilter} /> Áp dụng
+                </button>
+                {techCount > 0 && (
+                  <Link className="btn btn-ghost" href={href({ tech: null })}>
+                    <FontAwesomeIcon icon={faXmark} /> Xóa bộ lọc
+                  </Link>
+                )}
+              </div>
+            </form>
+          </details>
+        )}
+
+        {techCount > 0 && (
+          <div className="active-filters" aria-label="Bộ lọc đang áp dụng">
+            {tech.material && (
+              <Link className="chip active" href={href({ tech: { material: undefined } })}>
+                {tech.material} <FontAwesomeIcon icon={faXmark} />
+              </Link>
+            )}
+            {tech.power && (
+              <Link className="chip active" href={href({ tech: { power: undefined } })}>
+                {POWER_LABEL[tech.power]} <FontAwesomeIcon icon={faXmark} />
+              </Link>
+            )}
+            {tech.capacity && (
+              <Link className="chip active" href={href({ tech: { capacity: undefined } })}>
+                {CAPACITY_LABEL[tech.capacity]} <FontAwesomeIcon icon={faXmark} />
+              </Link>
+            )}
+            {tech.maxLength && (
+              <Link className="chip active" href={href({ tech: { maxLength: undefined } })}>
+                Dài tối đa {tech.maxLength} cm <FontAwesomeIcon icon={faXmark} />
+              </Link>
+            )}
+            {tech.bulky && (
+              <Link className="chip active" href={href({ tech: { bulky: undefined } })}>
+                Hàng cồng kềnh <FontAwesomeIcon icon={faXmark} />
+              </Link>
+            )}
+          </div>
+        )}
+
         {priceRange && (
           <p className="result-note">
             <FontAwesomeIcon icon={faHandHoldingDollar} />
@@ -542,7 +696,7 @@ export default async function HomePage(props: Props) {
               <h2>
                 <FontAwesomeIcon icon={faCircleQuestion} /> Câu hỏi thường gặp
               </h2>
-              <p>Chưa thấy câu trả lời? Gọi hotline 1900 6868 (8h–22h mỗi ngày)</p>
+              <p>Chưa thấy câu trả lời? Gọi hotline {SITE.hotline} ({SITE.supportHours})</p>
             </div>
           </div>
           <div className="faq">
@@ -560,7 +714,7 @@ export default async function HomePage(props: Props) {
         <section className="section cta-band">
           <FontAwesomeIcon icon={faTruckFast} />
           <div>
-            <h2>Miễn phí vận chuyển đơn từ 500.000₫</h2>
+            <h2>{POLICY.freeShip}</h2>
             <p>Kết hợp thêm voucher vận chuyển cho đơn nhỏ hơn – áp dụng ngay ở trang thanh toán.</p>
           </div>
           <Link href="/register" className="btn btn-dark">

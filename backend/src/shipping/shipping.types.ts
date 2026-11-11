@@ -6,6 +6,8 @@ export interface ShipmentItem {
   widthCm: number;
   heightCm: number;
   quantity: number;
+  /** Hàng cồng kềnh (sofa, tủ, nệm…): giao bằng xe tải nhỏ + lắp đặt, tính phí riêng theo kiện */
+  bulky?: boolean;
 }
 
 export interface ShipmentRequest {
@@ -24,6 +26,8 @@ export interface ShippingQuote {
   /** Số ngày giao dự kiến (min/max, tính từ lúc đặt) */
   etaDays: [number, number];
   chargeableWeightGrams: number;
+  /** Phần phí của hàng cồng kềnh (đã nằm trong fee) – không được miễn phí theo ngưỡng đơn hàng */
+  bulkyFee?: number;
 }
 
 /**

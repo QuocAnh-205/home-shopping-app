@@ -22,8 +22,8 @@ import { AuthenticatedRequest } from '../auth/auth.types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { StorageService } from '../storage/storage.service';
-import { CreateProductDto, ListProductsQuery, UpdateProductDto, UpdateStockDto } from './products.dto';
-import { ProductPage, ProductView, ProductsService, StoreSummary } from './products.service';
+import { CompareProductsQuery, CreateProductDto, ListProductsQuery, ProductFacetsQuery, UpdateProductDto, UpdateStockDto } from './products.dto';
+import { ProductDetail, ProductFacets, ProductPage, ProductView, ProductsService, StoreSummary } from './products.service';
 
 @ApiTags('products')
 @Controller('products')
@@ -55,8 +55,20 @@ export class ProductsController {
     return this.products.deals();
   }
 
+  /** Bộ lọc kỹ thuật: số sản phẩm theo chất liệu / công suất / dung tích (chỉ trả lựa chọn có hàng) */
+  @Get('facets')
+  facets(@Query() query: ProductFacetsQuery): Promise<ProductFacets> {
+    return this.products.facets(query.category);
+  }
+
+  /** So sánh 2–4 sản phẩm: ?slugs=a,b,c (giữ đúng thứ tự khách chọn) */
+  @Get('compare')
+  compare(@Query() query: CompareProductsQuery): Promise<ProductView[]> {
+    return this.products.bySlugs(query.slugs);
+  }
+
   @Get(':slug')
-  bySlug(@Param('slug') slug: string): Promise<ProductView> {
+  bySlug(@Param('slug') slug: string): Promise<ProductDetail> {
     if (!/^[a-z0-9-]{1,200}$/.test(slug)) throw new BadRequestException('Invalid slug');
     return this.products.bySlug(slug);
   }

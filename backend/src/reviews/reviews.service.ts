@@ -1,6 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { maskName, readSettings } from '../account/settings';
+import { AppError, ErrorCode } from '../common/errors';
 import { CoinsService } from '../coins/coins.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +18,9 @@ const reviewSelect = {
   updatedAt: true,
   user: { select: { id: true, fullName: true, avatarUrl: true } },
 } satisfies Prisma.ReviewSelect;
+
+/** Đơn ở các trạng thái này nghĩa là khách ĐÃ NHẬN hàng */
+const REVIEWABLE_STATUSES: OrderStatus[] = [OrderStatus.DELIVERED, OrderStatus.COMPLETED, OrderStatus.RETURN_REQUESTED, OrderStatus.RETURNED];
 
 export type ReviewView = Prisma.ReviewGetPayload<{ select: typeof reviewSelect }>;
 
@@ -88,12 +92,26 @@ export class ReviewsService {
     return this.prisma.review.findUnique({ where: { productId_userId: { productId, userId } }, select: reviewSelect });
   }
 
-  /** Mỗi người 1 đánh giá cho mỗi sản phẩm: gửi lại = cập nhật đánh giá cũ */
+  /** Đã NHẬN hàng (giao thành công) ít nhất 1 lần → mới được đánh giá, giống các sàn TMĐT */
+  private received(productId: string, userId: string): Promise<number> {
+    return this.prisma.orderItem.count({ where: { productId, order: { userId, status: { in: REVIEWABLE_STATUSES } } } });
+  }
+
+  async canReview(slug: string, userId: string): Promise<boolean> {
+    return (await this.received(await this.products.idBySlug(slug), userId)) > 0;
+  }
+
+  /** Mỗi người 1 đánh giá cho mỗi sản phẩm: gửi lại = cập nhật đánh giá cũ. Chỉ người đã nhận hàng mới viết được */
   async upsert(slug: string, userId: string, dto: UpsertReviewDto): Promise<ReviewView> {
     const productId = await this.products.idBySlug(slug);
-    const purchased = await this.prisma.orderItem.count({
-      where: { productId, order: { userId, status: { notIn: [OrderStatus.CANCELLED, OrderStatus.AWAITING_PAYMENT] } } },
-    });
+    const purchased = await this.received(productId, userId);
+    if (purchased === 0) {
+      throw new AppError(
+        ErrorCode.REVIEW_NOT_ALLOWED,
+        'Chỉ khách đã mua và nhận hàng mới đánh giá được sản phẩm này',
+        HttpStatus.FORBIDDEN,
+      );
+    }
 
     const existed = await this.prisma.review.findUnique({ where: { productId_userId: { productId, userId } }, select: { id: true } });
     const review = await this.prisma.$transaction(async (tx) => {

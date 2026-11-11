@@ -12,6 +12,8 @@ export interface ShippingResult {
   /** Ngày giao dự kiến (YYYY-MM-DD, giờ Việt Nam) */
   estimatedDelivery: { from: string; to: string };
   chargeableWeightGrams: number;
+  /** Phụ phí hàng cồng kềnh (đã gồm trong fee, không được miễn phí theo ngưỡng) */
+  bulkyFee: number;
   /** Ngưỡng miễn phí vận chuyển (0 = tắt) và đơn này có đạt không */
   freeShipThreshold: number;
   freeShipEligible: boolean;
@@ -64,6 +66,7 @@ export class ShippingService {
       provider: quote.provider,
       estimatedDelivery: { from: vnDate(now, quote.etaDays[0]), to: vnDate(now, quote.etaDays[1]) },
       chargeableWeightGrams: quote.chargeableWeightGrams,
+      bulkyFee: Math.min(quote.fee, quote.bulkyFee ?? 0),
       freeShipThreshold: this.freeShipThreshold,
       freeShipEligible: this.freeShipThreshold > 0 && subtotal >= this.freeShipThreshold,
     };

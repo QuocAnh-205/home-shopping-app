@@ -9,6 +9,8 @@ import {
   faMoneyBillWave,
   faRotateLeft,
   faShieldHalved,
+  faScrewdriverWrench,
+  faTruck,
   faTruckFast,
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -17,6 +19,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { AddToCartButton } from '@/components/AddToCartButton';
+import { CompareButton } from '@/components/CompareButton';
 import { PriceTag } from '@/components/PriceTag';
 import { ProductCard } from '@/components/ProductCard';
 import { ProductImage } from '@/components/ProductImage';
@@ -25,7 +28,8 @@ import { Stars } from '@/components/Stars';
 import { StockBadge } from '@/components/StockBadge';
 import { CARE_GUIDE, categoryIcon } from '@/lib/icons';
 import { ApiError, getProduct, getProducts } from '@/lib/server-api';
-import { formatCompact, formatPrice, type Product } from '@/lib/types';
+import { formatCompact, formatPrice, formatWarranty, type ProductDetail } from '@/lib/types';
+import { POLICY, SITE } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +38,7 @@ interface Props {
 }
 
 // cache(): generateMetadata và page dùng chung 1 lần gọi API trong cùng request
-const load = cache(async (slug: string): Promise<Product> => {
+const load = cache(async (slug: string): Promise<ProductDetail> => {
   try {
     return await getProduct(slug);
   } catch (err) {
@@ -53,8 +57,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 const PERKS = [
-  { icon: faTruckFast, title: 'Giao nhanh toàn quốc', text: 'Miễn phí vận chuyển đơn từ 500K' },
-  { icon: faRotateLeft, title: 'Trả hàng 15 ngày', text: 'Yêu cầu ngay trong Đơn mua, hoàn tiền nhanh' },
+  { icon: faTruckFast, title: 'Giao nhanh toàn quốc', text: POLICY.freeShipShort },
+  { icon: faRotateLeft, title: POLICY.returns, text: 'Yêu cầu ngay trong Đơn mua, hoàn tiền nhanh' },
   { icon: faShieldHalved, title: 'Chính hãng 100%', text: 'Bảo hành theo nhà sản xuất' },
   { icon: faMoneyBillWave, title: 'COD hoặc online', text: 'Kiểm tra hàng rồi trả tiền, hoặc VNPay / MoMo' },
 ];
@@ -113,6 +117,60 @@ export default async function ProductPage({ params }: Props) {
             {saving > 0 && <span className="small ok">Tiết kiệm {formatPrice(saving)}</span>}
           </div>
 
+          {product.variants.length > 1 && (
+            <div className="variant-picker" role="group" aria-label={product.variantName ?? 'Phân loại'}>
+              <span className="variant-picker-label">
+                {product.variantName ?? 'Phân loại'}: <strong>{product.variantLabel}</strong>
+              </span>
+              <div className="variant-options">
+                {product.variants.map((v) => {
+                  const current = v.slug === product.slug;
+                  return (
+                    <Link
+                      key={v.slug}
+                      href={`/products/${v.slug}`}
+                      replace
+                      scroll={false}
+                      className={`variant-option${current ? ' is-current' : ''}${v.stock <= 0 ? ' is-soldout' : ''}`}
+                      aria-current={current ? 'true' : undefined}
+                      title={`${v.label} – ${formatPrice(v.price)}${v.stock <= 0 ? ' (hết hàng)' : ''}`}
+                    >
+                      {v.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={v.imageUrl} alt="" width={36} height={36} loading="lazy" />
+                      )}
+                      <span>
+                        {v.label}
+                        <small>{v.stock <= 0 ? 'Hết hàng' : formatPrice(v.price)}</small>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(product.isBulky || product.warrantyMonths) && (
+            <div className="detail-tags">
+              {product.isBulky && (
+                <span className="badge tag-bulky" title={POLICY.bulky}>
+                  <FontAwesomeIcon icon={faTruck} /> Hàng cồng kềnh · <FontAwesomeIcon icon={faScrewdriverWrench} /> Lắp đặt tận nơi miễn phí
+                </span>
+              )}
+              {product.warrantyMonths && (
+                <Link className="badge badge-ok" href="/warranty">
+                  <FontAwesomeIcon icon={faShieldHalved} /> Bảo hành {formatWarranty(product.warrantyMonths)} · tra cứu điện tử
+                </Link>
+              )}
+            </div>
+          )}
+          {product.isBulky && (
+            <p className="bulky-note small">
+              <FontAwesomeIcon icon={faTruck} /> Giao bằng xe tải nhỏ, 2 kỹ thuật viên mang lên tận phòng và lắp đặt. Phụ phí{' '}
+              {formatPrice(SITE.bulkyFee.sameProvince)} – {formatPrice(SITE.bulkyFee.crossRegion)}/kiện tùy khu vực, không áp dụng miễn phí vận chuyển.
+            </p>
+          )}
+
           {product.highlights.length > 0 && (
             <ul className="highlights">
               {product.highlights.map((h) => (
@@ -133,6 +191,7 @@ export default async function ProductPage({ params }: Props) {
               )}
             </div>
             <AddToCartButton productId={product.id} stock={product.stock} price={product.price} />
+            <CompareButton item={{ slug: product.slug, name: product.name, imageUrl: product.imageUrl }} />
           </div>
 
           <ul className="perks">
@@ -213,10 +272,10 @@ export default async function ProductPage({ params }: Props) {
               Giao hàng & đổi trả
             </h2>
             <ul className="policy-list">
-              <li>Giao 1–5 ngày tùy khu vực; phí và ngày nhận dự kiến hiển thị khi thanh toán. Miễn phí vận chuyển đơn từ 500.000₫.</li>
+              <li>Giao 1–5 ngày tùy khu vực; phí và ngày nhận dự kiến hiển thị khi thanh toán. {POLICY.freeShip}.</li>
               <li>Được kiểm tra hàng trước khi thanh toán nếu chọn COD.</li>
-              <li>Trả hàng/hoàn tiền trong 15 ngày kể từ khi nhận hàng (lỗi nhà sản xuất, giao sai mẫu…).</li>
-              <li>Hỗ trợ kỹ thuật 8:00 – 21:00 mỗi ngày.</li>
+              <li>{POLICY.returnsLong} (lỗi nhà sản xuất, giao sai mẫu…).</li>
+              <li>Hỗ trợ kỹ thuật: {POLICY.support}.</li>
             </ul>
           </section>
         </aside>

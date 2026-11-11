@@ -32,6 +32,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { StorageModule } from './storage/storage.module';
 import { VouchersModule } from './vouchers/vouchers.module';
+import { WarrantyModule } from './warranty/warranty.module';
 
 @Module({
   imports: [
@@ -97,6 +98,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
     NewsletterModule,
     AdminModule,
     VouchersModule,
+    WarrantyModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

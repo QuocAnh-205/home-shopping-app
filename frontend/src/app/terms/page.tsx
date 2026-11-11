@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LegalPage } from '@/components/LegalPage';
+import { POLICY } from '@/lib/site';
 
 export const metadata: Metadata = { title: 'Điều khoản sử dụng' };
 
@@ -25,7 +26,9 @@ export default function TermsPage() {
         </li>
         <li>Giá và ưu đãi được kiểm tra lại khi đặt hàng; nếu có thay đổi, bạn sẽ được thông báo trước khi đơn được tạo.</li>
         <li>Bạn có thể tự hủy đơn khi đơn còn ở trạng thái Chờ thanh toán hoặc Chờ xác nhận. Đơn đã thanh toán online khi bị hủy được hoàn tiền về phương thức đã dùng.</li>
-        <li>Yêu cầu trả hàng/hoàn tiền trong 15 ngày kể từ khi nhận hàng, kèm lý do và hình ảnh; cửa hàng xem xét và phản hồi yêu cầu.</li>
+        <li>{POLICY.returnsLong}, kèm lý do và hình ảnh; cửa hàng xem xét và phản hồi yêu cầu.</li>
+        <li>{POLICY.warranty}, tính từ ngày nhận hàng; tra cứu tại trang Tra cứu bảo hành.</li>
+        <li>{POLICY.bulky}.</li>
         <li>Voucher: mỗi đơn dùng tối đa 1 voucher giảm giá và 1 voucher vận chuyển; voucher được trả lại lượt khi đơn bị hủy.</li>
       </ul>
 

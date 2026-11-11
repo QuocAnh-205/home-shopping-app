@@ -163,6 +163,7 @@ export class OrdersService {
                   productSlug: i.slug,
                   // Snapshot ảnh lúc đặt: sản phẩm đổi ảnh / bị xóa sau này thì đơn vẫn hiện đúng món đã mua
                   imageKey: i.imageKey,
+                  warrantyMonths: i.warrantyMonths ?? null,
                 })),
               },
               history: {

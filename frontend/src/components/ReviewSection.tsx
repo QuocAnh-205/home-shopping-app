@@ -145,6 +145,7 @@ export function ReviewSection({ slug }: { slug: string }) {
   const { session, ready } = useSession();
   const [data, setData] = useState<ReviewPage | null>(null);
   const [mine, setMine] = useState<Review | null | undefined>(undefined);
+  const [canReview, setCanReview] = useState(false);
   const [filter, setFilter] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -162,8 +163,11 @@ export function ReviewSection({ slug }: { slug: string }) {
       setMine(null);
       return;
     }
-    apiFetch<{ review: Review | null }>(`/products/${slug}/reviews/mine`)
-      .then((r) => setMine(r.review))
+    apiFetch<{ review: Review | null; canReview: boolean }>(`/products/${slug}/reviews/mine`)
+      .then((r) => {
+        setMine(r.review);
+        setCanReview(r.canReview);
+      })
       .catch(() => setMine(null));
   }, [slug, session]);
 
@@ -181,7 +185,7 @@ export function ReviewSection({ slug }: { slug: string }) {
           <h2>
             <FontAwesomeIcon icon={faStar} /> Đánh giá từ khách hàng
           </h2>
-          <p>Mọi khách hàng đã đăng nhập đều có thể chia sẻ cảm nhận về sản phẩm</p>
+          <p>Chỉ khách đã mua và nhận hàng mới viết được đánh giá – mọi nhận xét đều từ người dùng thật</p>
         </div>
       </div>
 
@@ -240,7 +244,15 @@ export function ReviewSection({ slug }: { slug: string }) {
               </Link>
             </div>
           )}
-          {session && mine !== undefined && (
+          {session && mine !== undefined && !mine && !canReview && (
+            <div className="review-login">
+              <p>
+                <FontAwesomeIcon icon={faCircleCheck} /> Bạn có thể đánh giá sau khi <strong>nhận được hàng</strong>. Mua sản phẩm này rồi quay lại khi đơn ở
+                trạng thái &quot;Đã giao&quot; nhé.
+              </p>
+            </div>
+          )}
+          {session && mine !== undefined && (mine || canReview) && (
             <ReviewForm
               key={mine?.id ?? 'new'}
               slug={slug}

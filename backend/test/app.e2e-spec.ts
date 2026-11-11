@@ -298,22 +298,50 @@ describe('Home Shopping API (e2e)', () => {
   describe('reviews', () => {
     const slug = () => `am-sieu-toc-e2e-${run}`;
     let erinToken: string;
+    let erinId: string;
+
+    /** Đơn ĐÃ GIAO chứa sản phẩm → người này đủ điều kiện đánh giá */
+    const receive = (userId: string) =>
+      prisma.order.create({
+        data: {
+          userId,
+          status: 'DELIVERED',
+          paymentMethod: 'COD',
+          subtotal: 450000,
+          totalAmount: 450000,
+          shippingAddress: 'E2E',
+          phone: '0901234567',
+          idempotencyKey: randomUUID(),
+          deliveredAt: new Date(),
+          items: { create: { productId, quantity: 1, unitPrice: 450000, productName: `Ấm siêu tốc E2E ${run}`, productSlug: slug() } },
+        },
+      });
 
     beforeAll(async () => {
-      erinToken = (await register('erin')).token;
+      ({ token: erinToken, id: erinId } = await register('erin'));
     });
 
-    it('anyone signed in can review; validation and auth are enforced', async () => {
+    it('only customers who RECEIVED the product can review; validation and auth are enforced', async () => {
       await http().put(`/api/products/${slug()}/reviews`).send({ rating: 5, comment: 'Rất tốt, đáng tiền.' }).expect(401);
       await http().put(`/api/products/${slug()}/reviews`).set(auth(erinToken)).send({ rating: 6, comment: 'Rất tốt, đáng tiền.' }).expect(400);
       await http().put(`/api/products/${slug()}/reviews`).set(auth(erinToken)).send({ rating: 5, comment: 'ngắn' }).expect(400);
+
+      // Chưa mua / chưa nhận hàng → không được đánh giá
+      const denied = await http().put(`/api/products/${slug()}/reviews`).set(auth(erinToken)).send({ rating: 5, comment: 'Chưa mua nhưng muốn khen.' }).expect(403);
+      expect(denied.body.code).toBe('REVIEW_NOT_ALLOWED');
+      expect((await http().get(`/api/products/${slug()}/reviews/mine`).set(auth(erinToken)).expect(200)).body).toEqual({ review: null, canReview: false });
+
+      const alice = await prisma.user.findUniqueOrThrow({ where: { email: `alice-${run}@e2e.test` }, select: { id: true } });
+      await receive(erinId);
+      await receive(alice.id);
+      expect((await http().get(`/api/products/${slug()}/reviews/mine`).set(auth(erinToken)).expect(200)).body.canReview).toBe(true);
 
       const erin = await http()
         .put(`/api/products/${slug()}/reviews`)
         .set(auth(erinToken))
         .send({ rating: 4, comment: 'Đun nước nhanh, thiết kế đẹp.' })
         .expect(200);
-      expect(erin.body.verifiedPurchase).toBe(false);
+      expect(erin.body.verifiedPurchase).toBe(true);
       await http()
         .put(`/api/products/${slug()}/reviews`)
         .set(auth(aliceToken))
@@ -1010,6 +1038,128 @@ describe('Home Shopping API (e2e)', () => {
     await http().post('/api/newsletter/subscribe').send({ email: email.toUpperCase() }).expect(200);
     expect(outbox.filter((m) => m.to === email)).toHaveLength(1);
     await http().post('/api/newsletter/subscribe').send({ email: 'not-an-email' }).expect(400);
+  });
+
+  describe('catalogue attributes: technical filters, compare, bulky shipping, e-warranty', () => {
+    let sofa: { id: string; slug: string };
+    let fryer: { id: string; slug: string };
+
+    beforeAll(async () => {
+      const create = (body: Record<string, unknown>) =>
+        http().post('/api/products').set(auth(adminToken)).send({ description: 'E2E', stock: 5, categoryId: created.categoryId, ...body }).expect(201);
+      const s = await create({
+        name: `Sofa nhung E2E ${run} 3 chỗ`,
+        slug: `sofa-e2e-${run}`,
+        price: 9_890_000,
+        specs: { 'Kích thước': '200 x 85 x 80 cm', 'Chất liệu': 'Nhung, gỗ sồi', 'Bảo hành': '3 năm khung' },
+      });
+      const f = await create({
+        name: `Nồi chiên E2E ${run}`,
+        slug: `noi-chien-e2e-${run}`,
+        price: 1_690_000,
+        specs: { 'Dung tích': '6.2 lít', 'Công suất': '1700W', 'Bảo hành': '24 tháng' },
+      });
+      sofa = { id: s.body.id, slug: s.body.slug };
+      fryer = { id: f.body.id, slug: f.body.slug };
+      created.productIds.push(sofa.id, fryer.id);
+      // Thuộc tính được suy từ thông số ngay khi admin tạo sản phẩm
+      expect(s.body).toMatchObject({ isBulky: true, material: 'Nhung', dimLengthCm: 200, warrantyMonths: 36 });
+      expect(f.body).toMatchObject({ isBulky: false, powerW: 1700, capacityMl: 6200, warrantyMonths: 24 });
+    });
+
+    it('filters by material / power / capacity / max length and exposes facet counts', async () => {
+      const list = (q: Record<string, string>) => http().get('/api/products').query({ category: `e2e-${run}`, limit: '60', ...q }).expect(200);
+      const slugs = (r: { body: { items: { slug: string }[] } }) => r.body.items.map((i) => i.slug);
+      expect(slugs(await list({ material: 'Nhung' }))).toEqual([sofa.slug]);
+      expect(slugs(await list({ power: 'gt1500' }))).toEqual([fryer.slug]);
+      expect(slugs(await list({ capacity: 'gt5' }))).toEqual([fryer.slug]);
+      expect(slugs(await list({ maxLength: '180' }))).not.toContain(sofa.slug);
+      expect(slugs(await list({ maxLength: '210' }))).toContain(sofa.slug);
+      expect(slugs(await list({ bulky: 'true' }))).toEqual([sofa.slug]);
+      await http().get('/api/products').query({ material: 'Kim cương' }).expect(400);
+
+      const facets = await http().get('/api/products/facets').query({ category: `e2e-${run}` }).expect(200);
+      expect(facets.body.materials).toContainEqual({ value: 'Nhung', count: 1 });
+      expect(facets.body.power).toEqual([{ value: 'gt1500', count: 1 }]);
+      expect(facets.body.bulky).toBe(1);
+    });
+
+    it('variants: SKUs sharing a variant group show one selector (each SKU keeps its own price & stock)', async () => {
+      const group = `noi-chien-e2e-${run}`;
+      await http().patch(`/api/products/${fryer.id}`).set(auth(adminToken)).send({ variantGroup: group, variantName: 'Dung tích', variantLabel: '6.2 lít' }).expect(200);
+      const small = await http()
+        .post('/api/products')
+        .set(auth(adminToken))
+        .send({
+          name: `Nồi chiên mini E2E ${run}`,
+          slug: `noi-chien-mini-e2e-${run}`,
+          description: 'E2E',
+          price: 990_000,
+          stock: 0,
+          categoryId: created.categoryId,
+          variantGroup: group,
+          variantName: 'Dung tích',
+          variantLabel: '3.5 lít',
+        })
+        .expect(201);
+      created.productIds.push(small.body.id);
+      const detail = await http().get(`/api/products/${fryer.slug}`).expect(200);
+      expect(detail.body.variants).toEqual([
+        expect.objectContaining({ slug: `noi-chien-mini-e2e-${run}`, label: '3.5 lít', price: 990_000, stock: 0 }),
+        expect.objectContaining({ slug: fryer.slug, label: '6.2 lít', price: 1_690_000 }),
+      ]);
+      expect(detail.body.variantName).toBe('Dung tích');
+      await http().patch(`/api/products/${fryer.id}`).set(auth(adminToken)).send({ variantGroup: 'Not Kebab' }).expect(400);
+      // Sản phẩm không thuộc nhóm nào → không có bộ chọn
+      expect((await http().get(`/api/products/${sofa.slug}`).expect(200)).body.variants).toEqual([]);
+    });
+
+    it('compare returns products in the order asked', async () => {
+      const res = await http().get('/api/products/compare').query({ slugs: `${fryer.slug},${sofa.slug},khong-ton-tai` }).expect(200);
+      expect(res.body.map((p: { slug: string }) => p.slug)).toEqual([fryer.slug, sofa.slug]);
+      await http().get('/api/products/compare').query({ slugs: 'a,b,c,d,e' }).expect(400);
+    });
+
+    it('bulky items pay a flat delivery + assembly fee that the free-shipping threshold does not waive', async () => {
+      const preview = await http()
+        .post('/api/checkout/preview')
+        .set(auth(aliceToken))
+        .send({ items: [{ productId: sofa.id, quantity: 1 }, { productId: fryer.id, quantity: 1 }] })
+        .expect(200);
+      expect(preview.body.items.find((i: { productId: string }) => i.productId === sofa.id)).toMatchObject({ bulky: true });
+      expect(preview.body.items[0]).not.toHaveProperty('warrantyMonths');
+      // Cùng tỉnh với kho: phụ phí cồng kềnh 150.000 + hàng thường (nồi chiên, gói nhỏ) – đơn > 500K chỉ được miễn phần hàng thường
+      expect(preview.body.shipping).toMatchObject({ bulkyFee: 150_000, freeShipEligible: true });
+      const p = preview.body.pricing;
+      expect(p.shippingFee - p.shippingDiscount).toBe(150_000);
+      expect(p.total).toBe(9_890_000 + 1_690_000 + 150_000);
+    });
+
+    it('e-warranty lookup by order code + phone (no login), counted from the delivery date', async () => {
+      const placed = await http()
+        .post('/api/orders')
+        .set(auth(aliceToken))
+        .set('Idempotency-Key', randomUUID())
+        .send({ items: [{ productId: fryer.id, quantity: 1 }] })
+        .expect(201);
+      const code = placed.body.id.slice(0, 8).toUpperCase();
+      const lookup = (orderCode: string, phone: string) => http().post('/api/warranty/lookup').send({ orderCode, phone });
+
+      const pending = await lookup(code, '0901 234 567').expect(200);
+      expect(pending.body.items[0]).toMatchObject({ warrantyMonths: 24, state: 'NOT_DELIVERED', expiresAt: null });
+
+      const deliveredAt = new Date('2026-01-31T03:00:00Z');
+      await prisma.order.update({ where: { id: placed.body.id }, data: { status: 'DELIVERED', deliveredAt } });
+      const active = await lookup(`#${code.toLowerCase()}`, '+84901234567').expect(200);
+      expect(active.body).toMatchObject({ orderCode: code, status: 'DELIVERED' });
+      expect(active.body.items[0]).toMatchObject({ productName: `Nồi chiên E2E ${run}`, warrantyMonths: 24, expiresAt: '2028-01-31T03:00:00.000Z' });
+      expect(['ACTIVE', 'EXPIRING']).toContain(active.body.items[0].state);
+
+      // Sai SĐT và sai mã trả về CÙNG một lỗi (không dò được mã đơn tồn tại)
+      expect((await lookup(code, '0999999999').expect(404)).body.code).toBe('ORDER_NOT_FOUND');
+      expect((await lookup('ffffffff', '0901234567').expect(404)).body.code).toBe('ORDER_NOT_FOUND');
+      await lookup('xyz', '0901234567').expect(400);
+    });
   });
 
   describe('my account (profile, avatar, address book)', () => {

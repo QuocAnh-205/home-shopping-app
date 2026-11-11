@@ -45,6 +45,18 @@ describe('shipping fee', () => {
     expect([res.estimatedDelivery.from, res.estimatedDelivery.to]).toEqual(eta);
   });
 
+  it('bulky furniture: flat per-item fee by zone (not volumetric weight), +2–3 days, reported separately', async () => {
+    const now = new Date('2026-11-11T03:00:00Z');
+    // Sofa 205×90×85 cm – quy đổi thể tích ra ~260 kg, nhưng tính phí trọn gói xe tải nhỏ + lắp đặt
+    const sofa = { ...item(55_000, 1, [205, 90, 85]), bulky: true };
+    const fan = item(800);
+    const same = await service.quote(HCM, [sofa, fan], 10_000_000, now);
+    expect(same).toMatchObject({ fee: 150_000 + 20_000, bulkyFee: 150_000, chargeableWeightGrams: 1000 });
+    expect([same.estimatedDelivery.from, same.estimatedDelivery.to]).toEqual(['2026-11-14', '2026-11-15']);
+    const far = await service.quote(HA_NOI, [{ ...sofa, quantity: 2 }], 0, now);
+    expect(far).toMatchObject({ fee: 700_000, bulkyFee: 700_000 });
+  });
+
   it('free-ship threshold is configurable (0 disables it)', async () => {
     expect((await service.quote(HCM, [item(500)], 500_000)).freeShipEligible).toBe(true);
     expect((await service.quote(HCM, [item(500)], 499_999)).freeShipEligible).toBe(false);

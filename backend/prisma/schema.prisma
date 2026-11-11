@@ -179,11 +179,11 @@ model User {
 
 /// Sổ địa chỉ giao hàng. Mỗi người dùng có tối đa 1 địa chỉ mặc định (partial unique index trong migration).
 model Address {
-  id        String      @id @default(uuid()) @db.Uuid
-  userId    String      @map("user_id") @db.Uuid
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName  String      @map("full_name") @db.VarChar(100)
-  phone     String      @db.VarChar(15)
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String      @map("user_id") @db.Uuid
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName     String      @map("full_name") @db.VarChar(100)
+  phone        String      @db.VarChar(15)
   /// Tên tỉnh/xã lưu kèm để hiển thị nhanh; mã hành chính (chuẩn 2 cấp từ 01/07/2025) dùng tính phí ship
   province     String      @db.VarChar(100)
   /// Cấp huyện đã bỏ từ 01/07/2025: chỉ còn ở địa chỉ cũ
@@ -195,10 +195,10 @@ model Address {
   /// Vị trí trên bản đồ (GPS hoặc khách ghim) – giúp shipper tìm đúng nhà
   latitude     Float?
   longitude    Float?
-  type      AddressType @default(HOME)
-  isDefault Boolean     @default(false) @map("is_default")
-  createdAt DateTime    @default(now()) @map("created_at")
-  updatedAt DateTime    @updatedAt @map("updated_at")
+  type         AddressType @default(HOME)
+  isDefault    Boolean     @default(false) @map("is_default")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
 
   @@index([userId, createdAt])
   @@map("addresses")
@@ -342,6 +342,22 @@ model Product {
   lengthCm       Int         @default(20) @map("length_cm")
   widthCm        Int         @default(20) @map("width_cm")
   heightCm       Int         @default(15) @map("height_cm")
+  /// Thuộc tính chuẩn hóa từ specs (prisma/data/product-attributes.js) → bộ lọc, so sánh, phí ship hàng cồng kềnh
+  material       String?
+  powerW         Int?        @map("power_w")
+  capacityMl     Int?        @map("capacity_ml")
+  warrantyMonths Int?        @map("warranty_months")
+  /// Kích thước THẬT của sản phẩm (cm) – khác kích thước đóng gói ở trên; null = thông số không ghi
+  dimLengthCm    Int?        @map("dim_length_cm")
+  dimWidthCm     Int?        @map("dim_width_cm")
+  dimHeightCm    Int?        @map("dim_height_cm")
+  /// Hàng cồng kềnh: giao bằng xe tải nhỏ + lắp đặt tận nơi, có phụ phí riêng, không tính vào miễn phí vận chuyển
+  isBulky        Boolean     @default(false) @map("is_bulky")
+  /// Biến thể kiểu "mỗi lựa chọn là 1 SKU": các sản phẩm cùng variantGroup hiển thị chung bộ chọn
+  /// "<variantName>: <variantLabel>…" (vd Màu sắc: Trắng / Xanh ngọc) – xem prisma/data/variants.js
+  variantGroup   String?     @map("variant_group")
+  variantName    String?     @map("variant_name")
+  variantLabel   String?     @map("variant_label")
   isHot          Boolean     @default(false) @map("is_hot")
   /// false = admin ẩn khỏi cửa hàng (không xóa vì đơn hàng cũ còn tham chiếu)
   isActive       Boolean     @default(true) @map("is_active")
@@ -356,6 +372,9 @@ model Product {
   @@index([isHot])
   @@index([isActive])
   @@index([soldCount])
+  @@index([material])
+  @@index([isBulky])
+  @@index([variantGroup])
   // Tìm kiếm ILIKE '%từ khóa%' dùng được index nhờ pg_trgm (extension tạo trong migration)
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_name_trgm_idx")
   @@map("products")
@@ -390,58 +409,58 @@ model NewsletterSubscriber {
 }
 
 model Order {
-  id              String      @id @default(uuid()) @db.Uuid
-  userId          String      @map("user_id") @db.Uuid
-  user            User        @relation(fields: [userId], references: [id])
-  status          OrderStatus @default(PENDING)
+  id                    String               @id @default(uuid()) @db.Uuid
+  userId                String               @map("user_id") @db.Uuid
+  user                  User                 @relation(fields: [userId], references: [id])
+  status                OrderStatus          @default(PENDING)
   /// VND. totalAmount = subtotal + shippingFee − discountAmount − shippingDiscount
-  totalAmount     Int         @map("total_amount")
-  subtotal        Int         @default(0)
-  shippingFee     Int         @default(0) @map("shipping_fee")
+  totalAmount           Int                  @map("total_amount")
+  subtotal              Int                  @default(0)
+  shippingFee           Int                  @default(0) @map("shipping_fee")
   /// Giảm giá từ voucher sản phẩm/đơn hàng
-  discountAmount  Int         @default(0) @map("discount_amount")
+  discountAmount        Int                  @default(0) @map("discount_amount")
   /// Giảm phí ship (voucher freeship / ngưỡng miễn phí)
-  shippingDiscount Int        @default(0) @map("shipping_discount")
+  shippingDiscount      Int                  @default(0) @map("shipping_discount")
   /// Snapshot địa chỉ lúc đặt (sổ địa chỉ có sửa/xóa sau đó cũng không ảnh hưởng đơn)
-  shippingAddress String      @map("shipping_address")
-  recipientName   String?     @map("recipient_name") @db.VarChar(100)
-  phone           String
-  provinceCode    Int?        @map("province_code")
-  wardCode        Int?        @map("ward_code")
-  latitude        Float?
-  longitude       Float?
-  shippingProvider String?    @map("shipping_provider") @db.VarChar(32)
-  estimatedDeliveryFrom DateTime? @map("estimated_delivery_from") @db.Date
-  estimatedDeliveryTo   DateTime? @map("estimated_delivery_to") @db.Date
-  note            String?     @db.VarChar(255)
-  idempotencyKey  String      @unique @map("idempotency_key")
-  paymentMethod   PaymentMethod      @default(COD) @map("payment_method")
-  paymentStatus   OrderPaymentStatus @default(UNPAID) @map("payment_status")
-  paidAt          DateTime?          @map("paid_at")
+  shippingAddress       String               @map("shipping_address")
+  recipientName         String?              @map("recipient_name") @db.VarChar(100)
+  phone                 String
+  provinceCode          Int?                 @map("province_code")
+  wardCode              Int?                 @map("ward_code")
+  latitude              Float?
+  longitude             Float?
+  shippingProvider      String?              @map("shipping_provider") @db.VarChar(32)
+  estimatedDeliveryFrom DateTime?            @map("estimated_delivery_from") @db.Date
+  estimatedDeliveryTo   DateTime?            @map("estimated_delivery_to") @db.Date
+  note                  String?              @db.VarChar(255)
+  idempotencyKey        String               @unique @map("idempotency_key")
+  paymentMethod         PaymentMethod        @default(COD) @map("payment_method")
+  paymentStatus         OrderPaymentStatus   @default(UNPAID) @map("payment_status")
+  paidAt                DateTime?            @map("paid_at")
   /// Đơn online chưa trả tiền: quá hạn này job nền tự hủy, hoàn tồn kho và voucher
-  paymentExpiresAt DateTime?         @map("payment_expires_at")
+  paymentExpiresAt      DateTime?            @map("payment_expires_at")
   /// Khách bấm "Tôi đã chuyển khoản" (VietQR): đơn được giữ thêm TRANSFER_CONFIRM_HOURS chờ cửa hàng đối soát
-  transferClaimedAt DateTime?        @map("transfer_claimed_at")
-  cancelReason    String?            @map("cancel_reason") @db.VarChar(255)
-  cancelledBy     ActorType?         @map("cancelled_by")
-  confirmedAt     DateTime?          @map("confirmed_at")
-  shippedAt       DateTime?          @map("shipped_at")
-  deliveredAt     DateTime?          @map("delivered_at")
-  completedAt     DateTime?          @map("completed_at")
-  cancelledAt     DateTime?          @map("cancelled_at")
-  createdAt       DateTime    @default(now()) @map("created_at")
-  updatedAt       DateTime    @updatedAt @map("updated_at")
-  items           OrderItem[]
-  history         OrderStatusHistory[]
+  transferClaimedAt     DateTime?            @map("transfer_claimed_at")
+  cancelReason          String?              @map("cancel_reason") @db.VarChar(255)
+  cancelledBy           ActorType?           @map("cancelled_by")
+  confirmedAt           DateTime?            @map("confirmed_at")
+  shippedAt             DateTime?            @map("shipped_at")
+  deliveredAt           DateTime?            @map("delivered_at")
+  completedAt           DateTime?            @map("completed_at")
+  cancelledAt           DateTime?            @map("cancelled_at")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  items                 OrderItem[]
+  history               OrderStatusHistory[]
   /// Mã voucher đã dùng (snapshot): tối đa 1 voucher giảm giá + 1 voucher vận chuyển như Shopee
-  voucherCode         String?        @map("voucher_code") @db.VarChar(32)
-  shippingVoucherCode String?        @map("shipping_voucher_code") @db.VarChar(32)
+  voucherCode           String?              @map("voucher_code") @db.VarChar(32)
+  shippingVoucherCode   String?              @map("shipping_voucher_code") @db.VarChar(32)
   /// Xu đã dùng để trừ tiền (1 xu = 1₫)
-  coinsUsed           Int            @default(0) @map("coins_used")
-  voucherUsages       VoucherUsage[]
-  payments            Payment[]
-  refunds             Refund[]
-  returnRequest       ReturnRequest?
+  coinsUsed             Int                  @default(0) @map("coins_used")
+  voucherUsages         VoucherUsage[]
+  payments              Payment[]
+  refunds               Refund[]
+  returnRequest         ReturnRequest?
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -452,31 +471,31 @@ model Order {
 }
 
 model Voucher {
-  id            String      @id @default(uuid()) @db.Uuid
+  id            String         @id @default(uuid()) @db.Uuid
   /// In hoa, A-Z 0-9 (CHECK trong migration)
-  code          String      @unique @db.VarChar(32)
-  name          String      @db.VarChar(120)
-  description   String?     @db.VarChar(500)
+  code          String         @unique @db.VarChar(32)
+  name          String         @db.VarChar(120)
+  description   String?        @db.VarChar(500)
   type          VoucherType
   value         Int
   /// Giảm tối đa (VND) cho voucher %
-  maxDiscount   Int?        @map("max_discount")
+  maxDiscount   Int?           @map("max_discount")
   /// Đơn tối thiểu (VND), tính trên các sản phẩm thuộc phạm vi áp dụng
-  minOrderValue Int         @default(0) @map("min_order_value")
-  startsAt      DateTime    @map("starts_at")
-  endsAt        DateTime    @map("ends_at")
+  minOrderValue Int            @default(0) @map("min_order_value")
+  startsAt      DateTime       @map("starts_at")
+  endsAt        DateTime       @map("ends_at")
   /// Tổng lượt dùng (null = không giới hạn); usedCount tăng bằng UPDATE có điều kiện → không vượt khi dùng đồng thời
-  usageLimit    Int?        @map("usage_limit")
-  usedCount     Int         @default(0) @map("used_count")
-  perUserLimit  Int         @default(1) @map("per_user_limit")
+  usageLimit    Int?           @map("usage_limit")
+  usedCount     Int            @default(0) @map("used_count")
+  perUserLimit  Int            @default(1) @map("per_user_limit")
   /// Phạm vi: rỗng = toàn shop; có giá trị = chỉ áp dụng cho danh mục / sản phẩm này
-  categoryIds   Int[]       @default([]) @map("category_ids")
-  productIds    String[]    @default([]) @map("product_ids") @db.Uuid
-  isActive      Boolean     @default(true) @map("is_active")
+  categoryIds   Int[]          @default([]) @map("category_ids")
+  productIds    String[]       @default([]) @map("product_ids") @db.Uuid
+  isActive      Boolean        @default(true) @map("is_active")
   /// Hiện trong danh sách voucher & lưu được vào ví; false = mã riêng, phải nhập tay
-  isPublic      Boolean     @default(true) @map("is_public")
-  createdAt     DateTime    @default(now()) @map("created_at")
-  updatedAt     DateTime    @updatedAt @map("updated_at")
+  isPublic      Boolean        @default(true) @map("is_public")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
   usages        VoucherUsage[]
   savedBy       UserVoucher[]
 
@@ -518,28 +537,28 @@ model VoucherUsage {
 
 /// Mỗi lần thử thanh toán online của 1 đơn (thanh toán lại / đổi phương thức = bản ghi mới)
 model Payment {
-  id            String        @id @default(uuid()) @db.Uuid
-  orderId       String        @map("order_id") @db.Uuid
-  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id            String         @id @default(uuid()) @db.Uuid
+  orderId       String         @map("order_id") @db.Uuid
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   method        PaymentMethod
   /// VND, phải khớp tổng tiền đơn lúc tạo; IPN báo số khác → từ chối
   amount        Int
-  status        PaymentStatus @default(PENDING)
+  status        PaymentStatus  @default(PENDING)
   /// Mã tham chiếu gửi cổng (vnp_TxnRef / MoMo orderId / nội dung chuyển khoản)
-  txnRef        String        @unique @map("txn_ref") @db.VarChar(64)
+  txnRef        String         @unique @map("txn_ref") @db.VarChar(64)
   /// Mã giao dịch phía cổng (vnp_TransactionNo / MoMo transId)
-  gatewayTxnId  String?       @map("gateway_txn_id") @db.VarChar(64)
-  payUrl        String?       @map("pay_url")
+  gatewayTxnId  String?        @map("gateway_txn_id") @db.VarChar(64)
+  payUrl        String?        @map("pay_url")
   /// VietQR: ngân hàng, số tài khoản, nội dung, ảnh QR
-  qrData        Json?         @map("qr_data")
-  expiresAt     DateTime      @map("expires_at")
-  paidAt        DateTime?     @map("paid_at")
-  failureReason String?       @map("failure_reason") @db.VarChar(255)
+  qrData        Json?          @map("qr_data")
+  expiresAt     DateTime       @map("expires_at")
+  paidAt        DateTime?      @map("paid_at")
+  failureReason String?        @map("failure_reason") @db.VarChar(255)
   /// Dữ liệu thô: lúc tạo giao dịch và lúc cổng xác nhận
-  rawCreate     Json?         @map("raw_create")
-  rawResult     Json?         @map("raw_result")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  rawCreate     Json?          @map("raw_create")
+  rawResult     Json?          @map("raw_result")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
   events        PaymentEvent[]
   refunds       Refund[]
 
@@ -632,18 +651,20 @@ model OrderStatusHistory {
 }
 
 model OrderItem {
-  id        Int     @id @default(autoincrement())
-  orderId   String  @map("order_id") @db.Uuid
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId String  @map("product_id") @db.Uuid
-  product   Product @relation(fields: [productId], references: [id])
-  quantity  Int
+  id             Int     @id @default(autoincrement())
+  orderId        String  @map("order_id") @db.Uuid
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId      String  @map("product_id") @db.Uuid
+  product        Product @relation(fields: [productId], references: [id])
+  quantity       Int
   /// VND
-  unitPrice Int     @map("unit_price")
+  unitPrice      Int     @map("unit_price")
   /// Snapshot lúc đặt: sản phẩm có đổi tên/ảnh/giá sau đó, đơn vẫn hiển thị đúng thứ khách đã mua
-  productName String  @map("product_name")
-  productSlug String  @map("product_slug")
-  imageKey    String? @map("image_key")
+  productName    String  @map("product_name")
+  productSlug    String  @map("product_slug")
+  imageKey       String? @map("image_key")
+  /// Snapshot thời hạn bảo hành lúc mua (tra cứu bảo hành điện tử); null = đơn cũ → dùng giá trị hiện tại của sản phẩm
+  warrantyMonths Int?    @map("warranty_months")
 
   @@index([orderId])
   @@map("order_items")

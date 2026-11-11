@@ -18,6 +18,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NewsletterForm } from './NewsletterForm';
+import { POLICY, SITE } from '@/lib/site';
 
 const SHOP_LINKS = [
   ['Nhà bếp', 'nha-bep'],
@@ -87,6 +88,12 @@ export function Footer() {
                 <Link href="/orders">Tra cứu đơn hàng</Link>
               </li>
               <li>
+                <Link href="/warranty">Tra cứu bảo hành điện tử</Link>
+              </li>
+              <li>
+                <Link href="/compare">So sánh sản phẩm</Link>
+              </li>
+              <li>
                 <Link href="/account">Tài khoản của tôi</Link>
               </li>
               <li>
@@ -104,13 +111,13 @@ export function Footer() {
             <h4>Liên hệ</h4>
             <ul>
               <li>
-                <FontAwesomeIcon icon={faHeadset} fixedWidth /> Tổng đài 1900 0000
+                <FontAwesomeIcon icon={faHeadset} fixedWidth /> <a href={SITE.hotlineHref}>Tổng đài {SITE.hotline}</a>
               </li>
               <li>
-                <FontAwesomeIcon icon={faEnvelope} fixedWidth /> hotro@homeshop.local
+                <FontAwesomeIcon icon={faEnvelope} fixedWidth /> <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
               </li>
               <li>
-                <FontAwesomeIcon icon={faClock} fixedWidth /> 8:00 – 21:00, tất cả các ngày
+                <FontAwesomeIcon icon={faClock} fixedWidth /> {SITE.supportHours}
               </li>
               <li>
                 <FontAwesomeIcon icon={faLocationDot} fixedWidth /> Giao hàng toàn quốc
@@ -121,10 +128,10 @@ export function Footer() {
 
         <div className="footer-policies">
           <span>
-            <FontAwesomeIcon icon={faTruckFast} /> Miễn phí vận chuyển đơn từ 500.000₫
+            <FontAwesomeIcon icon={faTruckFast} /> {POLICY.freeShip}
           </span>
           <span>
-            <FontAwesomeIcon icon={faRotateLeft} /> Trả hàng 15 ngày
+            <FontAwesomeIcon icon={faRotateLeft} /> {POLICY.returns}
           </span>
           <span>
             <FontAwesomeIcon icon={faShieldHalved} /> Hàng chính hãng 100%
