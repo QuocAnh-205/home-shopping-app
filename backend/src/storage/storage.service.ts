@@ -45,6 +45,23 @@ export class StorageService {
     return /^\/images\/[a-z0-9/-]+\.(webp|jpe?g|png)$/.test(key);
   }
 
+  /**
+   * Định dạng THẬT của ảnh theo chữ ký file (magic bytes), không tin đuôi file / Content-Type client gửi:
+   * ảnh WebP tải từ Facebook/Zalo hay bị đặt tên ".jpg" → trình duyệt khai image/jpeg nhưng nội dung là WebP.
+   * Trả null nếu không phải JPEG / PNG / WEBP (file độc đổi đuôi, HEIC, PDF…).
+   */
+  static detectImageMime(buf: Buffer): 'image/jpeg' | 'image/png' | 'image/webp' | null {
+    for (const mime of ['image/jpeg', 'image/png', 'image/webp'] as const) {
+      if (StorageService.matchesSignature(buf, mime)) return mime;
+    }
+    return null;
+  }
+
+  /** Bộ lọc multer: nhận mọi file khai là ảnh (hoặc không rõ loại) – định dạng thật kiểm tra sau bằng detectImageMime */
+  static isImageUpload(mime: string): boolean {
+    return mime.startsWith('image/') || mime === 'application/octet-stream';
+  }
+
   /** Kiểm tra chữ ký file (magic bytes) khớp với MIME khai báo */
   static matchesSignature(buf: Buffer, mime: string): boolean {
     if (buf.length < 12) return false;

@@ -157,6 +157,30 @@ ensure_tls_and_edge() {
   compose up -d --no-deps nginx certbot
   # nginx.conf là bind-mount: compose không phát hiện thay đổi nội dung → test & reload thủ công
   docker exec homeshop-nginx nginx -t && docker exec homeshop-nginx nginx -s reload
+  ensure_certificate_covers_domain || log "WARNING: không cập nhật được chứng chỉ cho tên miền mới"
+}
+
+# Đổi tên miền (DOMAIN trong GitHub Secret PROD_ENV_FILE) → chứng chỉ "homeshop" được cấp lại cho tên miền mới
+# + staging.<tên miền mới> ngay trong lần deploy kế tiếp. Không cần SSH, không cần chạy lại init-letsencrypt.sh.
+ensure_certificate_covers_domain() {
+  local domain email
+  domain="$(grep -E '^DOMAIN=' .env | tail -n1 | cut -d= -f2- | tr -d '"'"'"' ')"
+  [ -n "$domain" ] || return 0
+  if docker exec homeshop-certbot certbot certificates --cert-name homeshop 2>/dev/null | grep -Eq "Domains:.*(^| )${domain//./\\.}( |$)"; then
+    return 0
+  fi
+  log "TLS certificate does not cover $domain → requesting a new one (Let's Encrypt HTTP-01)"
+  email="$(grep -E '^LETSENCRYPT_EMAIL=' .env | tail -n1 | cut -d= -f2- | tr -d '"'"'"' ')"
+  local account=(--register-unsafely-without-email)
+  [ -n "$email" ] && account=(-m "$email")
+  # Thử cả tên miền staging; nếu DNS của staging.<domain> chưa trỏ về máy chủ thì vẫn cấp cho tên miền chính
+  docker exec homeshop-certbot certbot certonly --webroot -w /var/www/certbot --cert-name homeshop \
+    -d "$domain" -d "staging.$domain" --non-interactive --agree-tos --force-renewal "${account[@]}" >/dev/null \
+    || docker exec homeshop-certbot certbot certonly --webroot -w /var/www/certbot --cert-name homeshop \
+      -d "$domain" --non-interactive --agree-tos --force-renewal "${account[@]}" >/dev/null \
+    || return 1
+  docker exec homeshop-nginx nginx -s reload
+  log "TLS certificate now covers $domain + staging.$domain"
 }
 
 persist_tag() {

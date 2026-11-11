@@ -7295,3 +7295,189 @@ button.stat-tile:hover {
 .acc-banner .btn-icon:hover {
   background: color-mix(in srgb, var(--warn) 15%, transparent);
 }
+
+/* ---------- Khung cắt ảnh đại diện ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 60%);
+  backdrop-filter: blur(4px);
+  animation: fade-in 0.15s var(--ease);
+}
+
+.modal {
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+.cropper {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.cropper-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cropper-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.cropper-close,
+.btn-round {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.cropper-close {
+  border: 0;
+  background: transparent;
+}
+
+.btn-round:hover,
+.cropper-close:hover {
+  background: var(--surface-3);
+}
+
+.cropper-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--r);
+  background: repeating-conic-gradient(var(--surface-3) 0% 25%, var(--surface-2) 0% 50%) 50% / 24px 24px;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  outline: none;
+}
+
+.cropper-stage:active {
+  cursor: grabbing;
+}
+
+.cropper-stage:focus-visible {
+  box-shadow: 0 0 0 3px var(--primary);
+}
+
+.cropper-stage img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: none;
+  pointer-events: none;
+  transform-origin: center;
+}
+
+/* Mặt nạ tròn: vùng ngoài vòng tròn tối đi = phần sẽ bị cắt bỏ */
+.cropper-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgb(0 0 0 / 55%);
+  outline: 2px solid rgb(255 255 255 / 85%);
+  outline-offset: -2px;
+  pointer-events: none;
+}
+
+.cropper-hint {
+  margin: -6px 0 0;
+  text-align: center;
+}
+
+.cropper-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cropper-tools input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--primary);
+}
+
+.cropper-loading {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  color: var(--muted);
+}
+
+.cropper-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .modal-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .cropper-actions .btn {
+    flex: 1;
+  }
+}
+
+/* ---------- Phiên bản đang chạy (footer) ---------- */
+.footer-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.build-info {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.build-info a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.build-info.env-staging {
+  color: var(--warn);
+}
+
+@media (max-width: 720px) {
+  .footer-copy {
+    align-items: center;
+  }
+}

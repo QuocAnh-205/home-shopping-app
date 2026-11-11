@@ -66,7 +66,7 @@ export class ReturnsController {
       storage: memoryStorage(),
       limits: { fileSize: MAX_IMAGE_BYTES, files: MAX_IMAGES },
       fileFilter: (_req, file, cb) =>
-        StorageService.isAllowedMime(file.mimetype) ? cb(null, true) : cb(new AppError(ErrorCode.BAD_REQUEST, 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP'), false),
+        StorageService.isImageUpload(file.mimetype) ? cb(null, true) : cb(new AppError(ErrorCode.BAD_REQUEST, 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP'), false),
     }),
   )
   create(

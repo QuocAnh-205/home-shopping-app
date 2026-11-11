@@ -2,7 +2,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
-import { HealthController } from './health.controller';
+import { HealthController, buildInfo, formatUptime } from './health.controller';
 
 describe('HealthController', () => {
   const prisma = { isHealthy: jest.fn() };
@@ -44,4 +44,32 @@ describe('HealthController', () => {
 
     await expect(controller.check()).rejects.toBeInstanceOf(ServiceUnavailableException);
   }, 5000);
+
+  it('liveness does not touch the database', () => {
+    expect(controller.live()).toMatchObject({ status: 'ok' });
+    expect(prisma.isHealthy).not.toHaveBeenCalled();
+  });
+});
+
+describe('build info (bằng chứng CI/CD: commit đang chạy = commit trên GitHub)', () => {
+  it('derives short commit, release number, environment and a link to the commit', () => {
+    const sha = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+    expect(buildInfo({ APP_VERSION: sha, APP_BUILD: '42', APP_ENV: 'staging', APP_REPOSITORY: 'me/shop' } as NodeJS.ProcessEnv)).toMatchObject({
+      version: sha,
+      commit: 'a1b2c3d',
+      release: '1.0.42',
+      environment: 'staging',
+      commitUrl: `https://github.com/me/shop/commit/${sha}`,
+    });
+  });
+
+  it('local builds are labelled dev / development with no commit link', () => {
+    expect(buildInfo({} as NodeJS.ProcessEnv)).toMatchObject({ version: 'dev', commit: 'dev', release: null, environment: 'development', commitUrl: null });
+    expect(buildInfo({ NODE_ENV: 'production' } as NodeJS.ProcessEnv).environment).toBe('production');
+  });
+
+  it('formats uptime for humans', () => {
+    expect(formatUptime(59)).toBe('0m');
+    expect(formatUptime(3 * 86_400 + 4 * 3600 + 12 * 60)).toBe('3d 4h 12m');
+  });
 });

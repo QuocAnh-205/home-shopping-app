@@ -62,10 +62,9 @@ export class ReturnsService {
 
     const images: string[] = [];
     for (const f of files) {
-      if (!StorageService.isAllowedMime(f.mimetype) || !StorageService.matchesSignature(f.buffer, f.mimetype)) {
-        throw new AppError(ErrorCode.BAD_REQUEST, 'Ảnh minh chứng phải là JPEG, PNG hoặc WEBP hợp lệ');
-      }
-      images.push(await this.storage.uploadReturnImage(orderId, f.buffer, f.mimetype));
+      const mime = StorageService.detectImageMime(f.buffer);
+      if (!mime) throw new AppError(ErrorCode.BAD_REQUEST, 'Ảnh minh chứng phải là JPEG, PNG hoặc WEBP hợp lệ');
+      images.push(await this.storage.uploadReturnImage(orderId, f.buffer, mime));
     }
 
     let event: TransitionEvent | undefined;

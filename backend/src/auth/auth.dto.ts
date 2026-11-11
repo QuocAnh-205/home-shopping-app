@@ -75,6 +75,13 @@ export class OAuthExchangeDto {
   code: string;
 }
 
+/** ID token (JWT) Google trả về cho Google One Tap: 3 phần base64url ngăn bởi dấu chấm */
+export class GoogleOneTapDto {
+  @Matches(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, { message: 'credential is invalid' })
+  @MaxLength(4096)
+  credential: string;
+}
+
 const trimOrNull = ({ value }: { value: unknown }) => {
   if (typeof value !== 'string') return value;
   const v = value.trim();
