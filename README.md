@@ -33,8 +33,25 @@ Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn pro
 | **Trang chi tiết**: giá gốc gạch ngang & **% giảm**, điểm đánh giá, **số đã bán**, điểm nổi bật, mô tả chi tiết, **thông số kỹ thuật**, hướng dẫn sử dụng & bảo quản, chính sách, sản phẩm cùng danh mục | **Sản phẩm**: lọc danh mục / tồn kho (sắp hết, hết hàng) / đang giảm giá / đang ẩn, 7 kiểu sắp xếp; **thêm & sửa đầy đủ** (giá, giá gốc, danh mục, mô tả, điểm nổi bật, **thông số kỹ thuật**, **đổi ảnh**), sửa tồn kho tại chỗ, bật/tắt "Bán chạy", **ẩn/hiện** khỏi cửa hàng, **xóa** (chỉ khi chưa có đơn) · **Danh mục**: thêm/sửa/xóa, thống kê sản phẩm, tồn kho, đã bán |
 | **Đánh giá sản phẩm**: mọi khách đã đăng nhập đều viết được, 1 đánh giá/sản phẩm (sửa/xóa được), lọc theo số sao, nhãn **"Đã mua hàng"**; mọi sản phẩm có sẵn 3–6 đánh giá | **Người dùng**: tìm/lọc theo vai trò, trạng thái; chi tiết (hồ sơ, sổ địa chỉ, tổng chi tiêu, đơn & đánh giá gần đây); **cấp/hạ quyền admin**, **khóa/mở khóa** (kèm lý do, thu hồi mọi phiên, chặn cả đăng nhập Google/Facebook), **đăng xuất mọi thiết bị**, xuất CSV; luôn giữ ≥ 1 admin, không tự khóa/tự hạ quyền · **Đánh giá**: tìm, lọc số sao / đã mua, gỡ vi phạm |
 | **Tài khoản của tôi** (bố cục kiểu Shopee): menu trái; **Hồ sơ** (tên, email che bớt, SĐT, giới tính, ngày sinh), **ảnh đại diện ≤ 1 MB**; **Địa chỉ** (tối đa 10, đúng 1 mặc định, Nhà riêng/Văn phòng); **Đổi mật khẩu**; **Liên kết Google/Facebook**; Đơn mua | **Bản tin**: danh sách email đăng ký, tìm, xóa, xuất CSV · **Nhật ký thao tác**: mọi thay đổi của admin (ai, làm gì, lúc nào, dữ liệu trước/sau) · Upload ảnh: S3 (production) hoặc lưu đĩa (local), kiểm tra magic bytes |
-| **Giỏ hàng** Redis (ảnh, tăng/giảm), **tự điền địa chỉ mặc định** từ sổ địa chỉ, đặt hàng COD **idempotent**, chống oversell, lịch sử đơn + timeline, tự hủy đơn | Swagger UI `/api/docs`, metrics nghiệp vụ + cảnh báo brute-force / tỷ lệ đặt hàng lỗi |
+| **Giỏ hàng** Redis có **tick chọn** từng sản phẩm, **Mua ngay** không qua giỏ, trang **Thanh toán** (xem trước tạm tính / phí ship / voucher / tổng tiền), **COD, VNPay, MoMo, VietQR**, đặt hàng **idempotent**, chống oversell, **Đơn mua** theo tab kiểu Shopee, timeline lịch sử, hủy có lý do, **Đã nhận hàng**, **Mua lại**, **Trả hàng/Hoàn tiền** kèm ảnh | **Voucher** (tạo, bật/tắt, lượt dùng) · **Trả hàng/Hoàn tiền** (duyệt/từ chối, thử lại hoặc đánh dấu hoàn tay) · lịch sử thanh toán + nhật ký IPN của từng đơn, **xác nhận chuyển khoản VietQR** · Swagger UI `/api/docs`, metrics nghiệp vụ + cảnh báo |
 | **Đăng ký / đăng nhập email**, **Google**, **Facebook** (OAuth 2.0 + PKCE), **quên mật khẩu qua email**, đăng xuất thu hồi token, khóa 15 phút khi sai 5 lần | |
+
+### Mua hàng & thanh toán kiểu Shopee (nâng cấp 11/11/2026)
+
+| Mảng | Cách làm | Ở đâu trong code |
+|---|---|---|
+| **Tiền** | Số nguyên VND (`INTEGER`), không dùng số thực; `total = subtotal + shippingFee − discount − shippingDiscount` (CHECK trong DB) | `backend/src/checkout/pricing.ts` |
+| **Trang thanh toán** | `POST /api/checkout/preview` tính lại mọi con số từ DB (không tin giá client): tạm tính, phí ship + ngày giao dự kiến, voucher dùng được kèm lý do, phương thức thanh toán | `backend/src/checkout/` |
+| **Đặt hàng** | `POST /api/orders` (header `Idempotency-Key`): 1 transaction trừ kho `UPDATE … WHERE stock >= qty AND price = giá đã tính`, snapshot sản phẩm/địa chỉ, trừ lượt voucher; lệch `expectedTotal` → `409 PRICE_CHANGED` | `backend/src/orders/orders.service.ts` |
+| **Vòng đời đơn** | Chờ thanh toán → Chờ xác nhận → Đang chuẩn bị → Đang giao → Đã giao → Hoàn thành; Đã hủy; Yêu cầu trả hàng → Đã trả hàng. State machine theo vai (khách/admin/hệ thống), bảng `order_status_history`, job tự hoàn thành sau 3 ngày | `backend/src/orders/order-state.ts`, `order-lifecycle.service.ts` |
+| **Thanh toán online** | Interface `PaymentGateway` chung; VNPay (HMAC-SHA512), MoMo (HMAC-SHA256), VietQR (admin xác nhận). **Chỉ IPN có chữ ký mới đổi trạng thái** (khóa dòng, idempotent, đối chiếu số tiền); trang return chỉ hiển thị. Giữ hàng 15 phút, quá hạn job tự hủy + hoàn kho + trả voucher; IPN đến muộn → tự hoàn tiền | `backend/src/payments/` |
+| **Cổng giả lập** | Chưa có khóa VNPay/MoMo + `PAYMENT_MOCK_ENABLED=true` → trang `/payment/mock` (link ký HMAC, đi qua đúng luồng IPN). Có khóa sandbox thật thì tự dùng cổng thật | `payments/gateways/mock.gateway.ts` |
+| **Hoàn tiền** | Đơn đã trả tiền bị hủy / trả hàng → gọi API refund của cổng; lỗi → admin thử lại; VietQR/COD → hoàn tay rồi đánh dấu | `payments/refunds.service.ts` |
+| **Phí vận chuyển** | Địa chỉ theo **mã hành chính 2 cấp (34 tỉnh, 3.321 xã – từ 01/07/2025)**; phí theo vùng (nội tỉnh / nội miền / liên miền) × khối lượng tính cước (max thật & D×R×C/6000); miễn phí đơn từ 500.000₫. Interface `ShippingProvider` để cắm GHN/GHTK, lỗi API → bảng phí dự phòng | `backend/src/shipping/`, `backend/src/locations/` |
+| **Voucher** | Giảm %, giảm tiền, miễn phí ship; đơn tối thiểu, giảm tối đa, thời hạn, tổng lượt, lượt/người, theo danh mục/sản phẩm; ví voucher; 1 voucher giảm giá + 1 voucher ship mỗi đơn; trừ lượt bằng `UPDATE … WHERE used_count < usage_limit` | `backend/src/vouchers/` |
+| **Lỗi** | Mọi lỗi có `code` ổn định (`OUT_OF_STOCK`, `PRICE_CHANGED`, `VOUCHER_EXHAUSTED`, `INVALID_TRANSITION`…) + thông báo tiếng Việt + `details` | `backend/src/common/errors.ts` |
+
+Voucher demo: `HOMESHOP10` (−10%, đơn từ 300K), `GIAM50K` (đơn từ 500K), `FREESHIP` (đơn từ 150K), `SHIP15K`, `BEPXINH15` (nhà bếp −15%). Biến môi trường mới: xem mục *Thanh toán online* và *Vận chuyển & đơn hàng* trong [`.env.example`](.env.example).
 
 **Giao diện:** thiết kế 2026, ảnh thật cho mọi sản phẩm (**không dùng icon thay ảnh**), **chế độ sáng/tối**, thanh điều hướng đáy trên mobile, footer có đăng ký nhận bản tin, skeleton loading, tôn trọng `prefers-reduced-motion`. Footer: *© 2026 Home Shopping App bản quyền của Nguyễn Quốc Anh.*
 
@@ -50,7 +67,7 @@ Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn pro
 | **Tài khoản demo** (admin + 4 khách, chỉ chạy local) | [`backend/prisma/data/demo-accounts.js`](backend/prisma/data/demo-accounts.js) | Chỉ tạo khi `SEED_DEMO_DATA=true` |
 | **Người viết đánh giá mẫu** (20 người, **không đăng nhập được**) + **nội dung đánh giá theo danh mục** | [`backend/prisma/data/reviews.js`](backend/prisma/data/reviews.js) | Mỗi sản phẩm 3–6 đánh giá (1–5 sao) |
 | Đoạn giới thiệu theo danh mục, logic seed, 140 đơn hàng lịch sử | [`backend/prisma/seed.js`](backend/prisma/seed.js) | Idempotent: chạy nhiều lần không tạo trùng |
-| **Cấu trúc database** (bảng, quan hệ, index) | [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma) + [`backend/prisma/migrations/`](backend/prisma/migrations) | 4 migration, kèm CHECK constraint & partial unique index |
+| **Cấu trúc database** (bảng, quan hệ, index) | [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma) + [`backend/prisma/migrations/`](backend/prisma/migrations) | 11 migration, kèm CHECK constraint & partial unique index |
 | **Ảnh sản phẩm / danh mục / hero** (WebP) | `frontend/public/images/products/<slug>.webp`, `frontend/public/images/site/` | Đóng gói cùng image frontend; nguồn ghi ở [`CREDITS.md`](frontend/public/images/CREDITS.md); tải lại: `node scripts/fetch-product-images.mjs` |
 
 ### B. Dữ liệu lúc chạy (người dùng tạo ra)
@@ -179,7 +196,7 @@ Kiểm tra: `/api/health` · Swagger: `/api/docs` · `/api/products/summary` · 
 cd backend && npm ci && npx prisma generate
 npm test                     # 90 unit test (Jest)
 npm run test:cov             # kèm coverage
-# 31 E2E test cần Postgres + Redis thật (ví dụ container tạm):
+# 58 E2E test cần Postgres + Redis thật (ví dụ container tạm):
 docker run -d --rm --name e2e-pg -e POSTGRES_USER=e2e -e POSTGRES_PASSWORD=e2epass -e POSTGRES_DB=e2e -p 127.0.0.1:55432:5432 postgres:16-alpine
 docker run -d --rm --name e2e-redis -p 127.0.0.1:56379:6379 redis:7-alpine
 export DATABASE_URL="postgresql://e2e:e2epass@127.0.0.1:55432/e2e?schema=public" REDIS_URL="redis://127.0.0.1:56379/0" JWT_SECRET="ci-only-secret-ci-only-secret-0123456789"
@@ -380,12 +397,23 @@ ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 | `6368107` | **Trang quản trị đầy đủ**: 8 tab (thêm Danh mục, Người dùng, Bản tin, Nhật ký), khóa tài khoản, ẩn/xóa sản phẩm, tìm kiếm & xuất CSV đơn hàng; bảng `admin_audit_logs`; +10 unit test, +8 e2e; `/products` chuyển về trang chủ; tài khoản khách đã tự xóa không còn tính là người dùng hoạt động |
 | `a07fa0c` | `SEED_DEMO_CUSTOMERS`: production có sẵn 4 tài khoản khách demo để giảng viên đăng nhập thử; admin demo không bao giờ lên production |
 | (Docker Hub) | Repo image backend chuyển **private** (06/11/2026), pipeline deploy vẫn xanh |
+| `d298f9f` | Tiền số nguyên VND; mọi lỗi có `code` + `details`; dữ liệu 34 tỉnh / 3.321 xã |
+| `a16a16d` | Vòng đời đơn 9 trạng thái kiểu Shopee, `order_status_history`, hủy có lý do, Đã nhận hàng, Mua lại, job tự hoàn thành |
+| `e4c0a00` | Địa chỉ theo mã hành chính 2 cấp, phí ship theo vùng + cân nặng, snapshot sản phẩm/địa chỉ trong đơn |
+| `605ab6a` | Voucher %, tiền, freeship; ví voucher; trừ lượt an toàn khi dùng đồng thời |
+| `75ae45a` | Trang thanh toán: xem trước đơn, mua một phần giỏ, Mua ngay, `PRICE_CHANGED` / `OUT_OF_STOCK` |
+| `1b80f3b` | Thanh toán VNPay / MoMo / VietQR: IPN có chữ ký, idempotent, giữ hàng 15 phút, thanh toán lại, đổi phương thức, hoàn tiền |
+| `6fccdcb` | Trả hàng/hoàn tiền có ảnh, admin duyệt/từ chối; tab quản trị Voucher, Trả hàng/Hoàn tiền |
 
-**Database migrations:** `20261001000000_init` → `20261101000000_search_admin_indexes` → `20261102000000_reviews_oauth_sale` → `20261103000000_account_profile_addresses` (SĐT, giới tính, ngày sinh, bảng `addresses`, 1 địa chỉ mặc định/người dùng) → `20261106000000_admin_management` (`users.locked_at/locked_reason`, `products.is_active`, bảng `admin_audit_logs`; chỉ thêm cột/bảng nên bản cũ vẫn chạy được).
+**Database migrations:** `20261001000000_init` → `20261101000000_search_admin_indexes` → `20261102000000_reviews_oauth_sale` → `20261103000000_account_profile_addresses` (SĐT, giới tính, ngày sinh, bảng `addresses`, 1 địa chỉ mặc định/người dùng) → `20261106000000_admin_management` (`users.locked_at/locked_reason`, `products.is_active`, bảng `admin_audit_logs`; chỉ thêm cột/bảng nên bản cũ vẫn chạy được) → `20261111000000_integer_vnd` → `20261111010000_order_lifecycle` (đơn `PAID` cũ → `PROCESSING`) → `20261111020000_address_shipping_snapshot` → `20261111030000_vouchers` → `20261111040000_payments` → `20261111050000_return_requests`.
 
 **API quản trị** (đều yêu cầu role ADMIN): `GET /api/admin/users[/export|/:id]` · `PATCH /api/admin/users/:id/role` · `POST /api/admin/users/:id/{lock,unlock,logout}` · `GET/POST /api/admin/categories` · `PATCH/DELETE /api/admin/categories/:id` · `GET /api/admin/products[/:id]` · `PATCH /api/admin/products/:id/active` · `DELETE /api/admin/products/:id` · `GET /api/admin/orders[/export|/:id]?q=&status=&from=&to=` · `GET /api/admin/reviews?q=&rating=&verified=` · `GET /api/admin/newsletter[/export]` · `DELETE /api/admin/newsletter/:id` · `GET /api/admin/audit-logs?q=&entityType=`.
 
 **API mới gần đây:** `DELETE /api/account` · `PATCH /api/account/profile` · `POST /api/account/avatar` · `GET/POST /api/account/addresses` · `PUT/DELETE /api/account/addresses/:id` · `POST /api/account/addresses/:id/default` · `GET /api/products?minPrice=&maxPrice=` · `GET /api/products/summary` · `GET /api/media/avatars/:userId/:file`.
+
+**API mua hàng & thanh toán (11/11/2026):** `POST /api/checkout/preview` · `POST /api/orders` (`cartProductIds` | `items`, `addressId`, `voucherCode`, `shippingVoucherCode`, `paymentMethod`, `note`, `expectedTotal`) · `GET /api/orders?tab=awaiting_payment|to_ship|shipping|completed|cancelled|return` · `POST /api/orders/:id/{cancel,received,buy-again}` · `GET/POST /api/orders/:id/payments` · `GET/POST /api/orders/:id/return` · `GET /api/payments/methods` · `GET /api/payments/ipn/vnpay` · `POST /api/payments/ipn/momo` · `POST /api/payments/mock/notify` · `GET /api/vouchers[/mine|/wallet]` · `POST /api/vouchers/save` · `GET /api/locations/provinces[/:code/wards]` · Admin: `GET/POST/PATCH /api/admin/vouchers` · `GET /api/admin/orders/:id/payments` · `POST /api/admin/payments/:id/confirm` · `GET /api/admin/refunds` · `POST /api/admin/refunds/:id/{retry,complete}` · `GET /api/admin/returns` · `POST /api/admin/returns/:id/{approve,reject}`.
+
+**Bật thanh toán online thật (sandbox):** điền `VNPAY_TMN_CODE` + `VNPAY_HASH_SECRET` (đăng ký tại sandbox.vnpayment.vn) và/hoặc `MOMO_PARTNER_CODE` + `MOMO_ACCESS_KEY` + `MOMO_SECRET_KEY` vào `~/.homeshop/prod.env`, khai báo IPN URL `https://<domain>/api/payments/ipn/vnpay` trong cổng merchant VNPay, rồi nạp lại secret `PROD_ENV_FILE` và deploy. Chưa có khóa mà muốn demo luồng online: đặt `PAYMENT_MOCK_ENABLED=true`.
 
 **Việc còn lại (tùy chọn):** đổi token Docker Hub định kỳ; bật *Required reviewers* cho environment `production`; nâng `@nestjs/core` lên 12 và `file-type` (5 lỗ hổng moderate còn lại); cấu hình `SMTP_URL` (Amazon SES) để gửi email thật; Google/Facebook OAuth cho production; Discord/Telegram để nhận cảnh báo; dùng tên miền riêng; chuyển Terraform state lên S3 backend.
 
