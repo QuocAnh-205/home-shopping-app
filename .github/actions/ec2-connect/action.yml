@@ -1,0 +1,86 @@
+# Bước dùng chung cho deploy staging / production / rollback:
+# OIDC → AWS (không lưu access key) · mở tạm port 22 cho đúng IP runner · SSH · đồng bộ cấu hình + .env lên EC2.
+# Job gọi action này PHẢI có bước cuối "Đóng port 22" (if: always()) – composite action không có post-step.
+name: EC2 connect
+description: Mở tạm SSH cho runner, cấu hình SSH host "prod" và đồng bộ file cấu hình lên EC2
+
+inputs:
+  role-arn: { description: AWS role cho GitHub OIDC, required: true }
+  aws-region: { description: AWS region, required: true }
+  sg-id: { description: Security Group của EC2, required: true }
+  host: { description: IP / hostname EC2, required: true }
+  ssh-private-key: { description: Khóa SSH deploy, required: true }
+  ssh-known-hosts: { description: known_hosts đã ghim (tùy chọn), required: false, default: "" }
+  env-file: { description: Nội dung .env production (GitHub Secret PROD_ENV_FILE), required: true }
+  dockerhub-username: { description: Docker Hub user, required: true }
+  dockerhub-token: { description: Docker Hub token, required: true }
+  app-dir: { description: Thư mục ứng dụng trên EC2, required: true }
+
+outputs:
+  runner-ip:
+    description: IP runner đã được mở port 22 (để đóng lại)
+    value: ${{ steps.sg.outputs.runner_ip }}
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+        role-session-name: gha-${{ github.run_id }}-${{ github.job }}
+
+    - name: Mở tạm port 22 cho IP của runner (Least Privilege)
+      id: sg
+      shell: bash
+      env:
+        SG_ID: ${{ inputs.sg-id }}
+      run: |
+        RUNNER_IP="$(curl -fsS --retry 3 https://checkip.amazonaws.com | tr -d '[:space:]')"
+        echo "::add-mask::$RUNNER_IP"
+        echo "runner_ip=$RUNNER_IP" >> "$GITHUB_OUTPUT"
+        aws ec2 authorize-security-group-ingress \
+          --group-id "$SG_ID" \
+          --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description=gha-run-${GITHUB_RUN_ID}-${GITHUB_JOB}}]"
+
+    - name: Setup SSH
+      shell: bash
+      env:
+        SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.ssh-known-hosts }}
+        EC2_HOST: ${{ inputs.host }}
+      run: |
+        install -m 700 -d ~/.ssh
+        printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        if [ -n "$SSH_KNOWN_HOSTS" ]; then
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+        else
+          for _ in 1 2 3 4 5; do ssh-keyscan -T 10 -H "$EC2_HOST" > ~/.ssh/known_hosts 2>/dev/null && [ -s ~/.ssh/known_hosts ] && break; sleep 5; done
+        fi
+        cat > ~/.ssh/config <<EOF
+        Host prod
+          HostName ${EC2_HOST}
+          User ubuntu
+          IdentityFile ~/.ssh/deploy_key
+          IdentitiesOnly yes
+          StrictHostKeyChecking yes
+          ServerAliveInterval 30
+          ConnectTimeout 15
+        EOF
+
+    - name: Đồng bộ file cấu hình lên EC2
+      shell: bash
+      env:
+        PROD_ENV_FILE: ${{ inputs.env-file }}
+        DOCKERHUB_USERNAME: ${{ inputs.dockerhub-username }}
+        DOCKERHUB_TOKEN: ${{ inputs.dockerhub-token }}
+        APP_DIR: ${{ inputs.app-dir }}
+      run: |
+        rsync -az --delete-after --exclude 'alertmanager/alertmanager.yml' \
+          docker-compose.prod.yml docker-compose.staging.yml nginx monitoring scripts prod:"$APP_DIR/"
+        ssh prod "chmod +x $APP_DIR/scripts/*.sh"
+        # .env được ghi qua stdin với umask 077 → không xuất hiện trong process list / log
+        printf '%s\nDOCKERHUB_USERNAME=%s\n' "$PROD_ENV_FILE" "$DOCKERHUB_USERNAME" | ssh prod "umask 077 && cat > $APP_DIR/.env"
+        printf '%s' "$DOCKERHUB_TOKEN" | ssh prod "docker login -u '$DOCKERHUB_USERNAME' --password-stdin >/dev/null"

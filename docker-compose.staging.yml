@@ -1,0 +1,173 @@
+# ============================================================
+# Home Shopping App - STAGING stack (chạy chung EC2 với production, tách biệt hoàn toàn dữ liệu)
+#
+# - Project riêng "homeshop-staging": container, database, Redis, volume riêng → không đụng dữ liệu production
+# - Không có Nginx riêng: Nginx production định tuyến theo tên miền staging.<DOMAIN> tới 2 alias
+#   staging-frontend / staging-backend trên mạng homeshop-frontend-net (xem nginx/nginx.conf: map $host)
+# - Cổng thanh toán giả lập, không S3, không email, không OAuth → không thể tạo giao dịch / gửi mail thật
+# - Giới hạn RAM chặt (t3.small 2 GB + swap) → staging không thể làm production thiếu RAM
+# Chạy bởi scripts/deploy-staging.sh (pipeline gọi tự động trước khi deploy production)
+# ============================================================
+name: homeshop-staging
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "2"
+    tag: "{{.Name}}"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  frontend:
+    image: ${DOCKERHUB_USERNAME:?DOCKERHUB_USERNAME is required}/home-shopping-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
+    container_name: homeshop-staging-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      INTERNAL_API_URL: http://staging-backend:8080
+    networks:
+      edge:
+        aliases: [staging-frontend]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      - /app/.next/cache:uid=1001,gid=1001,size=64m
+    <<: *hardening
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+    logging: *default-logging
+
+  backend:
+    image: ${DOCKERHUB_USERNAME:?DOCKERHUB_USERNAME is required}/home-shopping-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    container_name: homeshop-staging-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      LOG_LEVEL: info
+      APP_ENV: staging
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/homeshop_staging?schema=public&connection_limit=5&pool_timeout=10
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      JWT_SECRET: ${STAGING_JWT_SECRET:?STAGING_JWT_SECRET is required}
+      JWT_EXPIRES_IN: 1d
+      APP_URL: ${STAGING_URL:?STAGING_URL is required}
+      CORS_ORIGINS: ${STAGING_URL}
+      APP_VERSION: ${IMAGE_TAG}
+      SWAGGER_ENABLED: "true"
+      UPLOAD_DIR: /app/uploads
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_SAMPLE_REVIEWS: "true"
+      SEED_DEMO_CUSTOMERS: "true"
+      PAYMENT_MOCK_ENABLED: "true"
+      TRANSFER_AUTO_CONFIRM: "true"
+    networks:
+      edge:
+        aliases: [staging-backend]
+      data: {}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+      - /home/nestjs:uid=1001,gid=1001,size=32m
+    volumes:
+      - uploads:/app/uploads
+    <<: *hardening
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 384M
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: homeshop-staging-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: homeshop_staging
+    command: ["postgres", "-c", "shared_buffers=48MB", "-c", "max_connections=30"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d homeshop_staging"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 192M
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: homeshop-staging-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: ["/bin/sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --maxmemory 48mb --maxmemory-policy volatile-lru"]
+    networks:
+      - data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+    logging: *default-logging
+
+networks:
+  # Mạng của Nginx production (đã tồn tại) → Nginx gọi được staging-frontend / staging-backend
+  edge:
+    name: homeshop-frontend-net
+    external: true
+  # DB/Redis staging: mạng nội bộ riêng, không có Internet, không chung với DB production
+  data:
+    name: homeshop-staging-data
+    internal: true
+
+volumes:
+  pgdata:
+    name: homeshop-staging-pgdata
+  uploads:
+    name: homeshop-staging-uploads
