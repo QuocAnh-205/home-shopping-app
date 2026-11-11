@@ -90,7 +90,7 @@ export class OrdersService {
           // Sắp xếp theo id để mọi transaction khóa row theo cùng thứ tự → tránh deadlock
           const products = await tx.product.findMany({
             where: { id: { in: [...cart.keys()] }, isActive: true },
-            select: { id: true, price: true },
+            select: { id: true, price: true, name: true, slug: true, imageKey: true },
             orderBy: { id: 'asc' },
           });
           if (products.length !== cart.size) throw new BadRequestException('Some products in your cart are no longer available');
@@ -111,10 +111,18 @@ export class OrdersService {
               userId,
               idempotencyKey,
               totalAmount: total,
+              subtotal: total,
               shippingAddress: dto.shippingAddress,
               phone: dto.phone,
               items: {
-                create: products.map((p) => ({ productId: p.id, quantity: cart.get(p.id)!, unitPrice: p.price })),
+                create: products.map((p) => ({
+                  productId: p.id,
+                  quantity: cart.get(p.id)!,
+                  unitPrice: p.price,
+                  productName: p.name,
+                  productSlug: p.slug,
+                  imageKey: p.imageKey,
+                })),
               },
               history: { create: { toStatus: OrderStatus.PENDING, actorType: ActorType.CUSTOMER, actorId: userId, note: 'Đặt hàng' } },
             },

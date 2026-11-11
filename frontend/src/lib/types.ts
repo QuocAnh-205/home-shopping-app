@@ -191,16 +191,39 @@ export interface Address {
   fullName: string;
   phone: string;
   province: string;
-  district: string;
+  /** Chỉ còn ở địa chỉ cũ (cấp huyện đã bỏ từ 01/07/2025) */
+  district: string | null;
   ward: string;
   street: string;
+  /** null = địa chỉ cũ nhập tay, cần cập nhật lại theo tỉnh/xã mới trước khi đặt hàng */
+  provinceCode: number | null;
+  wardCode: number | null;
   type: AddressType;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export type AddressInput = Omit<Address, 'id' | 'createdAt' | 'updatedAt'>;
+export interface AddressInput {
+  fullName: string;
+  phone: string;
+  provinceCode: number | null;
+  wardCode: number | null;
+  street: string;
+  type: AddressType;
+  isDefault: boolean;
+}
+
+export interface Province {
+  code: number;
+  name: string;
+  region: 'NORTH' | 'CENTRAL' | 'SOUTH';
+}
+
+export interface Ward {
+  code: number;
+  name: string;
+}
 
 /** "12 Bạch Đằng, P. Hải Châu 1, Q. Hải Châu, Đà Nẵng" – dùng làm địa chỉ giao hàng của đơn */
 export function formatAddress(a: Pick<Address, 'street' | 'ward' | 'district' | 'province'>): string {

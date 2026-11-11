@@ -116,6 +116,31 @@ export class CreateProductDto {
   @Min(1)
   categoryId: number;
 
+  /** Cân nặng đóng gói (gram) & kích thước (cm): dùng tính phí vận chuyển */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100_000)
+  weightGrams?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(300)
+  lengthCm?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(300)
+  widthCm?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(300)
+  heightCm?: number;
+
   @IsOptional()
   @IsBoolean()
   isHot?: boolean;

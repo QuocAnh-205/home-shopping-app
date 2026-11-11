@@ -407,6 +407,15 @@ describe('Home Shopping API (e2e)', () => {
     });
   });
 
+  it('lists the 34 provinces and their wards (2-level administrative units)', async () => {
+    const provinces = await http().get('/api/locations/provinces').expect(200);
+    expect(provinces.body).toHaveLength(34);
+    expect(provinces.body.find((p: { code: number }) => p.code === 79)).toMatchObject({ name: 'Thành phố Hồ Chí Minh', region: 'SOUTH' });
+    const wards = await http().get('/api/locations/provinces/48/wards').expect(200);
+    expect(wards.body.some((w: { name: string }) => w.name === 'Phường Hải Châu')).toBe(true);
+    await http().get('/api/locations/provinces/999/wards').expect(404);
+  });
+
   it('newsletter subscription is idempotent and sends one welcome mail', async () => {
     const email = `news-${run}@e2e.test`;
     await http().post('/api/newsletter/subscribe').send({ email }).expect(200);
@@ -416,7 +425,8 @@ describe('Home Shopping API (e2e)', () => {
   });
 
   describe('my account (profile, avatar, address book)', () => {
-    const address = { fullName: 'Alice E2E', phone: '0912345678', province: 'Đà Nẵng', district: 'Q. Hải Châu', ward: 'P. Hải Châu 1', street: '12 Bạch Đằng' };
+    // Đà Nẵng (48) – Phường Hải Châu (20242), đơn vị hành chính mới (cần seed danh mục tỉnh/xã)
+    const address = { fullName: 'Alice E2E', phone: '0912345678', provinceCode: 48, wardCode: 20242, street: '12 Bạch Đằng' };
     // PNG 1x1 hợp lệ (magic bytes đúng)
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
@@ -458,7 +468,10 @@ describe('Home Shopping API (e2e)', () => {
 
     it('address book: first is default, one default at a time, private per user', async () => {
       const first = await http().post('/api/account/addresses').set(auth(aliceToken)).send(address).expect(201);
-      expect(first.body.isDefault).toBe(true);
+      expect(first.body).toMatchObject({ isDefault: true, province: 'Thành phố Đà Nẵng', ward: 'Phường Hải Châu', district: null, provinceCode: 48 });
+      // Xã không thuộc tỉnh đã chọn (Phường Ba Đình là của Hà Nội)
+      const wrong = await http().post('/api/account/addresses').set(auth(aliceToken)).send({ ...address, wardCode: 4 }).expect(400);
+      expect(wrong.body.code).toBe('ADDRESS_INVALID');
 
       const second = await http()
         .post('/api/account/addresses')
@@ -492,7 +505,7 @@ describe('Home Shopping API (e2e)', () => {
     await http()
       .post('/api/account/addresses')
       .set(auth(zoe.token))
-      .send({ fullName: 'Zoe', phone: '0912345678', province: 'Huế', district: 'TP Huế', ward: 'Phú Hội', street: '1 Lê Lợi' })
+      .send({ fullName: 'Zoe', phone: '0912345678', provinceCode: 46, wardCode: 19789, street: '1 Lê Lợi' })
       .expect(201);
 
     await http().delete('/api/account').set(auth(zoe.token)).send({ confirmEmail: 'wrong@e2e.test', password }).expect(400);

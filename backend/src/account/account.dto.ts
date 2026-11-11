@@ -1,6 +1,6 @@
 import { AddressType } from '@prisma/client';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, Matches, MaxLength, Min, MinLength } from 'class-validator';
 import { VN_PHONE_RE } from '../auth/auth.dto';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value);
@@ -19,26 +19,17 @@ export class AddressDto {
   @Matches(VN_PHONE_RE, { message: 'phone must be a valid Vietnamese phone number' })
   phone: string;
 
-  @IsString()
-  @Transform(trim)
-  @MinLength(2)
-  @MaxLength(100)
-  @Matches(NO_HTML)
-  province: string;
+  /** Mã tỉnh/thành (GET /api/locations/provinces) – đơn vị hành chính 2 cấp từ 01/07/2025 */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  provinceCode: number;
 
-  @IsString()
-  @Transform(trim)
-  @MinLength(2)
-  @MaxLength(100)
-  @Matches(NO_HTML)
-  district: string;
-
-  @IsString()
-  @Transform(trim)
-  @MinLength(2)
-  @MaxLength(100)
-  @Matches(NO_HTML)
-  ward: string;
+  /** Mã xã/phường (GET /api/locations/provinces/:code/wards); server kiểm tra xã thuộc đúng tỉnh */
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  wardCode: number;
 
   @IsString()
   @Transform(trim)

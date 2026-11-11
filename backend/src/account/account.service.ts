@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
+import { LocationsService } from '../locations/locations.service';
 import { AddressDto, DeleteAccountDto } from './account.dto';
 
 export const MAX_ADDRESSES = 10;
@@ -24,6 +25,8 @@ const addressSelect = {
   district: true,
   ward: true,
   street: true,
+  provinceCode: true,
+  wardCode: true,
   type: true,
   isDefault: true,
   createdAt: true,
@@ -41,7 +44,15 @@ export class AccountService {
     private readonly storage: StorageService,
     private readonly redis: RedisService,
     private readonly products: ProductsService,
+    private readonly locations: LocationsService,
   ) {}
+
+  /** DTO (mã tỉnh/xã) → dữ liệu lưu DB kèm tên chuẩn lấy từ danh mục hành chính */
+  private async addressData(dto: AddressDto) {
+    const { province, ward } = await this.locations.resolve(dto.provinceCode, dto.wardCode);
+    const { isDefault: _ignored, ...rest } = dto;
+    return { ...rest, province: province.name, ward: ward.name, district: null };
+  }
 
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<AccountProfile> {
     const data: Prisma.UserUpdateInput = {};
@@ -79,6 +90,7 @@ export class AccountService {
   }
 
   async createAddress(userId: string, dto: AddressDto): Promise<AddressView> {
+    const data = await this.addressData(dto);
     return this.prisma.$transaction(async (tx) => {
       // Khóa dòng user → 2 request tạo địa chỉ song song không vượt quá giới hạn / không tạo 2 địa chỉ mặc định
       await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
@@ -87,11 +99,12 @@ export class AccountService {
       // Địa chỉ đầu tiên luôn là mặc định
       const isDefault = count === 0 || Boolean(dto.isDefault);
       if (isDefault) await tx.address.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } });
-      return tx.address.create({ data: { ...dto, isDefault, userId }, select: addressSelect });
+      return tx.address.create({ data: { ...data, isDefault, userId }, select: addressSelect });
     });
   }
 
   async updateAddress(userId: string, id: string, dto: AddressDto): Promise<AddressView> {
+    const data = await this.addressData(dto);
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
       const current = await tx.address.findFirst({ where: { id, userId }, select: { isDefault: true } });
@@ -99,7 +112,7 @@ export class AccountService {
       // Không cho bỏ cờ mặc định trực tiếp: phải chọn địa chỉ khác làm mặc định
       const isDefault = current.isDefault || Boolean(dto.isDefault);
       if (isDefault && !current.isDefault) await tx.address.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } });
-      return tx.address.update({ where: { id }, data: { ...dto, isDefault }, select: addressSelect });
+      return tx.address.update({ where: { id }, data: { ...data, isDefault }, select: addressSelect });
     });
   }
 

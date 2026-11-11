@@ -4,9 +4,44 @@ import { faBuilding, faCircleCheck, faHouse, faPlus, faSpinner, faTriangleExclam
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { apiFetch } from '@/lib/client-api';
-import { formatAddress, type Address, type AddressInput, type AddressType } from '@/lib/types';
+import { formatAddress, type Address, type AddressInput, type AddressType, type Province, type Ward } from '@/lib/types';
 
-const EMPTY: AddressInput = { fullName: '', phone: '', province: '', district: '', ward: '', street: '', type: 'HOME', isDefault: false };
+const EMPTY: AddressInput = { fullName: '', phone: '', provinceCode: null, wardCode: null, street: '', type: 'HOME', isDefault: false };
+
+let provinceCache: Promise<Province[]> | null = null;
+const wardCache = new Map<number, Promise<Ward[]>>();
+
+/** Danh mục tỉnh/xã (đơn vị hành chính 2 cấp) – tải 1 lần, dùng lại giữa các lần mở form */
+function useLocations(provinceCode: number | null) {
+  const [provinces, setProvinces] = useState<Province[]>([]);
+  const [wards, setWards] = useState<Ward[]>([]);
+  useEffect(() => {
+    provinceCache ??= apiFetch<Province[]>('/locations/provinces').catch((err) => {
+      provinceCache = null;
+      throw err;
+    });
+    provinceCache.then(setProvinces).catch(() => setProvinces([]));
+  }, []);
+  useEffect(() => {
+    if (!provinceCode) {
+      setWards([]);
+      return;
+    }
+    let active = true;
+    if (!wardCache.has(provinceCode)) wardCache.set(provinceCode, apiFetch<Ward[]>(`/locations/provinces/${provinceCode}/wards`));
+    wardCache
+      .get(provinceCode)!
+      .then((w) => active && setWards(w))
+      .catch(() => {
+        wardCache.delete(provinceCode);
+        if (active) setWards([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [provinceCode]);
+  return { provinces, wards };
+}
 
 function AddressDialog({
   initial,
@@ -18,7 +53,20 @@ function AddressDialog({
   onSaved: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const [form, setForm] = useState<AddressInput>(() => (initial ? { ...initial } : EMPTY));
+  const [form, setForm] = useState<AddressInput>(() =>
+    initial
+      ? {
+          fullName: initial.fullName,
+          phone: initial.phone,
+          provinceCode: initial.provinceCode,
+          wardCode: initial.wardCode,
+          street: initial.street,
+          type: initial.type,
+          isDefault: initial.isDefault,
+        }
+      : EMPTY,
+  );
+  const { provinces, wards } = useLocations(form.provinceCode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,11 +80,10 @@ function AddressDialog({
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { fullName, phone, province, district, ward, street, type, isDefault } = form;
     try {
       await apiFetch(initial ? `/account/addresses/${initial.id}` : '/account/addresses', {
         method: initial ? 'PUT' : 'POST',
-        body: JSON.stringify({ fullName, phone, province, district, ward, street, type, isDefault }),
+        body: JSON.stringify(form),
       });
       onSaved();
     } catch (err) {
@@ -74,17 +121,43 @@ function AddressDialog({
               placeholder="0901234567"
             />
           </label>
+          {initial && !initial.provinceCode && (
+            <p className="alert alert-info span-2" style={{ margin: 0 }}>
+              Địa chỉ cũ: {formatAddress(initial)}. Vui lòng chọn lại Tỉnh/Thành và Phường/Xã theo đơn vị hành chính mới (từ 01/07/2025).
+            </p>
+          )}
           <label className="field">
             Tỉnh / Thành phố
-            <input className="input" value={form.province} onChange={(e) => set('province', e.target.value)} minLength={2} maxLength={100} required placeholder="TP. Hồ Chí Minh" />
+            <select
+              className="input"
+              value={form.provinceCode ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, provinceCode: e.target.value ? Number(e.target.value) : null, wardCode: null }))}
+              required
+            >
+              <option value="">— Chọn tỉnh/thành —</option>
+              {provinces.map((p) => (
+                <option key={p.code} value={p.code}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
-            Quận / Huyện
-            <input className="input" value={form.district} onChange={(e) => set('district', e.target.value)} minLength={2} maxLength={100} required placeholder="Quận 1" />
-          </label>
-          <label className="field span-2">
             Phường / Xã
-            <input className="input" value={form.ward} onChange={(e) => set('ward', e.target.value)} minLength={2} maxLength={100} required placeholder="P. Bến Nghé" />
+            <select
+              className="input"
+              value={form.wardCode ?? ''}
+              onChange={(e) => set('wardCode', e.target.value ? Number(e.target.value) : null)}
+              disabled={!form.provinceCode || wards.length === 0}
+              required
+            >
+              <option value="">{form.provinceCode ? '— Chọn phường/xã —' : 'Chọn tỉnh/thành trước'}</option>
+              {wards.map((w) => (
+                <option key={w.code} value={w.code}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field span-2">
             Địa chỉ cụ thể
@@ -198,7 +271,8 @@ export function AddressTab() {
                   <span className="muted">{a.phone}</span>
                 </p>
                 <p className="muted">{a.street}</p>
-                <p className="muted">{[a.ward, a.district, a.province].join(', ')}</p>
+                <p className="muted">{[a.ward, a.district, a.province].filter(Boolean).join(', ')}</p>
+                {!a.provinceCode && <p className="small" style={{ color: 'var(--warn)' }}>Cần cập nhật theo địa giới hành chính mới</p>}
                 <p className="addr-tags">
                   {a.isDefault && <span className="badge badge-primary">Mặc định</span>}
                   <span className="badge badge-outline">

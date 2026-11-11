@@ -14,6 +14,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { LocationsModule } from './locations/locations.module';
 import { MailModule } from './mail/mail.module';
 import { MediaModule } from './media/media.module';
 import { MetricsModule } from './metrics/metrics.module';
@@ -23,6 +24,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { RedisModule } from './redis/redis.module';
 import { ReviewsModule } from './reviews/reviews.module';
+import { ShippingModule } from './shipping/shipping.module';
 import { StorageModule } from './storage/storage.module';
 
 @Module({
@@ -75,6 +77,8 @@ import { StorageModule } from './storage/storage.module';
     HealthModule,
     AuthModule,
     CategoriesModule,
+    LocationsModule,
+    ShippingModule,
     ProductsModule,
     CartModule,
     OrdersModule,

@@ -55,6 +55,26 @@ function hash(str) {
   return h;
 }
 
+// Kích thước đóng gói mặc định theo danh mục (cm) và cân nặng khi catalog không ghi "Trọng lượng"
+const PACKAGE = {
+  'dien-gia-dung': { grams: 3000, dims: [40, 30, 30] },
+  'nha-bep': { grams: 1500, dims: [35, 25, 15] },
+  'ban-an': { grams: 1200, dims: [30, 30, 15] },
+  'phong-khach': { grams: 8000, dims: [60, 45, 40] },
+  'phong-ngu': { grams: 2500, dims: [50, 40, 20] },
+  'phong-tam': { grams: 1000, dims: [30, 20, 15] },
+  'trang-tri': { grams: 800, dims: [25, 25, 20] },
+};
+
+/** "4.3 kg" / "160 g" trong thông số → gram (+10% bao bì) */
+function packageOf(p) {
+  const raw = p.specs?.['Trọng lượng'] ?? p.specs?.['Khối lượng'];
+  const m = typeof raw === 'string' ? raw.replace(',', '.').match(/([\d.]+)\s*(kg|g)\b/i) : null;
+  const def = PACKAGE[p.cat] ?? { grams: 500, dims: [20, 20, 15] };
+  const grams = m ? Math.round(Number(m[1]) * (m[2].toLowerCase() === 'kg' ? 1000 : 1) * 1.1) : def.grams;
+  return { weightGrams: Math.max(50, grams), lengthCm: def.dims[0], widthCm: def.dims[1], heightCm: def.dims[2] };
+}
+
 function toProductData(p, categoryId) {
   const story = CATEGORY_STORY[p.cat] ?? '';
   return {
@@ -65,6 +85,7 @@ function toProductData(p, categoryId) {
     price: p.price,
     compareAtPrice: p.compare ?? null,
     imageKey: `/images/products/${p.slug}.webp`,
+    ...packageOf(p),
     isHot: Boolean(p.hot),
     categoryId,
   };
@@ -120,7 +141,7 @@ function orderTimeline(status, createdAt) {
 
 /** Lịch sử ~140 đơn hàng trong 60 ngày (giá theo bảng giá hiện tại) để dashboard có số liệu thật để phân tích */
 async function seedOrders(customers) {
-  const catalog = await prisma.product.findMany({ select: { id: true, slug: true, price: true } });
+  const catalog = await prisma.product.findMany({ select: { id: true, slug: true, price: true, name: true, imageKey: true } });
   catalog.sort((a, b) => a.slug.localeCompare(b.slug));
   let created = 0;
   for (let i = 0; i < 140; i++) {
@@ -143,7 +164,14 @@ async function seedOrders(customers) {
       const product = catalog[(h >>> (k * 5)) % catalog.length];
       lines.set(product.id, { product, quantity: 1 + ((h >>> (k * 7)) % 2) });
     }
-    const items = [...lines.values()].map(({ product, quantity }) => ({ productId: product.id, quantity, unitPrice: product.price }));
+    const items = [...lines.values()].map(({ product, quantity }) => ({
+      productId: product.id,
+      quantity,
+      unitPrice: product.price,
+      productName: product.name,
+      productSlug: product.slug,
+      imageKey: product.imageKey,
+    }));
     const total = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
 
     const timeline = orderTimeline(status, createdAt);
@@ -153,6 +181,7 @@ async function seedOrders(customers) {
         idempotencyKey: key,
         status,
         totalAmount: total,
+        subtotal: total,
         shippingAddress: ADDRESSES[h % ADDRESSES.length],
         phone: `09${String(10000000 + (h % 89999999)).slice(0, 8)}`,
         createdAt,
@@ -243,7 +272,53 @@ async function clearProductCache() {
   }
 }
 
+/** 34 tỉnh + 3.321 xã theo đơn vị hành chính mới (01/07/2025); chỉ chèn khi còn thiếu */
+async function seedLocations() {
+  const units = require('./data/vn-admin-units.json');
+  const wardTotal = units.reduce((n, p) => n + p.wards.length, 0);
+  if ((await prisma.province.count()) === units.length && (await prisma.ward.count()) === wardTotal) return;
+  const regionOf = (code) => (code <= 37 ? 'NORTH' : code <= 68 ? 'CENTRAL' : 'SOUTH');
+  await prisma.province.createMany({
+    data: units.map((p) => ({ code: p.code, name: p.name, region: regionOf(p.code) })),
+    skipDuplicates: true,
+  });
+  await prisma.ward.createMany({
+    data: units.flatMap((p) => p.wards.map(([code, name]) => ({ code, name, provinceCode: p.code }))),
+    skipDuplicates: true,
+  });
+  console.log(`  ${units.length} provinces, ${wardTotal} wards`);
+}
+
+/** Địa chỉ mặc định cho tài khoản khách demo (để thử đặt hàng ngay), chỉ tạo khi họ chưa có địa chỉ nào */
+async function seedDemoAddresses(customers) {
+  const samples = [
+    { provinceCode: 79, wardCode: 26743, street: '25 Nguyễn Huệ' },
+    { provinceCode: 1, wardCode: 70, street: '42 Lý Thường Kiệt' },
+    { provinceCode: 48, wardCode: 20242, street: '118 Trần Phú' },
+  ];
+  for (const [i, user] of customers.entries()) {
+    if (await prisma.address.count({ where: { userId: user.id } })) continue;
+    const s = samples[i % samples.length];
+    const ward = await prisma.ward.findUnique({ where: { code: s.wardCode }, include: { province: true } });
+    if (!ward || ward.provinceCode !== s.provinceCode) continue;
+    await prisma.address.create({
+      data: {
+        userId: user.id,
+        fullName: user.fullName,
+        phone: `090${String(1234567 + i).padStart(7, '0')}`,
+        province: ward.province.name,
+        ward: ward.name,
+        street: s.street,
+        provinceCode: s.provinceCode,
+        wardCode: s.wardCode,
+        isDefault: true,
+      },
+    });
+  }
+}
+
 async function main() {
+  await seedLocations();
   for (const c of categories) {
     await prisma.category.upsert({ where: { slug: c.slug }, update: { name: c.name }, create: { name: c.name, slug: c.slug } });
   }
@@ -273,7 +348,9 @@ async function main() {
   // Production demo: chỉ tạo các tài khoản KHÁCH trong demo-accounts.js (không tạo admin mật khẩu công khai,
   // không tạo đơn hàng giả) để giảng viên/người xem đăng nhập thử được ngay
   if (process.env.SEED_DEMO_CUSTOMERS === 'true' && process.env.SEED_DEMO_DATA !== 'true') {
-    for (const a of demoAccounts.filter((x) => x.role === 'CUSTOMER')) await upsertDemoAccount(a);
+    const customers = [];
+    for (const a of demoAccounts.filter((x) => x.role === 'CUSTOMER')) customers.push(await upsertDemoAccount(a));
+    await seedDemoAddresses(customers);
   }
 
   if (process.env.SEED_DEMO_DATA === 'true') {
@@ -281,6 +358,7 @@ async function main() {
     for (const a of demoAccounts) accounts.push(await upsertDemoAccount(a));
     const customers = accounts.filter((u) => u.role === Role.CUSTOMER);
     if (customers.length > 0) {
+      await seedDemoAddresses(customers);
       await seedReviews(customers);
       await seedOrders(customers);
     }

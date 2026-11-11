@@ -66,6 +66,13 @@ enum AddressType {
   OFFICE
 }
 
+/// Vùng giao hàng (tính phí ship bảng nội bộ)
+enum Region {
+  NORTH
+  CENTRAL
+  SOUTH
+}
+
 enum OAuthProvider {
   GOOGLE
   FACEBOOK
@@ -106,10 +113,14 @@ model Address {
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   fullName  String      @map("full_name") @db.VarChar(100)
   phone     String      @db.VarChar(15)
-  province  String      @db.VarChar(100)
-  district  String      @db.VarChar(100)
-  ward      String      @db.VarChar(100)
-  street    String      @db.VarChar(255)
+  /// Tên tỉnh/xã lưu kèm để hiển thị nhanh; mã hành chính (chuẩn 2 cấp từ 01/07/2025) dùng tính phí ship
+  province     String      @db.VarChar(100)
+  /// Cấp huyện đã bỏ từ 01/07/2025: chỉ còn ở địa chỉ cũ
+  district     String?     @db.VarChar(100)
+  ward         String      @db.VarChar(100)
+  street       String      @db.VarChar(255)
+  provinceCode Int?        @map("province_code")
+  wardCode     Int?        @map("ward_code")
   type      AddressType @default(HOME)
   isDefault Boolean     @default(false) @map("is_default")
   createdAt DateTime    @default(now()) @map("created_at")
@@ -117,6 +128,27 @@ model Address {
 
   @@index([userId, createdAt])
   @@map("addresses")
+}
+
+/// Tỉnh/thành theo đơn vị hành chính mới (34 tỉnh, hiệu lực 01/07/2025)
+model Province {
+  code   Int    @id
+  name   String @db.VarChar(100)
+  region Region
+  wards  Ward[]
+
+  @@map("provinces")
+}
+
+/// Xã/phường/đặc khu (3.321 đơn vị, không còn cấp huyện)
+model Ward {
+  code         Int      @id
+  name         String   @db.VarChar(100)
+  provinceCode Int      @map("province_code")
+  province     Province @relation(fields: [provinceCode], references: [code])
+
+  @@index([provinceCode])
+  @@map("wards")
 }
 
 model OAuthAccount {
@@ -174,6 +206,11 @@ model Product {
   ratingAvg      Decimal     @default(0) @map("rating_avg") @db.Decimal(3, 2)
   ratingCount    Int         @default(0) @map("rating_count")
   imageKey       String?     @map("image_key")
+  /// Cân nặng & kích thước đóng gói: tính phí vận chuyển (khối lượng quy đổi = D×R×C/6000)
+  weightGrams    Int         @default(500) @map("weight_grams")
+  lengthCm       Int         @default(20) @map("length_cm")
+  widthCm        Int         @default(20) @map("width_cm")
+  heightCm       Int         @default(15) @map("height_cm")
   isHot          Boolean     @default(false) @map("is_hot")
   /// false = admin ẩn khỏi cửa hàng (không xóa vì đơn hàng cũ còn tham chiếu)
   isActive       Boolean     @default(true) @map("is_active")
@@ -226,10 +263,24 @@ model Order {
   userId          String      @map("user_id") @db.Uuid
   user            User        @relation(fields: [userId], references: [id])
   status          OrderStatus @default(PENDING)
-  /// VND
+  /// VND. totalAmount = subtotal + shippingFee − discountAmount − shippingDiscount
   totalAmount     Int         @map("total_amount")
+  subtotal        Int         @default(0)
+  shippingFee     Int         @default(0) @map("shipping_fee")
+  /// Giảm giá từ voucher sản phẩm/đơn hàng
+  discountAmount  Int         @default(0) @map("discount_amount")
+  /// Giảm phí ship (voucher freeship / ngưỡng miễn phí)
+  shippingDiscount Int        @default(0) @map("shipping_discount")
+  /// Snapshot địa chỉ lúc đặt (sổ địa chỉ có sửa/xóa sau đó cũng không ảnh hưởng đơn)
   shippingAddress String      @map("shipping_address")
+  recipientName   String?     @map("recipient_name") @db.VarChar(100)
   phone           String
+  provinceCode    Int?        @map("province_code")
+  wardCode        Int?        @map("ward_code")
+  shippingProvider String?    @map("shipping_provider") @db.VarChar(32)
+  estimatedDeliveryFrom DateTime? @map("estimated_delivery_from") @db.Date
+  estimatedDeliveryTo   DateTime? @map("estimated_delivery_to") @db.Date
+  note            String?     @db.VarChar(255)
   idempotencyKey  String      @unique @map("idempotency_key")
   paymentMethod   PaymentMethod      @default(COD) @map("payment_method")
   paymentStatus   OrderPaymentStatus @default(UNPAID) @map("payment_status")
@@ -281,6 +332,10 @@ model OrderItem {
   quantity  Int
   /// VND
   unitPrice Int     @map("unit_price")
+  /// Snapshot lúc đặt: sản phẩm có đổi tên/ảnh/giá sau đó, đơn vẫn hiển thị đúng thứ khách đã mua
+  productName String  @map("product_name")
+  productSlug String  @map("product_slug")
+  imageKey    String? @map("image_key")
 
   @@index([orderId])
   @@map("order_items")

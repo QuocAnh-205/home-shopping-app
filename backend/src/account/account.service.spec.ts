@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from '../auth/auth.service';
+import { LocationsService } from '../locations/locations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
 import { RedisService } from '../redis/redis.service';
@@ -29,14 +30,18 @@ describe('AccountService', () => {
   const multi = { del: jest.fn().mockReturnThis(), set: jest.fn().mockReturnThis(), exec: jest.fn() };
   const redis = { client: { multi: jest.fn(() => multi) } };
   const products = { invalidateCache: jest.fn() };
+  const locations = {
+    resolve: jest.fn(async () => ({ province: { code: 48, name: 'Thành phố Đà Nẵng', region: 'CENTRAL' }, ward: { code: 20242, name: 'Phường Hải Châu' } })),
+  };
   const service = new AccountService(
     prisma as unknown as PrismaService,
     auth as unknown as AuthService,
     storage as unknown as StorageService,
     redis as unknown as RedisService,
     products as unknown as ProductsService,
+    locations as unknown as LocationsService,
   );
-  const dto = { fullName: 'Nguyễn Văn A', phone: '0901234567', province: 'Đà Nẵng', district: 'Hải Châu', ward: 'Hải Châu 1', street: '12 Bạch Đằng' };
+  const dto = { fullName: 'Nguyễn Văn A', phone: '0901234567', provinceCode: 48, wardCode: 20242, street: '12 Bạch Đằng' };
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -64,6 +69,19 @@ describe('AccountService', () => {
       await service.createAddress(userId, { ...dto, isDefault: false });
 
       expect(tx.address.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ isDefault: true, userId }) }));
+    });
+
+    it('stores canonical province/ward names resolved from administrative codes', async () => {
+      tx.address.count.mockResolvedValue(1);
+
+      await service.createAddress(userId, dto);
+
+      expect(locations.resolve).toHaveBeenCalledWith(48, 20242);
+      expect(tx.address.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ province: 'Thành phố Đà Nẵng', ward: 'Phường Hải Châu', district: null, provinceCode: 48, wardCode: 20242 }),
+        }),
+      );
     });
 
     it('moves the default flag when a new default is added', async () => {
