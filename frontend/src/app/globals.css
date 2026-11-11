@@ -5824,3 +5824,112 @@ button.stat-tile:hover {
     border-color: var(--primary);
   }
 }
+
+/* ---------------- Chờ cửa hàng xác nhận chuyển khoản ---------------- */
+.payment-waiting {
+  border-color: var(--info);
+}
+
+.waiting-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.waiting-ico {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--info-soft);
+  color: var(--info);
+  font-size: 1.3rem;
+}
+
+.waiting-steps {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+}
+
+.waiting-steps li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 14px;
+  color: var(--muted);
+}
+
+.waiting-steps li::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 30px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.waiting-steps li:last-child::before {
+  display: none;
+}
+
+.waiting-steps li > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.waiting-steps .dot {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  z-index: 1;
+}
+
+.waiting-steps li.done {
+  color: var(--text);
+}
+
+.waiting-steps li.done .dot {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.waiting-steps li.done::before {
+  background: var(--ok);
+}
+
+.waiting-steps li.current {
+  color: var(--text);
+}
+
+.waiting-steps li.current .dot {
+  border-color: var(--info);
+  color: var(--info);
+  animation: waiting-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes waiting-pulse {
+  50% {
+    box-shadow: 0 0 0 6px var(--info-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting-steps li.current .dot {
+    animation: none;
+  }
+}
+
+.waiting-info {
+  max-width: 420px;
+}

@@ -114,7 +114,7 @@ function OrderList() {
                   .join(", ")}
               </span>
             </span>
-            <StatusBadge status={o.status} />
+            <StatusBadge status={o.status} transferClaimed={Boolean(o.transferClaimedAt)} />
             <FontAwesomeIcon icon={faChevronRight} className="muted" />
           </Link>
         ))}

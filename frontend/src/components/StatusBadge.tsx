@@ -24,10 +24,12 @@ export const STATUS_ICON: Record<OrderStatus, IconDefinition> = {
   RETURNED: faRotateLeft,
 };
 
-export function StatusBadge({ status }: { status: OrderStatus }) {
+/** transferClaimed: khách đã bấm "Tôi đã chuyển khoản" → hiện "Chờ xác nhận thanh toán" thay vì "Chờ thanh toán" */
+export function StatusBadge({ status, transferClaimed = false }: { status: OrderStatus; transferClaimed?: boolean }) {
+  const confirming = status === 'AWAITING_PAYMENT' && transferClaimed;
   return (
-    <span className={`badge status-${status.toLowerCase()}`}>
-      <FontAwesomeIcon icon={STATUS_ICON[status]} /> {STATUS_LABEL[status]}
+    <span className={`badge status-${confirming ? 'processing' : status.toLowerCase()}`}>
+      <FontAwesomeIcon icon={confirming ? faHourglassHalf : STATUS_ICON[status]} /> {confirming ? 'Chờ xác nhận thanh toán' : STATUS_LABEL[status]}
     </span>
   );
 }

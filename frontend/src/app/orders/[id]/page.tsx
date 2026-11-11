@@ -120,7 +120,7 @@ function OrderDetail({ id }: { id: string }) {
         <h1 className="page-title" style={{ margin: 0 }}>
           <FontAwesomeIcon icon={faReceipt} /> Đơn hàng #{shortId(order.id)}
         </h1>
-        <StatusBadge status={order.status} />
+        <StatusBadge status={order.status} transferClaimed={Boolean(order.transferClaimedAt)} />
       </div>
       {error && (
         <p className="alert">
@@ -208,12 +208,12 @@ function OrderDetail({ id }: { id: string }) {
               </span>
               Lịch sử đơn hàng
             </h2>
-            <ol className="order-history">
+            <ol className="order-history" id="order-history">
               {[...order.history].reverse().map((h, i) => (
                 <li key={`${h.createdAt}-${i}`} className={i === 0 ? 'current' : undefined}>
                   <time>{formatDate(h.createdAt)}</time>
                   <div>
-                    <strong>{STATUS_LABEL[h.toStatus]}</strong>
+                    <strong>{h.fromStatus === h.toStatus && h.toStatus === 'AWAITING_PAYMENT' ? 'Đã báo chuyển khoản' : STATUS_LABEL[h.toStatus]}</strong>
                     <span className="muted small"> · {ACTOR_LABEL[h.actorType]}</span>
                     {h.note && <div className="muted small">{h.note}</div>}
                   </div>
