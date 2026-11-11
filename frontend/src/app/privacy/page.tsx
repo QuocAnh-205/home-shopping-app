@@ -27,6 +27,11 @@ export default function PrivacyPage() {
           <strong>Mua hàng:</strong> sổ địa chỉ giao hàng, đơn hàng, giỏ hàng, đánh giá sản phẩm.
         </li>
         <li>
+          <strong>Vị trí (không bắt buộc):</strong> chỉ khi bạn bấm &quot;Dùng vị trí hiện tại&quot; hoặc ghim trên bản đồ, chúng tôi lưu tọa độ đó kèm địa chỉ
+          giao hàng để giao đúng nhà. Tọa độ được gửi từ máy chủ của chúng tôi tới dịch vụ bản đồ Photon (dữ liệu OpenStreetMap) để đổi thành tên
+          tỉnh/phường/đường; chúng tôi không theo dõi vị trí của bạn ở bất kỳ lúc nào khác. Bạn có thể bỏ ghim hoặc xóa địa chỉ bất cứ lúc nào.
+        </li>
+        <li>
           <strong>Kỹ thuật:</strong> nhật ký truy cập (địa chỉ IP, thời gian, đường dẫn) để bảo mật và vận hành; nhật ký được tự xóa theo chu kỳ.
         </li>
       </ul>

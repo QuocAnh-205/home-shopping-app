@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Address, Prisma, Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { UpdateProfileDto } from '../auth/auth.dto';
@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
 import { RedisService } from '../redis/redis.service';
 import { StorageService } from '../storage/storage.service';
+import { AppError, ErrorCode } from '../common/errors';
 import { LocationsService } from '../locations/locations.service';
 import { AddressDto, DeleteAccountDto } from './account.dto';
 
@@ -27,6 +28,8 @@ const addressSelect = {
   street: true,
   provinceCode: true,
   wardCode: true,
+  latitude: true,
+  longitude: true,
   type: true,
   isDefault: true,
   createdAt: true,
@@ -49,6 +52,9 @@ export class AccountService {
 
   /** DTO (mã tỉnh/xã) → dữ liệu lưu DB kèm tên chuẩn lấy từ danh mục hành chính */
   private async addressData(dto: AddressDto) {
+    if ((dto.latitude == null) !== (dto.longitude == null)) {
+      throw new AppError(ErrorCode.ADDRESS_INVALID, 'Vị trí bản đồ cần đủ vĩ độ và kinh độ', HttpStatus.BAD_REQUEST);
+    }
     const { province, ward } = await this.locations.resolve(dto.provinceCode, dto.wardCode);
     const { isDefault: _ignored, ...rest } = dto;
     return { ...rest, province: province.name, ward: ward.name, district: null };

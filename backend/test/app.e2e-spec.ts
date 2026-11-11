@@ -916,6 +916,15 @@ describe('Home Shopping API (e2e)', () => {
       await http().post('/api/account/addresses').set(auth(dora)).send({ ...address, phone: 'abc' }).expect(400);
       await http().post('/api/account/addresses').set(auth(dora)).send({ ...address, street: '<script>' }).expect(400);
 
+      // Ghim vị trí trên bản đồ: lưu kèm tọa độ; thiếu 1 nửa hoặc ngoài Việt Nam → từ chối
+      const pinned = await http().put(`/api/account/addresses/${second.body.id}`).set(auth(dora)).send({ ...address, latitude: 16.0544, longitude: 108.2022 }).expect(200);
+      expect(pinned.body).toMatchObject({ latitude: 16.0544, longitude: 108.2022 });
+      const half = await http().put(`/api/account/addresses/${second.body.id}`).set(auth(dora)).send({ ...address, latitude: 16.05 }).expect(400);
+      expect(half.body.code).toBe('ADDRESS_INVALID');
+      await http().put(`/api/account/addresses/${second.body.id}`).set(auth(dora)).send({ ...address, latitude: 1.35, longitude: 103.8 }).expect(400);
+      const abroad = await http().get('/api/locations/reverse').query({ lat: 1.35, lng: 103.8 }).expect(400);
+      expect(abroad.body.code).toBe('ADDRESS_INVALID');
+
       // Xóa địa chỉ mặc định → địa chỉ còn lại tự thành mặc định
       list = (await http().delete(`/api/account/addresses/${first.body.id}`).set(auth(dora)).expect(200)).body;
       expect(list).toHaveLength(1);

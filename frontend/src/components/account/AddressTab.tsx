@@ -1,12 +1,37 @@
 'use client';
 
-import { faBuilding, faCircleCheck, faHouse, faPlus, faSpinner, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons';
+import {
+  faBuilding,
+  faCircleCheck,
+  faCrosshairs,
+  faHouse,
+  faMapLocationDot,
+  faPlus,
+  faSpinner,
+  faTriangleExclamation,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import dynamic from 'next/dynamic';
 import { apiFetch } from '@/lib/client-api';
-import { formatAddress, type Address, type AddressInput, type AddressType, type Province, type Ward } from '@/lib/types';
+import { formatAddress, type Address, type AddressInput, type AddressType, type Province, type ReverseGeocode, type Ward } from '@/lib/types';
 
-const EMPTY: AddressInput = { fullName: '', phone: '', provinceCode: null, wardCode: null, street: '', type: 'HOME', isDefault: false };
+// Bản đồ chỉ chạy trên trình duyệt (Leaflet cần window)
+const AddressMap = dynamic(() => import('./AddressMap').then((m) => m.AddressMap), { ssr: false });
+
+const EMPTY: AddressInput = { fullName: '', phone: '', provinceCode: null, wardCode: null, latitude: null, longitude: null, street: '', type: 'HOME', isDefault: false };
+
+type GeoMsg = { tone: 'ok' | 'warn' | 'error'; text: string } | null;
+
+/** Thông báo dễ hiểu cho từng lỗi định vị (kèm cách bật GPS / quyền vị trí) */
+function geoErrorText(code: number): string {
+  if (code === 1) {
+    return 'Bạn đang chặn quyền vị trí. Bấm biểu tượng ổ khóa cạnh thanh địa chỉ → Vị trí → Cho phép, rồi bấm lại "Dùng vị trí hiện tại". Trên điện thoại, kiểm tra thêm Cài đặt → Quyền riêng tư → Định vị.';
+  }
+  if (code === 2) return 'Chưa lấy được vị trí. Hãy bật GPS / Định vị (Location) trên thiết bị, ra gần cửa sổ rồi thử lại.';
+  return 'Định vị quá lâu. Hãy bật GPS / Định vị trên thiết bị rồi thử lại, hoặc chọn vị trí trên bản đồ.';
+}
 
 let provinceCache: Promise<Province[]> | null = null;
 const wardCache = new Map<number, Promise<Ward[]>>();
@@ -60,6 +85,8 @@ function AddressDialog({
           phone: initial.phone,
           provinceCode: initial.provinceCode,
           wardCode: initial.wardCode,
+          latitude: initial.latitude,
+          longitude: initial.longitude,
           street: initial.street,
           type: initial.type,
           isDefault: initial.isDefault,
@@ -67,6 +94,69 @@ function AddressDialog({
       : EMPTY,
   );
   const { provinces, wards } = useLocations(form.provinceCode);
+  const [showMap, setShowMap] = useState(Boolean(initial?.latitude));
+  const [locating, setLocating] = useState(false);
+  const [geoMsg, setGeoMsg] = useState<GeoMsg>(null);
+  const position = form.latitude != null && form.longitude != null ? { lat: form.latitude, lng: form.longitude } : null;
+
+  /** Tọa độ (GPS hoặc điểm chọn trên bản đồ) → gợi ý tỉnh / xã / số nhà, tên đường */
+  async function applyPosition(lat: number, lng: number) {
+    setForm((f) => ({ ...f, latitude: Number(lat.toFixed(6)), longitude: Number(lng.toFixed(6)) }));
+    setShowMap(true);
+    setGeoMsg({ tone: 'ok', text: 'Đang đọc địa chỉ tại vị trí này…' });
+    try {
+      const r = await apiFetch<ReverseGeocode>(`/locations/reverse?lat=${lat}&lng=${lng}`);
+      setForm((f) => ({
+        ...f,
+        provinceCode: r.provinceCode ?? f.provinceCode,
+        wardCode: r.provinceCode ? r.wardCode : f.wardCode,
+        street: f.street.trim() ? f.street : (r.street ?? f.street),
+      }));
+      if (r.provinceCode && r.wardCode) {
+        setGeoMsg({ tone: 'ok', text: `Đã xác định: ${r.wardName}, ${r.provinceName}. Kiểm tra lại và điền số nhà nếu còn thiếu.` });
+      } else if (r.provinceCode) {
+        setGeoMsg({ tone: 'warn', text: `Đã xác định ${r.provinceName}. Vui lòng chọn Phường/Xã (bản đồ ghi nhận: ${r.display || 'không rõ'}).` });
+      } else {
+        setGeoMsg({ tone: 'warn', text: 'Chưa nhận ra tỉnh/thành tại vị trí này, vui lòng chọn thủ công bên dưới.' });
+      }
+    } catch (err) {
+      setGeoMsg({ tone: 'warn', text: `${(err as Error).message}. Vị trí vẫn được lưu, hãy chọn tỉnh/xã bên dưới.` });
+    }
+  }
+
+  async function locate() {
+    setGeoMsg(null);
+    if (!('geolocation' in navigator)) {
+      setGeoMsg({ tone: 'error', text: 'Trình duyệt không hỗ trợ định vị, vui lòng chọn trên bản đồ hoặc nhập địa chỉ.' });
+      return;
+    }
+    if (!window.isSecureContext) {
+      setGeoMsg({ tone: 'error', text: 'Định vị chỉ hoạt động trên kết nối bảo mật (https).' });
+      return;
+    }
+    try {
+      const perm = await navigator.permissions?.query({ name: 'geolocation' });
+      if (perm?.state === 'denied') {
+        setGeoMsg({ tone: 'error', text: geoErrorText(1) });
+        return;
+      }
+    } catch {
+      /* Safari cũ không có Permissions API: hỏi trực tiếp */
+    }
+    setLocating(true);
+    setGeoMsg({ tone: 'ok', text: 'Trình duyệt sẽ hỏi quyền truy cập vị trí – hãy chọn "Cho phép" và bật GPS nếu đang tắt.' });
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        void applyPosition(pos.coords.latitude, pos.coords.longitude);
+      },
+      (err) => {
+        setLocating(false);
+        setGeoMsg({ tone: 'error', text: geoErrorText(err.code) });
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+    );
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,6 +211,33 @@ function AddressDialog({
               placeholder="0901234567"
             />
           </label>
+          <div className="field span-2 geo-box">
+            <span className="field-head">Vị trí giao hàng</span>
+            <div className="row">
+              <button type="button" className="btn btn-sm" onClick={locate} disabled={locating}>
+                <FontAwesomeIcon icon={locating ? faSpinner : faCrosshairs} spin={locating} /> Dùng vị trí hiện tại
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowMap((v) => !v)} aria-expanded={showMap}>
+                <FontAwesomeIcon icon={faMapLocationDot} /> {showMap ? 'Ẩn bản đồ' : 'Chọn trên bản đồ'}
+              </button>
+              {position && (
+                <button type="button" className="link-btn small" onClick={() => setForm((f) => ({ ...f, latitude: null, longitude: null }))}>
+                  Bỏ ghim
+                </button>
+              )}
+            </div>
+            {geoMsg && (
+              <p className={geoMsg.tone === 'ok' ? 'alert alert-info' : 'alert'} role="status" style={{ margin: 0 }}>
+                {geoMsg.text}
+              </p>
+            )}
+            {showMap && (
+              <>
+                <AddressMap position={position} onPick={(lat, lng) => void applyPosition(lat, lng)} />
+                <span className="muted small">Kéo ghim hoặc bấm vào bản đồ để chỉnh đúng vị trí nhà bạn. Không bắt buộc – bạn vẫn có thể chỉ nhập địa chỉ.</span>
+              </>
+            )}
+          </div>
           {initial && !initial.provinceCode && (
             <p className="alert alert-info span-2" style={{ margin: 0 }}>
               Địa chỉ cũ: {formatAddress(initial)}. Vui lòng chọn lại Tỉnh/Thành và Phường/Xã theo đơn vị hành chính mới (từ 01/07/2025).

@@ -203,6 +203,14 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
                               </span>
                               <span>
                                 <FontAwesomeIcon icon={faLocationDot} /> {o.shippingAddress}
+                                {o.latitude != null && o.longitude != null && (
+                                  <>
+                                    {' · '}
+                                    <a className="link" href={`https://www.google.com/maps?q=${o.latitude},${o.longitude}`} target="_blank" rel="noreferrer">
+                                      Xem bản đồ
+                                    </a>
+                                  </>
+                                )}
                               </span>
                               <span>
                                 <FontAwesomeIcon icon={faPhone} /> Người nhận: {o.phone}

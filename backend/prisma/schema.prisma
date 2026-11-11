@@ -156,6 +156,9 @@ model Address {
   street       String      @db.VarChar(255)
   provinceCode Int?        @map("province_code")
   wardCode     Int?        @map("ward_code")
+  /// Vị trí trên bản đồ (GPS hoặc khách ghim) – giúp shipper tìm đúng nhà
+  latitude     Float?
+  longitude    Float?
   type      AddressType @default(HOME)
   isDefault Boolean     @default(false) @map("is_default")
   createdAt DateTime    @default(now()) @map("created_at")
@@ -312,6 +315,8 @@ model Order {
   phone           String
   provinceCode    Int?        @map("province_code")
   wardCode        Int?        @map("ward_code")
+  latitude        Float?
+  longitude       Float?
   shippingProvider String?    @map("shipping_provider") @db.VarChar(32)
   estimatedDeliveryFrom DateTime? @map("estimated_delivery_from") @db.Date
   estimatedDeliveryTo   DateTime? @map("estimated_delivery_to") @db.Date

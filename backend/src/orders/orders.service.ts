@@ -143,6 +143,8 @@ export class OrdersService {
               shippingAddress: [a.street, a.ward, a.province].join(', '),
               provinceCode: a.provinceCode,
               wardCode: a.wardCode,
+              latitude: a.latitude,
+              longitude: a.longitude,
               shippingProvider: preview.shipping?.provider ?? null,
               estimatedDeliveryFrom: preview.shipping ? new Date(preview.shipping.estimatedDelivery.from) : null,
               estimatedDeliveryTo: preview.shipping ? new Date(preview.shipping.estimatedDelivery.to) : null,

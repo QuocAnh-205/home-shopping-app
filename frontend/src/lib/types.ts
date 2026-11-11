@@ -169,6 +169,8 @@ export interface Order {
   voucherCode: string | null;
   shippingVoucherCode: string | null;
   recipientName: string | null;
+  latitude: number | null;
+  longitude: number | null;
   estimatedDeliveryFrom: string | null;
   estimatedDeliveryTo: string | null;
   note: string | null;
@@ -214,6 +216,9 @@ export interface Address {
   /** null = địa chỉ cũ nhập tay, cần cập nhật lại theo tỉnh/xã mới trước khi đặt hàng */
   provinceCode: number | null;
   wardCode: number | null;
+  /** Vị trí ghim trên bản đồ (GPS hoặc khách chọn) */
+  latitude: number | null;
+  longitude: number | null;
   type: AddressType;
   isDefault: boolean;
   createdAt: string;
@@ -225,6 +230,8 @@ export interface AddressInput {
   phone: string;
   provinceCode: number | null;
   wardCode: number | null;
+  latitude: number | null;
+  longitude: number | null;
   street: string;
   type: AddressType;
   isDefault: boolean;
@@ -239,6 +246,18 @@ export interface Province {
 export interface Ward {
   code: number;
   name: string;
+}
+
+/** Kết quả đổi tọa độ → địa chỉ (GET /api/locations/reverse) */
+export interface ReverseGeocode {
+  lat: number;
+  lng: number;
+  provinceCode: number | null;
+  provinceName: string | null;
+  wardCode: number | null;
+  wardName: string | null;
+  street: string | null;
+  display: string;
 }
 
 /** "12 Bạch Đằng, P. Hải Châu 1, Q. Hải Châu, Đà Nẵng" – dùng làm địa chỉ giao hàng của đơn */

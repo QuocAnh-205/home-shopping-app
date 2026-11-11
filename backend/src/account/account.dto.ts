@@ -1,6 +1,6 @@
 import { AddressType } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, Matches, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import { VN_PHONE_RE } from '../auth/auth.dto';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value);
@@ -37,6 +37,23 @@ export class AddressDto {
   @MaxLength(255)
   @Matches(NO_HTML, { message: 'street must not contain HTML' })
   street: string;
+
+  /** Vị trí ghim trên bản đồ (tùy chọn) – phải nằm trong lãnh thổ Việt Nam */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(7)
+  @Max(24)
+  latitude?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(101)
+  @Max(118)
+  longitude?: number | null;
 
   @IsOptional()
   @IsEnum(AddressType)
