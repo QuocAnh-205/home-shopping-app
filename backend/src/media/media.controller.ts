@@ -24,6 +24,11 @@ export class MediaController {
     this.sendLocal(`products/${productId}/${file}`, res);
   }
 
+  @Get('returns/:orderId/:file')
+  returnImage(@Param('orderId') orderId: string, @Param('file') file: string, @Res() res: Response): void {
+    this.sendLocal(`returns/${orderId}/${file}`, res);
+  }
+
   @Get('avatars/:userId/:file')
   async avatar(@Param('userId') userId: string, @Param('file') file: string, @Res() res: Response): Promise<void> {
     const relative = `avatars/${userId}/${file}`;

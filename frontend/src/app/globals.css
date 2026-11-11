@@ -5183,3 +5183,27 @@ button.stat-tile:hover {
   max-width: 520px;
   margin: 40px auto;
 }
+
+/* ---------------- Trả hàng ---------------- */
+.return-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.return-images {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.return-images img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+}

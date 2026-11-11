@@ -712,6 +712,89 @@ describe('Home Shopping API (e2e)', () => {
     });
   });
 
+  describe('returns / refunds (trả hàng, ảnh minh chứng, admin duyệt / từ chối)', () => {
+    // PNG 1x1 hợp lệ
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const reason = 'Hàng bị bể vỡ, móp méo khi vận chuyển';
+
+    /** Đơn đi tới Đã giao (COD hoặc đã thanh toán online qua cổng giả lập) */
+    async function delivered(token: string, paymentMethod: 'COD' | 'VNPAY') {
+      const order = (await http().post('/api/orders').set(auth(token)).set('Idempotency-Key', randomUUID()).send({ items: [{ productId, quantity: 1 }], paymentMethod }).expect(201)).body;
+      if (paymentMethod === 'VNPAY') {
+        const p = (await http().post(`/api/orders/${order.id}/payments`).set(auth(token)).send({}).expect(200)).body;
+        const q = new URL(p.payUrl).searchParams;
+        await http().post('/api/payments/mock/notify').send({ method: 'VNPAY', txnRef: q.get('ref'), amount: Number(q.get('amount')), result: 'success', sig: q.get('sig') }).expect(200);
+      }
+      for (const status of ['PROCESSING', 'SHIPPING', 'DELIVERED']) {
+        await http().patch(`/api/admin/orders/${order.id}/status`).set(auth(adminToken)).send({ status }).expect(200);
+      }
+      return order;
+    }
+    const requestReturn = (token: string, orderId: string) =>
+      http()
+        .post(`/api/orders/${orderId}/return`)
+        .set(auth(token))
+        .field('reason', reason)
+        .field('description', 'Hộp bị móp, ấm bị nứt phần đáy khi mở ra')
+        .attach('images', png, { filename: 'loi.png', contentType: 'image/png' });
+
+    beforeAll(async () => {
+      await prisma.product.update({ where: { id: productId }, data: { stock: 30 } });
+    });
+
+    it('paid order: request with photo → admin approves → stock back, refunded via the gateway', async () => {
+      const order = await delivered(aliceToken, 'VNPAY');
+      const stock = (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock;
+
+      // Không phải chủ đơn / chưa giao / lý do lạ
+      await requestReturn(bobToken, order.id).expect(404);
+      await http().post(`/api/orders/${order.id}/return`).set(auth(aliceToken)).field('reason', 'Không thích').field('description', 'Mô tả đủ dài để qua').expect(400);
+
+      const res = await requestReturn(aliceToken, order.id).expect(201);
+      expect(res.body).toMatchObject({ status: 'REQUESTED', reason, refundAmount: order.totalAmount, images: [expect.stringMatching(/^\/api\/media\/returns\//)] });
+      await http().get(res.body.images[0]).expect(200).expect('Content-Type', 'image/png');
+      expect((await http().get(`/api/orders/${order.id}`).set(auth(aliceToken)).expect(200)).body.status).toBe('RETURN_REQUESTED');
+      const dup = await requestReturn(aliceToken, order.id).expect(409);
+      expect(dup.body.code).toBe('RETURN_NOT_ALLOWED');
+
+      const list = await http().get('/api/admin/returns').query({ status: 'REQUESTED' }).set(auth(adminToken)).expect(200);
+      expect(list.body.some((r: { id: string }) => r.id === res.body.id)).toBe(true);
+      await http().post(`/api/admin/returns/${res.body.id}/approve`).set(auth(aliceToken)).send({}).expect(403);
+      const ok = await http().post(`/api/admin/returns/${res.body.id}/approve`).set(auth(adminToken)).send({ note: 'Đã nhận lại hàng lỗi' }).expect(200);
+      expect(ok.body.status).toBe('APPROVED');
+      await http().post(`/api/admin/returns/${res.body.id}/approve`).set(auth(adminToken)).send({}).expect(409);
+
+      const final = await http().get(`/api/orders/${order.id}`).set(auth(aliceToken)).expect(200);
+      expect(final.body).toMatchObject({ status: 'RETURNED', paymentStatus: 'REFUNDED' });
+      expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).stock).toBe(stock + 1);
+    });
+
+    it('COD order: rejection needs a reason and completes the order; approval needs a manual refund', async () => {
+      const a = await delivered(bobToken, 'COD');
+      const r1 = (await requestReturn(bobToken, a.id).expect(201)).body;
+      await http().post(`/api/admin/returns/${r1.id}/reject`).set(auth(adminToken)).send({}).expect(400);
+      const rejected = await http().post(`/api/admin/returns/${r1.id}/reject`).set(auth(adminToken)).send({ note: 'Ảnh không cho thấy lỗi sản phẩm' }).expect(200);
+      expect(rejected.body.status).toBe('REJECTED');
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: a.id } })).status).toBe('COMPLETED');
+
+      const b = await delivered(bobToken, 'COD');
+      const r2 = (await requestReturn(bobToken, b.id).expect(201)).body;
+      await http().post(`/api/admin/returns/${r2.id}/approve`).set(auth(adminToken)).send({}).expect(200);
+      const refund = await prisma.refund.findFirstOrThrow({ where: { orderId: b.id } });
+      expect(refund).toMatchObject({ status: 'MANUAL_REQUIRED', paymentId: null, amount: b.totalAmount });
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: b.id } })).paymentStatus).toBe('REFUND_PENDING');
+      await http().post(`/api/admin/refunds/${refund.id}/complete`).set(auth(adminToken)).send({ note: 'Đã chuyển khoản lại cho khách' }).expect(200);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: b.id } })).paymentStatus).toBe('REFUNDED');
+    });
+
+    it('refuses returns after the return window', async () => {
+      const order = await delivered(aliceToken, 'COD');
+      await prisma.order.update({ where: { id: order.id }, data: { deliveredAt: new Date(Date.now() - 40 * 86_400_000) } });
+      const res = await requestReturn(aliceToken, order.id).expect(409);
+      expect(res.body.code).toBe('RETURN_NOT_ALLOWED');
+    });
+  });
+
   it('lists the 34 provinces and their wards (2-level administrative units)', async () => {
     const provinces = await http().get('/api/locations/provinces').expect(200);
     expect(provinces.body).toHaveLength(34);

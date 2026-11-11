@@ -56,6 +56,12 @@ enum PaymentStatus {
   CANCELLED
 }
 
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+}
+
 enum RefundStatus {
   PENDING
   SUCCEEDED
@@ -128,6 +134,7 @@ model User {
   addresses           Address[]
   auditLogs           AdminAuditLog[]
   savedVouchers       UserVoucher[]
+  returnRequests      ReturnRequest[]
   voucherUsages       VoucherUsage[]
 
   @@index([createdAt])
@@ -332,6 +339,7 @@ model Order {
   voucherUsages       VoucherUsage[]
   payments            Payment[]
   refunds             Refund[]
+  returnRequest       ReturnRequest?
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -478,6 +486,31 @@ model Refund {
   @@index([orderId])
   @@index([status, createdAt])
   @@map("refunds")
+}
+
+/// Yêu cầu trả hàng/hoàn tiền (mỗi đơn tối đa 1), cửa hàng duyệt hoặc từ chối
+model ReturnRequest {
+  id           String       @id @default(uuid()) @db.Uuid
+  orderId      String       @unique @map("order_id") @db.Uuid
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId       String       @map("user_id") @db.Uuid
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason       String       @db.VarChar(100)
+  description  String       @db.VarChar(1000)
+  /// imageKey ảnh minh chứng (tối đa 5)
+  images       String[]     @default([])
+  status       ReturnStatus @default(REQUESTED)
+  /// Số tiền sẽ hoàn (VND) – mặc định toàn bộ giá trị đơn
+  refundAmount Int          @map("refund_amount")
+  adminNote    String?      @map("admin_note") @db.VarChar(500)
+  resolvedById String?      @map("resolved_by_id") @db.Uuid
+  resolvedAt   DateTime?    @map("resolved_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([userId])
+  @@map("return_requests")
 }
 
 /// Lịch sử trạng thái đơn (timeline): ai đổi, lúc nào, ghi chú

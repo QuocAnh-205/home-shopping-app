@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, use, useCallback, useEffect, useState } from 'react';
 import { PaymentPanel } from '@/components/PaymentPanel';
 import { RequireAuth } from '@/components/RequireAuth';
+import { ReturnPanel } from '@/components/ReturnPanel';
 import { STATUS_ICON, StatusBadge } from '@/components/StatusBadge';
 import { apiFetch, notifyCartChanged } from '@/lib/client-api';
 import {
@@ -209,6 +210,8 @@ function OrderDetail({ id }: { id: string }) {
               </tfoot>
             </table>
           </div>
+
+          <ReturnPanel order={order} onChanged={load} />
 
           <div className="panel">
             <h2 className="panel-title">

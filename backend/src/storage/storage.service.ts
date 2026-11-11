@@ -13,7 +13,7 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 export const LOCAL_PREFIX = 'local/';
-export const LOCAL_FILE_RE = /^(products|avatars)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
+export const LOCAL_FILE_RE = /^(products|avatars|returns)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
 
 /**
  * Lưu ảnh sản phẩm do admin upload:
@@ -108,6 +108,21 @@ export class StorageService {
     }
     this.logger.log({ event: 'user.avatar_uploaded', userId, storage: this.bucket ? 's3' : 'local' });
     return `/api/media/${relative}`;
+  }
+
+  /**
+   * Ảnh minh chứng trả hàng: returns/<orderId>/<uuid>.<ext> (tên do server sinh, không đoán được).
+   * Trả về imageKey dạng như ảnh sản phẩm (local/... hoặc key S3) → getSignedImageUrl cấp URL khi hiển thị.
+   */
+  async uploadReturnImage(orderId: string, body: Buffer, mime: string): Promise<string> {
+    const relative = `returns/${orderId}/${randomUUID()}.${EXTENSIONS[mime]}`;
+    if (!this.bucket) {
+      await mkdir(join(this.uploadDir, 'returns', orderId), { recursive: true });
+      await writeFile(join(this.uploadDir, relative), body, { mode: 0o640 });
+      return `${LOCAL_PREFIX}${relative}`;
+    }
+    await this.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: relative, Body: body, ContentType: mime, ServerSideEncryption: 'AES256' }));
+    return relative;
   }
 
   /** Presigned URL cho object S3 (dùng khi phục vụ ảnh đại diện ở chế độ S3) */

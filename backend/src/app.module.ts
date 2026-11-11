@@ -25,6 +25,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { RedisModule } from './redis/redis.module';
+import { ReturnsModule } from './returns/returns.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { StorageModule } from './storage/storage.module';
@@ -87,6 +88,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
     CheckoutModule,
     OrdersModule,
     PaymentsModule,
+    ReturnsModule,
     ReviewsModule,
     NewsletterModule,
     AdminModule,

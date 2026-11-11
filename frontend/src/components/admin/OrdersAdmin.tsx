@@ -7,7 +7,17 @@ import { EmptyState } from '@/components/EmptyState';
 import { STATUS_ICON, StatusBadge } from '@/components/StatusBadge';
 import { downloadCsv, formatDateTime, toQuery, type AdminOrderPage } from '@/lib/admin';
 import { apiFetch } from '@/lib/client-api';
-import { NEXT_STATUSES, STATUS_LABEL, formatPrice, shortId, type AdminOrder, type OrderStatus } from '@/lib/types';
+import {
+  NEXT_STATUSES,
+  PAYMENT_METHOD_LABEL,
+  PAYMENT_STATUS_LABEL,
+  STATUS_LABEL,
+  formatPrice,
+  shortId,
+  type AdminOrder,
+  type OrderStatus,
+} from '@/lib/types';
+import { OrderPaymentsAdmin } from './OrderPaymentsAdmin';
 import { Loading, Notice, Pager, useDebounced } from './ui';
 
 const FILTERS: (OrderStatus | '')[] = [
@@ -195,6 +205,14 @@ export function OrdersAdmin({ initialQuery = '' }: { initialQuery?: string }) {
                               <span className="muted small">
                                 Mã đầy đủ: {o.id} · Cập nhật lần cuối {formatDateTime(o.updatedAt)}
                               </span>
+                              <span className="small">
+                                {PAYMENT_METHOD_LABEL[o.paymentMethod]} · {PAYMENT_STATUS_LABEL[o.paymentStatus]}
+                                {o.shippingFee > 0 && ` · Ship ${formatPrice(o.shippingFee)}`}
+                                {o.discountAmount + o.shippingDiscount > 0 && ` · Giảm ${formatPrice(o.discountAmount + o.shippingDiscount)}`}
+                                {o.voucherCode && ` (${[o.voucherCode, o.shippingVoucherCode].filter(Boolean).join(', ')})`}
+                              </span>
+                              {o.note && <span className="small">Lời nhắn: {o.note}</span>}
+                              {o.paymentMethod !== 'COD' && <OrderPaymentsAdmin orderId={o.id} onChanged={load} />}
                             </div>
                             <table className="table table-compact">
                               <thead>

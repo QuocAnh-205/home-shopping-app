@@ -7,8 +7,10 @@ import {
   faFolderTree,
   faGauge,
   faReceipt,
+  faRotateLeft,
   faStar,
   faTags,
+  faTicket,
   faUsers,
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -19,13 +21,17 @@ import { Dashboard } from '@/components/admin/Dashboard';
 import { NewsletterAdmin } from '@/components/admin/NewsletterAdmin';
 import { OrdersAdmin } from '@/components/admin/OrdersAdmin';
 import { ProductsAdmin } from '@/components/admin/ProductsAdmin';
+import { ReturnsAdmin } from '@/components/admin/ReturnsAdmin';
 import { ReviewsAdmin } from '@/components/admin/ReviewsAdmin';
 import { UsersAdmin } from '@/components/admin/UsersAdmin';
+import { VouchersAdmin } from '@/components/admin/VouchersAdmin';
 import { RequireAuth } from '@/components/RequireAuth';
 
 const TABS = [
   { id: 'dashboard', label: 'Tổng quan', icon: faGauge },
   { id: 'orders', label: 'Đơn hàng', icon: faReceipt },
+  { id: 'returns', label: 'Trả hàng/Hoàn tiền', icon: faRotateLeft },
+  { id: 'vouchers', label: 'Voucher', icon: faTicket },
   { id: 'products', label: 'Sản phẩm', icon: faTags },
   { id: 'categories', label: 'Danh mục', icon: faFolderTree },
   { id: 'users', label: 'Người dùng', icon: faUsers },
@@ -74,6 +80,8 @@ export default function AdminPage() {
         <div role="tabpanel">
           {tab === 'dashboard' && <Dashboard onOpenOrders={() => open('orders')} />}
           {tab === 'orders' && <OrdersAdmin initialQuery={orderQuery} />}
+          {tab === 'returns' && <ReturnsAdmin />}
+          {tab === 'vouchers' && <VouchersAdmin />}
           {tab === 'products' && <ProductsAdmin />}
           {tab === 'categories' && <CategoriesAdmin />}
           {tab === 'users' && (
