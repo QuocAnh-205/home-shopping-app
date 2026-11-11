@@ -16,6 +16,8 @@ export interface CheckoutLine {
   name: string;
   slug: string;
   imageUrl: string | null;
+  /** Key ảnh gốc (snapshot vào order_items khi đặt) – không trả ra client */
+  imageKey?: string | null;
   categoryId: number;
   unitPrice: number;
   quantity: number;
@@ -161,6 +163,7 @@ export class CheckoutService {
         name: p.name,
         slug: p.slug,
         imageUrl: await this.storage.getSignedImageUrl(p.imageKey),
+        imageKey: p.imageKey,
         categoryId: p.categoryId,
         unitPrice: p.price,
         quantity,

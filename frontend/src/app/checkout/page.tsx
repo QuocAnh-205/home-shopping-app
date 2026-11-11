@@ -220,7 +220,7 @@ function Checkout() {
 
   const { pricing, shipping, address } = preview;
   return (
-    <div className="cart-layout">
+    <div className="cart-layout checkout-page">
       <div className="stack">
         <section className="panel">
           <h2 className="panel-title">
@@ -333,9 +333,16 @@ function Checkout() {
               <FontAwesomeIcon icon={faCoins} className="acc-nav-coin" /> Dùng {preview.coins.usable.toLocaleString('vi-VN')} xu
               <span className="muted small"> (có {preview.coins.balance.toLocaleString('vi-VN')} xu)</span>
             </span>
-            <span className="row" style={{ gap: 8 }}>
+            <span className="coins-toggle-right">
               <span className="ok small">−{formatPrice(preview.coins.usable)}</span>
-              <input type="checkbox" checked={Boolean(choice.useCoins)} disabled={preview.coins.usable === 0} onChange={(e) => update({ useCoins: e.target.checked })} />
+              <input
+                type="checkbox"
+                className="switch"
+                checked={Boolean(choice.useCoins)}
+                disabled={preview.coins.usable === 0}
+                onChange={(e) => update({ useCoins: e.target.checked })}
+                aria-label="Dùng xu"
+              />
             </span>
           </label>
         )}
@@ -398,6 +405,18 @@ function Checkout() {
           <FontAwesomeIcon icon={faLock} /> Giá được kiểm tra lại khi đặt hàng; nếu có thay đổi bạn sẽ được báo trước khi tạo đơn
         </p>
       </aside>
+
+      {/* Điện thoại: tổng thanh toán + nút Đặt hàng luôn trong tầm tay */}
+      <div className="mobile-actionbar">
+        <span className="mobile-actionbar-total">
+          <small>Tổng thanh toán</small>
+          <strong className="price">{formatPrice(pricing.total)}</strong>
+          {pricing.saved > 0 && <small className="ok">Tiết kiệm {formatPrice(pricing.saved)}</small>}
+        </span>
+        <button className="btn btn-lg" disabled={!preview.canPlaceOrder || placing} onClick={place}>
+          {placing && <FontAwesomeIcon icon={faSpinner} spin />} Đặt hàng
+        </button>
+      </div>
     </div>
   );
 }

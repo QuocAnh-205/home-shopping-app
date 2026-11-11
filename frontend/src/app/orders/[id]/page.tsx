@@ -173,7 +173,7 @@ function OrderDetail({ id }: { id: string }) {
                 name: i.productName,
                 slug: i.productSlug,
                 // Ảnh snapshot lúc đặt: ảnh tĩnh /images/... hiển thị trực tiếp
-                imageUrl: i.imageKey?.startsWith('/images/') ? i.imageKey : null,
+                imageUrl: i.imageUrl ?? null,
                 unitPrice: i.unitPrice,
                 quantity: i.quantity,
               }))}

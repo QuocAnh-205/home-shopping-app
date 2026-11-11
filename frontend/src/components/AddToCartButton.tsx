@@ -4,18 +4,25 @@ import { faBagShopping, faCartPlus, faCircleCheck, faMinus, faPlus, faSpinner, f
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiFetch, getToken, notifyCartChanged } from '@/lib/client-api';
-import type { Cart } from '@/lib/types';
+import { formatPrice, type Cart } from '@/lib/types';
 
 const MAX_PER_ITEM = 99;
 
-export function AddToCartButton({ productId, stock }: { productId: string; stock: number }) {
+export function AddToCartButton({ productId, stock, price }: { productId: string; stock: number; price?: number | string }) {
   const router = useRouter();
   const max = Math.min(stock, MAX_PER_ITEM);
   const [quantity, setQuantity] = useState(1);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Thông báo "Đã thêm vào giỏ" tự ẩn (trên điện thoại nó nổi trên thanh mua hàng)
+  useEffect(() => {
+    if (!status) return;
+    const t = setTimeout(() => setStatus(null), status.ok ? 3500 : 6000);
+    return () => clearTimeout(t);
+  }, [status]);
 
   /** "Mua ngay": sang thẳng trang thanh toán, không thêm vào giỏ */
   function buyNow() {
@@ -55,9 +62,16 @@ export function AddToCartButton({ productId, stock }: { productId: string; stock
 
   if (stock <= 0) {
     return (
-      <p className="alert">
-        <FontAwesomeIcon icon={faTriangleExclamation} /> Sản phẩm tạm hết hàng, vui lòng quay lại sau.
-      </p>
+      <>
+        <p className="alert">
+          <FontAwesomeIcon icon={faTriangleExclamation} /> Sản phẩm tạm hết hàng, vui lòng quay lại sau.
+        </p>
+        <div className="mobile-actionbar" aria-hidden>
+          <button className="btn btn-lg btn-block" disabled>
+            Tạm hết hàng
+          </button>
+        </div>
+      </>
     );
   }
 
@@ -89,8 +103,19 @@ export function AddToCartButton({ productId, stock }: { productId: string; stock
           <FontAwesomeIcon icon={faBagShopping} /> Mua ngay
         </button>
       </div>
+      {/* Điện thoại: thanh mua hàng dính đáy màn hình (ngón cái bấm được ngay, không phải cuộn lên) */}
+      <div className="mobile-actionbar">
+        <button type="button" className="mobile-actionbar-cart" onClick={add} disabled={busy} aria-label="Thêm vào giỏ hàng">
+          <FontAwesomeIcon icon={busy ? faSpinner : faCartPlus} spin={busy} />
+          <span>Thêm vào giỏ</span>
+        </button>
+        <button type="button" className="btn btn-lg mobile-actionbar-main" onClick={buyNow} disabled={busy}>
+          <span>Mua ngay</span>
+          {price !== undefined && <small>{formatPrice(Number(price) * quantity)}</small>}
+        </button>
+      </div>
       {status && (
-        <p className={status.ok ? 'alert alert-ok' : 'alert'} role="status">
+        <p className={`${status.ok ? 'alert alert-ok' : 'alert'} buy-status`} role="status">
           <FontAwesomeIcon icon={status.ok ? faCircleCheck : faTriangleExclamation} />
           <span>
             {status.text}

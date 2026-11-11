@@ -71,15 +71,18 @@ export function RegisterForm() {
         <PasswordField name="password" label="Mật khẩu" autoComplete="new-password" value={password} onChange={setPassword} showStrength minLength={8} />
         <PasswordField name="confirm" label="Nhập lại mật khẩu" autoComplete="new-password" value={confirm} onChange={setConfirm} minLength={8} />
         {confirm && confirm !== password && <small className="danger">Mật khẩu nhập lại chưa khớp</small>}
-        <label className="checkbox">
-          <input type="checkbox" required /> Tôi đồng ý với{' '}
-          <Link className="link" href="/terms" target="_blank">
-            điều khoản sử dụng
-          </Link>{' '}
-          và{' '}
-          <Link className="link" href="/privacy" target="_blank">
-            chính sách bảo mật
-          </Link>
+        <label className="checkbox checkbox-text">
+          <input type="checkbox" required />
+          <span>
+            Tôi đồng ý với{' '}
+            <Link className="link" href="/terms" target="_blank">
+              điều khoản sử dụng
+            </Link>{' '}
+            và{' '}
+            <Link className="link" href="/privacy" target="_blank">
+              chính sách bảo mật
+            </Link>
+          </span>
         </label>
         {error && (
           <p className="alert" role="alert">

@@ -217,6 +217,20 @@ export default function CartPage() {
               <FontAwesomeIcon icon={faLock} /> Giá và phí vận chuyển được tính lại chính xác ở bước thanh toán
             </p>
           </aside>
+
+          {/* Điện thoại: thanh tổng tiền + nút Mua hàng dính đáy (giống app TMĐT) */}
+          <div className="mobile-actionbar">
+            <label className="checkbox mobile-actionbar-all">
+              <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={selectable.length === 0} /> Tất cả
+            </label>
+            <span className="mobile-actionbar-total">
+              <small>Tổng thanh toán</small>
+              <strong className="price">{formatPrice(chosenTotal)}</strong>
+            </span>
+            <button className="btn btn-lg" disabled={chosen.length === 0 || pending !== null} onClick={checkout}>
+              Mua hàng ({chosen.length})
+            </button>
+          </div>
         </div>
       )}
     </section>

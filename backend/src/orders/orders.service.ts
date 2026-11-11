@@ -15,7 +15,7 @@ import type { AdminListOrdersQuery } from '../admin/admin.dto';
 import { OrderLifecycleService } from './order-lifecycle.service';
 
 const orderInclude = {
-  items: { include: { product: { select: { name: true, slug: true } } }, orderBy: { id: 'asc' } },
+  items: { include: { product: { select: { name: true, slug: true, imageKey: true } } }, orderBy: { id: 'asc' } },
   history: {
     select: { fromStatus: true, toStatus: true, actorType: true, note: true, createdAt: true },
     orderBy: { id: 'asc' },
@@ -161,7 +161,8 @@ export class OrdersService {
                   unitPrice: i.unitPrice,
                   productName: i.name,
                   productSlug: i.slug,
-                  imageKey: null,
+                  // Snapshot ảnh lúc đặt: sản phẩm đổi ảnh / bị xóa sau này thì đơn vẫn hiện đúng món đã mua
+                  imageKey: i.imageKey,
                 })),
               },
               history: {

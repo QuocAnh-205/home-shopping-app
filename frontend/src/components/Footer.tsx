@@ -1,3 +1,5 @@
+'use client';
+
 import { faFacebookF, faInstagram, faTiktok, faYoutube } from '@fortawesome/free-brands-svg-icons';
 import {
   faClock,
@@ -14,6 +16,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { NewsletterForm } from './NewsletterForm';
 
 const SHOP_LINKS = [
@@ -34,8 +37,10 @@ const SOCIAL = [
 ];
 
 export function Footer() {
+  // Điện thoại: footer đầy đủ chỉ ở trang chủ; các trang mua hàng / tài khoản chỉ giữ dòng bản quyền cho gọn
+  const pathname = usePathname();
   return (
-    <footer className="footer">
+    <footer className={pathname === '/' ? 'footer' : 'footer footer-compact'}>
       <div className="container">
         <section className="newsletter">
           <span className="newsletter-ico" aria-hidden>

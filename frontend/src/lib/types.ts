@@ -134,6 +134,8 @@ export interface OrderItem {
   productName: string;
   productSlug: string;
   imageKey: string | null;
+  /** URL ảnh hiển thị được (backend cấp: ảnh tĩnh / media / presigned S3) */
+  imageUrl?: string | null;
   product: { name: string; slug: string };
 }
 

@@ -5933,3 +5933,875 @@ button.stat-tile:hover {
 .waiting-info {
   max-width: 420px;
 }
+
+/* ==========================================================================
+   Mobile UX v3 – trải nghiệm kiểu app TMĐT trên điện thoại
+   - Header: logo + ô tìm kiếm + giỏ hàng (thông báo & đổi giao diện chuyển xuống thanh đáy / trang "Tôi")
+   - Thanh đáy 5 mục: Trang chủ · Ưu đãi · Đơn mua · Thông báo · Tôi (không lặp lại giỏ hàng)
+   - Trang sản phẩm / giỏ / thanh toán: thanh hành động dính đáy thay cho thanh điều hướng
+   ========================================================================== */
+
+/* ---------- Thẻ đơn hàng (mọi kích thước) ---------- */
+.order-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.order-card:hover {
+  transform: none;
+  border-color: var(--border-strong);
+}
+
+.order-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.order-card-shop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.order-card-shop .svg-inline--fa {
+  color: var(--primary);
+}
+
+.order-card-items {
+  list-style: none;
+  margin: 0;
+  padding: 4px 16px;
+}
+
+.order-card-items li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.order-card-items li + li {
+  border-top: 1px dashed var(--border);
+}
+
+.order-card-items img,
+.order-card-thumb {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+}
+
+.order-card-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.order-card-price {
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.order-card-more {
+  margin: 0;
+  padding: 0 16px 8px;
+  text-align: center;
+}
+
+.order-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.order-card-foot .price {
+  font-size: 1.1rem;
+}
+
+.order-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 14px;
+  background: var(--surface-2);
+}
+
+/* ---------- Thanh hành động dính đáy & trang "Tôi": chỉ có trên điện thoại ---------- */
+.mobile-actionbar,
+.me-hub {
+  display: none;
+}
+
+/* ---------- Ô đồng ý điều khoản: chữ xuống dòng tự nhiên ---------- */
+.checkbox-text {
+  display: flex;
+  align-items: flex-start;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.checkbox-text input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+/* ---------- Dùng xu ở trang thanh toán ---------- */
+.coins-toggle-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --header-h: 60px;
+    --bar-h: 64px;
+    --gutter: clamp(16px, 4vw, 32px);
+  }
+
+  body {
+    padding-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom));
+  }
+
+  .main {
+    padding-block: 12px 28px;
+  }
+
+  /* ---------- Header: logo + tìm kiếm + giỏ ---------- */
+  .header-inner {
+    gap: 10px;
+    justify-content: flex-start;
+  }
+
+  .brand {
+    flex: 0 0 auto;
+  }
+
+  .brand-text {
+    display: none;
+  }
+
+  .header-search {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .header-search .input {
+    height: 40px;
+    padding-left: 38px;
+    font-size: 16px; /* ≥16px: iOS không tự phóng to khi chạm vào ô */
+  }
+
+  .header-search .fa-magnifying-glass {
+    left: 14px;
+  }
+
+  .header-actions {
+    gap: 0;
+    flex: 0 0 auto;
+  }
+
+  .header-actions .icon-btn {
+    height: 42px;
+    min-width: 42px;
+    padding: 0 8px;
+  }
+
+  .header-actions .icon-btn .svg-inline--fa {
+    font-size: 1.3rem;
+  }
+
+  /* ---------- Thanh điều hướng đáy: liền mạch, có vùng an toàn của iPhone ---------- */
+  .mobile-nav {
+    grid-template-columns: repeat(5, 1fr);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    border-radius: 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    box-shadow: 0 -8px 24px -16px rgb(0 0 0 / 35%);
+  }
+
+  .mobile-nav a {
+    gap: 4px;
+    padding: 7px 0 5px;
+    border-radius: 12px;
+    font-size: 0.68rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-nav a .svg-inline--fa {
+    font-size: 1.2rem;
+  }
+
+  .mobile-nav a.active {
+    background: transparent;
+    color: var(--primary);
+  }
+
+  .mobile-nav-label {
+    white-space: nowrap;
+  }
+
+  .mobile-nav .badge-count {
+    top: -7px;
+    right: -13px;
+    min-width: 17px;
+    height: 17px;
+    font-size: 0.62rem;
+  }
+
+  /* ---------- Nút Quay lại: gọn hơn ---------- */
+  .back-nav {
+    margin-bottom: 8px;
+  }
+
+  .back-btn {
+    height: 34px;
+    padding: 0 12px;
+    font-size: 0.85rem;
+  }
+
+  .page-title {
+    font-size: 1.45rem;
+    margin-bottom: 12px;
+  }
+
+  /* ---------- Trang chủ ---------- */
+  .bento {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .hero {
+    grid-column: 1 / -1;
+    min-height: 0;
+    padding: 22px 20px;
+    border-radius: 22px;
+  }
+
+  .hero h1 {
+    font-size: 1.7rem;
+    line-height: 1.15;
+  }
+
+  .hero p {
+    font-size: 0.92rem;
+    margin-block: 8px 14px;
+  }
+
+  .hero .row {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .hero .btn {
+    height: 44px;
+    padding: 0 14px;
+    font-size: 0.9rem;
+    flex: 1;
+  }
+
+  .promo {
+    min-height: 0;
+    padding: 14px;
+    border-radius: 18px;
+    gap: 6px;
+  }
+
+  .promo h2 {
+    font-size: 0.95rem;
+    line-height: 1.3;
+  }
+
+  .promo .promo-icon {
+    font-size: 1.2rem;
+  }
+
+  .promo .go {
+    font-size: 0.8rem;
+  }
+
+  .trust {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .trust-item {
+    padding: 10px;
+    gap: 10px;
+    border-radius: 14px;
+  }
+
+  .trust-item .ico {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+  }
+
+  .trust-item strong {
+    font-size: 0.82rem;
+  }
+
+  .trust-item span {
+    font-size: 0.72rem;
+    line-height: 1.3;
+  }
+
+  .section {
+    margin-top: 28px;
+  }
+
+  .section-head {
+    margin-bottom: 12px;
+  }
+
+  .section-head h2 {
+    font-size: 1.2rem;
+  }
+
+  .section-head p {
+    font-size: 0.85rem;
+  }
+
+  /* Danh mục & mức giá: hàng vuốt ngang thay vì lưới cao nhiều màn hình */
+  .categories,
+  .price-tiles {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-auto-columns: 128px;
+    gap: 10px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    margin-inline: calc(-1 * var(--gutter));
+    padding: 2px var(--gutter) 6px;
+    scroll-padding-inline: var(--gutter);
+    scrollbar-width: none;
+  }
+
+  .categories::-webkit-scrollbar,
+  .price-tiles::-webkit-scrollbar,
+  .scroller::-webkit-scrollbar {
+    display: none;
+  }
+
+  .cat-card {
+    aspect-ratio: 1;
+    min-height: 0;
+    padding: 12px;
+    border-radius: 18px;
+    scroll-snap-align: start;
+  }
+
+  .cat-card strong {
+    font-size: 0.9rem;
+  }
+
+  .cat-card span:not(.cat-ico) {
+    font-size: 0.72rem;
+  }
+
+  .cat-card .cat-ico {
+    width: 30px;
+    height: 30px;
+    font-size: 0.8rem;
+  }
+
+  .price-tiles {
+    grid-auto-columns: 150px;
+  }
+
+  .price-tile {
+    padding: 14px;
+    gap: 4px;
+    border-radius: 18px;
+    min-height: 0;
+    scroll-snap-align: start;
+  }
+
+  .price-tile small {
+    font-size: 0.66rem;
+  }
+
+  .price-tile strong {
+    font-size: 1rem;
+  }
+
+  .scroller {
+    grid-auto-columns: 46%;
+    gap: 10px;
+    margin-inline: calc(-1 * var(--gutter));
+    padding-inline: var(--gutter);
+    scroll-padding-inline: var(--gutter);
+    scrollbar-width: none;
+  }
+
+  /* ---------- Thanh hành động dính đáy ---------- */
+  .mobile-actionbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 55;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: var(--bar-h);
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    backdrop-filter: saturate(180%) blur(16px);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -8px 24px -16px rgb(0 0 0 / 35%);
+  }
+
+  .mobile-actionbar .btn {
+    height: 48px;
+    flex: 0 0 auto;
+  }
+
+  .mobile-actionbar-cart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    flex: 0 0 96px;
+    height: 48px;
+    border-radius: 14px;
+    border: 1px solid var(--primary);
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+
+  .mobile-actionbar-cart .svg-inline--fa {
+    font-size: 1.1rem;
+  }
+
+  .mobile-actionbar .mobile-actionbar-main {
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0;
+    line-height: 1.15;
+  }
+
+  .mobile-actionbar-main small {
+    font-size: 0.72rem;
+    font-weight: 600;
+    opacity: 0.9;
+  }
+
+  .mobile-actionbar-all {
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+  }
+
+  .mobile-actionbar-total {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.2;
+  }
+
+  .mobile-actionbar-total small {
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .mobile-actionbar-total small.ok {
+    color: var(--ok);
+  }
+
+  .mobile-actionbar-total strong {
+    font-size: 1.1rem;
+    white-space: nowrap;
+  }
+
+  .mobile-actionbar .mobile-actionbar-total + .btn {
+    min-width: 128px;
+  }
+
+  /* Thông báo "Đã thêm vào giỏ" nổi ngay trên thanh mua hàng */
+  .buy-status {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(var(--bar-h) + 12px + env(safe-area-inset-bottom));
+    z-index: 56;
+    margin: 0;
+    box-shadow: var(--shadow-lg);
+    animation: pop 0.25s var(--ease);
+  }
+
+  /* Nút trong trang đã có ở thanh dính đáy → ẩn để không lặp */
+  .buy-box .buy-row > .btn,
+  .cart-layout:not(.checkout-page) > .checkout,
+  .checkout-page > .checkout > .btn-block,
+  .cart-select-all {
+    display: none;
+  }
+
+  /* ---------- Giỏ hàng ---------- */
+  .cart-item {
+    gap: 10px 12px;
+    padding: 12px;
+  }
+
+  /* ---------- Thanh toán ---------- */
+  .voucher-picker ul {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* ---------- Đơn mua ---------- */
+  .order-tabs {
+    margin-inline: calc(-1 * var(--gutter));
+    padding-inline: var(--gutter);
+    scrollbar-width: none;
+    position: sticky;
+    top: var(--header-h);
+    z-index: 5;
+    background: var(--bg);
+  }
+
+  .order-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .order-tabs button {
+    white-space: nowrap;
+  }
+
+  .order-card-head,
+  .order-card-items,
+  .order-card-foot,
+  .order-card-actions {
+    padding-inline: 12px;
+  }
+
+  .order-card-items li {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .order-card-items img,
+  .order-card-thumb {
+    width: 56px;
+    height: 56px;
+  }
+
+  .order-card-foot {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .order-card-actions .btn {
+    width: 100%;
+  }
+
+  /* ---------- Tài khoản: trang "Tôi" thay cho hàng chip menu ---------- */
+  .acc-layout {
+    margin-top: 0;
+  }
+
+  .acc-side {
+    display: none;
+  }
+
+  .acc-layout.is-hub .acc-main {
+    display: none;
+  }
+
+  .acc-layout.is-hub .me-hub {
+    display: grid;
+    gap: 12px;
+  }
+
+  /* ---------- Footer gọn ở các trang con ---------- */
+  .footer-compact .newsletter,
+  .footer-compact .footer-grid,
+  .footer-compact .footer-policies {
+    display: none;
+  }
+
+  .footer-compact .footer-bottom {
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+    font-size: 0.75rem;
+  }
+}
+
+/* ---------- Trang "Tôi" ---------- */
+.me-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 16px;
+  border-radius: 20px;
+  color: #fff;
+  background: linear-gradient(135deg, #f97316, #c2410c 55%, #9a3412);
+  box-shadow: 0 12px 28px -16px rgb(194 65 12 / 70%);
+}
+
+.me-card .me-avatar {
+  width: 60px;
+  height: 60px;
+  font-size: 1.4rem;
+  border: 3px solid rgb(255 255 255 / 70%);
+  background: rgb(255 255 255 / 20%);
+  color: #fff;
+  flex: 0 0 auto;
+}
+
+.me-card-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.me-card-info strong {
+  font-size: 1.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.me-card-info .small {
+  opacity: 0.9;
+}
+
+.me-card-info .me-card-since {
+  opacity: 0.75;
+}
+
+.me-card-edit {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 18%);
+  color: #fff;
+  flex: 0 0 auto;
+}
+
+.me-section {
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.me-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+
+.me-section-head > span:first-child .svg-inline--fa {
+  color: var(--primary);
+}
+
+.me-section-title {
+  margin: 0;
+  padding: 14px 16px 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.me-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 16px 4px 14px;
+}
+
+.me-shortcuts a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.me-shortcuts .svg-inline--fa {
+  font-size: 1.35rem;
+  color: var(--text);
+}
+
+.me-wallet {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.me-wallet a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px 6px;
+  text-align: center;
+}
+
+.me-wallet a + a {
+  border-left: 1px solid var(--border);
+}
+
+.me-wallet .svg-inline--fa {
+  font-size: 1.2rem;
+  margin-bottom: 4px;
+}
+
+.me-wallet strong {
+  font-size: 0.95rem;
+}
+
+.me-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px;
+}
+
+.me-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 16px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.me-list li + li .me-row {
+  border-top: 1px solid var(--border);
+}
+
+.me-row:active {
+  background: var(--surface-2);
+}
+
+.me-row-ico {
+  color: var(--primary);
+}
+
+.me-row-label {
+  flex: 1;
+  font-weight: 600;
+}
+
+.me-row-chev {
+  font-size: 0.8rem;
+}
+
+.me-logout {
+  height: 50px;
+  color: var(--danger);
+}
+
+/* Thẻ đơn: các khối con giãn hết chiều ngang (ghi đè align-items cũ của bố cục lưới) */
+.order-card {
+  align-items: stretch;
+}
+
+.order-card-shop {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  /* Trang "Tôi" là trang gốc của thanh đáy → không cần nút Quay lại */
+  .main:has(.acc-layout.is-hub) > .back-nav {
+    display: none;
+  }
+
+  /* Thông báo nổi phải đặc nền, không lẫn với chữ bên dưới */
+  .buy-status.alert-ok {
+    background: linear-gradient(var(--ok-soft), var(--ok-soft)), var(--surface);
+  }
+
+  .buy-status:not(.alert-ok) {
+    background: linear-gradient(var(--danger-soft), var(--danger-soft)), var(--surface);
+  }
+
+  /* Giỏ hàng: số lượng nằm dưới tên, giá + xóa cùng một hàng */
+  .cart-item .qty {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .cart-item .qty button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .cart-item-right {
+    grid-column: 2 / -1;
+  }
+
+  .me-shortcuts a {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  /* Đăng nhập / đăng ký: vào thẳng biểu mẫu, ảnh minh họa thu thành dải nhỏ */
+  .auth-art {
+    min-height: 0;
+    padding: 18px 20px;
+  }
+
+  .auth-art > :not(.brand) {
+    display: none;
+  }
+
+  .auth-form {
+    padding: 22px 20px;
+  }
+}

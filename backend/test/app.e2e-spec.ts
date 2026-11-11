@@ -550,9 +550,17 @@ describe('Home Shopping API (e2e)', () => {
       await http().put('/api/cart/items').set(auth(bobToken)).send({ productId, quantity: 1 }).expect(200);
       await http().put('/api/cart/items').set(auth(bobToken)).send({ productId: extraId, quantity: 2 }).expect(200);
 
+      await prisma.product.update({ where: { id: extraId }, data: { imageKey: '/images/products/khan-e2e.webp' } });
+      const preview = await http().post('/api/checkout/preview').set(auth(bobToken)).send({ cartProductIds: [extraId] }).expect(200);
+      expect(preview.body.items[0].imageUrl).toBe('/images/products/khan-e2e.webp');
+      expect(preview.body.items[0]).not.toHaveProperty('imageKey');
+
       const order = await http().post('/api/orders').set(auth(bobToken)).set('Idempotency-Key', randomUUID()).send({ cartProductIds: [extraId] }).expect(201);
       expect(order.body.items.map((i: { productId: string; quantity: number }) => [i.productId, i.quantity])).toEqual([[extraId, 2]]);
-      expect(order.body.items[0]).toMatchObject({ productName: `Khăn E2E ${run}`, unitPrice: 100000 });
+      // Ảnh được snapshot vào đơn và trả kèm URL hiển thị được (thẻ đơn mua có ảnh sản phẩm)
+      expect(order.body.items[0]).toMatchObject({ productName: `Khăn E2E ${run}`, unitPrice: 100000, imageKey: '/images/products/khan-e2e.webp', imageUrl: '/images/products/khan-e2e.webp' });
+      const listed = (await http().get('/api/orders').set(auth(bobToken)).expect(200)).body.find((o: { id: string }) => o.id === order.body.id);
+      expect(listed.items[0].imageUrl).toBe('/images/products/khan-e2e.webp');
       let cart = (await http().get('/api/cart').set(auth(bobToken)).expect(200)).body;
       expect(cart.items.map((i: { productId: string }) => i.productId)).toEqual([productId]);
 

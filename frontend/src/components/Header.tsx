@@ -37,7 +37,7 @@ function HeaderSearch() {
         name="q"
         key={params.get('q') ?? ''}
         defaultValue={params.get('q') ?? ''}
-        placeholder="Tìm kiếm sản phẩm gia dụng…"
+        placeholder="Tìm kiếm sản phẩm…"
         maxLength={100}
         aria-label="Tìm kiếm sản phẩm"
       />
@@ -59,7 +59,6 @@ export function Header() {
     router.refresh();
   }
 
-
   return (
     <header className="header">
       <div className="container header-inner">
@@ -67,7 +66,7 @@ export function Header() {
           <span className="brand-mark">
             <FontAwesomeIcon icon={faHouseChimney} />
           </span>
-          <span>
+          <span className="brand-text">
             Home Shopping
             <small>Đồ gia dụng</small>
           </span>
@@ -78,7 +77,10 @@ export function Header() {
         </Suspense>
 
         <nav className="header-actions" aria-label="Tài khoản và giỏ hàng">
-          <ThemeToggle />
+          {/* Điện thoại: đổi giao diện nằm trong trang "Tôi", thông báo ở thanh điều hướng đáy */}
+          <span className="desktop-only">
+            <ThemeToggle />
+          </span>
           {ready && session && (
             <Link href="/orders" className={`${active('/orders')} desktop-only`}>
               <FontAwesomeIcon icon={faReceipt} fixedWidth />
@@ -86,7 +88,7 @@ export function Header() {
             </Link>
           )}
           {ready && session && (
-            <Link href="/account?tab=notifications" className={active('/account')} aria-label={`Thông báo, ${unread.total} chưa đọc`}>
+            <Link href="/account?tab=notifications" className={`${active('/account')} desktop-only`} aria-label={`Thông báo, ${unread.total} chưa đọc`}>
               <span className="icon-badge">
                 <FontAwesomeIcon icon={faBell} fixedWidth />
                 {unread.total > 0 && <span className="badge-count">{unread.total > 99 ? '99+' : unread.total}</span>}

@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { AddressTab } from '@/components/account/AddressTab';
 import { BankTab } from '@/components/account/BankTab';
+import { MeHub } from '@/components/account/MeHub';
 import { NotificationsTab } from '@/components/account/NotificationsTab';
 import { ProfileTab } from '@/components/account/ProfileTab';
 import { LinkedTab, PasswordTab } from '@/components/account/SecurityTabs';
@@ -87,7 +88,9 @@ function AccountContent() {
       .catch(() => setBanner(false));
   }, [tab]);
 
-  const go = (id: TabId) => router.replace(id === 'profile' ? '/account' : `/account?tab=${id}`, { scroll: false });
+  const go = (id: TabId) => router.replace(`/account?tab=${id}`, { scroll: false });
+  // Điện thoại: /account (không chọn mục) = trang "Tôi" kiểu app; chọn mục nào thì mở thẳng mục đó
+  const hub = !isTab(params.get('tab'));
   const inAccountGroup = ACCOUNT_TABS.some((t) => t.id === tab);
 
   if (!profile) {
@@ -101,7 +104,8 @@ function AccountContent() {
   }
 
   return (
-    <div className="acc-layout">
+    <div className={`acc-layout ${hub ? 'is-hub' : 'has-tab'}`}>
+      <MeHub profile={profile} />
       <aside className="acc-side" aria-label="Menu tài khoản">
         <div className="acc-user">
           {profile.avatarUrl ? (
@@ -179,7 +183,7 @@ function AccountContent() {
       </aside>
 
       <div className="acc-main">
-        {banner && tab !== 'address' && (
+        {banner && tab === 'profile' && (
           <div className="acc-banner" role="status">
             <FontAwesomeIcon icon={faBell} />
             <span>
