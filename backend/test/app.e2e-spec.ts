@@ -20,7 +20,7 @@ describe('Home Shopping API (e2e)', () => {
   let prisma: PrismaService;
   const run = randomUUID().slice(0, 8);
   const password = 'E2eTest123';
-  const created = { userIds: [] as string[], productIds: [] as string[], categoryId: 0 };
+  const created = { userIds: [] as string[], productIds: [] as string[], voucherIds: [] as string[], categoryId: 0 };
   // Bắt email thay vì gửi SMTP thật → đọc được link đặt lại mật khẩu trong test
   const outbox: MailMessage[] = [];
   const fakeMail = { enabled: true, send: async (m: MailMessage) => (outbox.push(m), true) };
@@ -66,6 +66,7 @@ describe('Home Shopping API (e2e)', () => {
   afterAll(async () => {
     if (prisma) {
       await prisma.order.deleteMany({ where: { userId: { in: created.userIds } } });
+      await prisma.voucher.deleteMany({ where: { id: { in: created.voucherIds } } });
       await prisma.product.deleteMany({ where: { id: { in: created.productIds } } });
       await prisma.category.deleteMany({ where: { OR: [{ id: created.categoryId }, { slug: { startsWith: `e2e-cat-${run}` } }] } });
       await prisma.user.deleteMany({ where: { id: { in: created.userIds } } });
@@ -404,6 +405,46 @@ describe('Home Shopping API (e2e)', () => {
     it('rejects unknown or malformed login codes', async () => {
       await http().post('/api/auth/oauth/exchange').send({ code: 'x'.repeat(43) }).expect(401);
       await http().post('/api/auth/oauth/exchange').send({ code: '../../etc' }).expect(400);
+    });
+  });
+
+  describe('vouchers (kho voucher, ví, quản trị)', () => {
+    const code = `E2E${run.toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
+    const window = () => ({ startsAt: new Date(Date.now() - 60_000).toISOString(), endsAt: new Date(Date.now() + 86_400_000).toISOString() });
+
+    it('admin creates vouchers; invalid configs and duplicate codes are rejected', async () => {
+      await http().post('/api/admin/vouchers').set(auth(aliceToken)).send({ code, name: 'x', type: 'FIXED', value: 1, ...window() }).expect(403);
+      await http().post('/api/admin/vouchers').set(auth(adminToken)).send({ code, name: 'Sai %', type: 'PERCENT', value: 150, ...window() }).expect(400);
+      await http()
+        .post('/api/admin/vouchers')
+        .set(auth(adminToken))
+        .send({ code, name: 'Sai thời gian', type: 'FIXED', value: 1000, startsAt: window().endsAt, endsAt: window().startsAt })
+        .expect(400);
+      const res = await http()
+        .post('/api/admin/vouchers')
+        .set(auth(adminToken))
+        .send({ code: code.toLowerCase(), name: 'E2E giảm 10%', type: 'PERCENT', value: 10, maxDiscount: 20000, minOrderValue: 100000, usageLimit: 1, ...window() })
+        .expect(201);
+      expect(res.body).toMatchObject({ code, usedCount: 0, isActive: true });
+      created.voucherIds.push(res.body.id);
+      await http().post('/api/admin/vouchers').set(auth(adminToken)).send({ code, name: 'Trùng', type: 'FIXED', value: 1000, ...window() }).expect(409);
+    });
+
+    it('customers browse public vouchers and save them to their wallet (idempotent)', async () => {
+      const list = await http().get('/api/vouchers').expect(200);
+      const mine = list.body.find((v: { code: string }) => v.code === code);
+      expect(mine).toMatchObject({ summary: 'Giảm 10% tối đa 20.000₫ · Đơn từ 100.000₫', usedPercent: 0 });
+      expect(mine.usedCount).toBeUndefined();
+
+      await http().post('/api/vouchers/save').set(auth(bobToken)).send({ code: code.toLowerCase() }).expect(200);
+      await http().post('/api/vouchers/save').set(auth(bobToken)).send({ code }).expect(200);
+      const wallet = await http().get('/api/vouchers/wallet').set(auth(bobToken)).expect(200);
+      expect(wallet.body.filter((v: { code: string }) => v.code === code)).toHaveLength(1);
+      const flagged = await http().get('/api/vouchers/mine').set(auth(bobToken)).expect(200);
+      expect(flagged.body.find((v: { code: string }) => v.code === code).saved).toBe(true);
+
+      const missing = await http().post('/api/vouchers/save').set(auth(bobToken)).send({ code: 'KHONGCOMANAY' }).expect(404);
+      expect(missing.body.code).toBe('VOUCHER_NOT_FOUND');
     });
   });
 

@@ -6,7 +6,7 @@ export interface AuditEntry {
   actorId: string | null;
   /** Dạng <thực thể>.<hành động>, ví dụ order.status, product.update, user.lock */
   action: string;
-  entityType: 'order' | 'product' | 'category' | 'user' | 'review' | 'newsletter';
+  entityType: 'order' | 'product' | 'category' | 'user' | 'review' | 'newsletter' | 'voucher' | 'payment' | 'return';
   entityId?: string | null;
   summary: string;
   metadata?: Record<string, unknown>;

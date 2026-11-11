@@ -26,6 +26,7 @@ import { RedisModule } from './redis/redis.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { StorageModule } from './storage/storage.module';
+import { VouchersModule } from './vouchers/vouchers.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { StorageModule } from './storage/storage.module';
     ReviewsModule,
     NewsletterModule,
     AdminModule,
+    VouchersModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

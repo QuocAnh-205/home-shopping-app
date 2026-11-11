@@ -289,6 +289,36 @@ async function seedLocations() {
   console.log(`  ${units.length} provinces, ${wardTotal} wards`);
 }
 
+/** Voucher mẫu (demo): chỉ tạo khi chưa có mã; voucher hết hạn được gia hạn thêm 90 ngày để demo luôn dùng được */
+async function seedVouchers(categoryIds) {
+  const day = 86_400_000;
+  const startsAt = new Date(Date.now() - day);
+  const endsAt = new Date(Date.now() + 90 * day);
+  const samples = [
+    { code: 'HOMESHOP10', name: 'Giảm 10% toàn shop', type: 'PERCENT', value: 10, maxDiscount: 50_000, minOrderValue: 300_000, usageLimit: 1000, perUserLimit: 3 },
+    { code: 'GIAM50K', name: 'Giảm 50K đơn từ 500K', type: 'FIXED', value: 50_000, minOrderValue: 500_000, usageLimit: 500, perUserLimit: 1 },
+    { code: 'FREESHIP', name: 'Miễn phí vận chuyển', type: 'FREESHIP', value: 0, minOrderValue: 150_000, usageLimit: 2000, perUserLimit: 5 },
+    { code: 'SHIP15K', name: 'Giảm 15K phí vận chuyển', type: 'FREESHIP', value: 15_000, minOrderValue: 0, usageLimit: null, perUserLimit: 10 },
+    {
+      code: 'BEPXINH15',
+      name: 'Nhà bếp giảm 15%',
+      type: 'PERCENT',
+      value: 15,
+      maxDiscount: 100_000,
+      minOrderValue: 200_000,
+      usageLimit: 300,
+      perUserLimit: 1,
+      categoryIds: [categoryIds.get('nha-bep')].filter(Boolean),
+    },
+  ];
+  for (const v of samples) {
+    const existing = await prisma.voucher.findUnique({ where: { code: v.code }, select: { endsAt: true } });
+    if (!existing) await prisma.voucher.create({ data: { ...v, startsAt, endsAt, isPublic: true } });
+    else if (existing.endsAt < new Date()) await prisma.voucher.update({ where: { code: v.code }, data: { endsAt } });
+  }
+  console.log(`  ${samples.length} demo vouchers`);
+}
+
 /** Địa chỉ mặc định cho tài khoản khách demo (để thử đặt hàng ngay), chỉ tạo khi họ chưa có địa chỉ nào */
 async function seedDemoAddresses(customers) {
   const samples = [
@@ -351,6 +381,7 @@ async function main() {
     const customers = [];
     for (const a of demoAccounts.filter((x) => x.role === 'CUSTOMER')) customers.push(await upsertDemoAccount(a));
     await seedDemoAddresses(customers);
+    await seedVouchers(categoryIds);
   }
 
   if (process.env.SEED_DEMO_DATA === 'true') {
@@ -359,6 +390,7 @@ async function main() {
     const customers = accounts.filter((u) => u.role === Role.CUSTOMER);
     if (customers.length > 0) {
       await seedDemoAddresses(customers);
+      await seedVouchers(categoryIds);
       await seedReviews(customers);
       await seedOrders(customers);
     }

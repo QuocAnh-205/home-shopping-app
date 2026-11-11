@@ -73,6 +73,15 @@ enum Region {
   SOUTH
 }
 
+enum VoucherType {
+  /// Giảm theo % (value = 1..100), giới hạn bởi maxDiscount
+  PERCENT
+  /// Giảm số tiền cố định (value = VND)
+  FIXED
+  /// Giảm phí vận chuyển (value = VND tối đa được giảm, 0 = miễn toàn bộ)
+  FREESHIP
+}
+
 enum OAuthProvider {
   GOOGLE
   FACEBOOK
@@ -101,6 +110,8 @@ model User {
   passwordResetTokens PasswordResetToken[]
   addresses           Address[]
   auditLogs           AdminAuditLog[]
+  savedVouchers       UserVoucher[]
+  voucherUsages       VoucherUsage[]
 
   @@index([createdAt])
   @@map("users")
@@ -298,6 +309,10 @@ model Order {
   updatedAt       DateTime    @updatedAt @map("updated_at")
   items           OrderItem[]
   history         OrderStatusHistory[]
+  /// Mã voucher đã dùng (snapshot): tối đa 1 voucher giảm giá + 1 voucher vận chuyển như Shopee
+  voucherCode         String?        @map("voucher_code") @db.VarChar(32)
+  shippingVoucherCode String?        @map("shipping_voucher_code") @db.VarChar(32)
+  voucherUsages       VoucherUsage[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
@@ -305,6 +320,71 @@ model Order {
   @@index([status, paymentExpiresAt])
   @@index([status, deliveredAt])
   @@map("orders")
+}
+
+model Voucher {
+  id            String      @id @default(uuid()) @db.Uuid
+  /// In hoa, A-Z 0-9 (CHECK trong migration)
+  code          String      @unique @db.VarChar(32)
+  name          String      @db.VarChar(120)
+  description   String?     @db.VarChar(500)
+  type          VoucherType
+  value         Int
+  /// Giảm tối đa (VND) cho voucher %
+  maxDiscount   Int?        @map("max_discount")
+  /// Đơn tối thiểu (VND), tính trên các sản phẩm thuộc phạm vi áp dụng
+  minOrderValue Int         @default(0) @map("min_order_value")
+  startsAt      DateTime    @map("starts_at")
+  endsAt        DateTime    @map("ends_at")
+  /// Tổng lượt dùng (null = không giới hạn); usedCount tăng bằng UPDATE có điều kiện → không vượt khi dùng đồng thời
+  usageLimit    Int?        @map("usage_limit")
+  usedCount     Int         @default(0) @map("used_count")
+  perUserLimit  Int         @default(1) @map("per_user_limit")
+  /// Phạm vi: rỗng = toàn shop; có giá trị = chỉ áp dụng cho danh mục / sản phẩm này
+  categoryIds   Int[]       @default([]) @map("category_ids")
+  productIds    String[]    @default([]) @map("product_ids") @db.Uuid
+  isActive      Boolean     @default(true) @map("is_active")
+  /// Hiện trong danh sách voucher & lưu được vào ví; false = mã riêng, phải nhập tay
+  isPublic      Boolean     @default(true) @map("is_public")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  usages        VoucherUsage[]
+  savedBy       UserVoucher[]
+
+  @@index([isActive, endsAt])
+  @@map("vouchers")
+}
+
+/// Ví voucher của người dùng ("Lưu" voucher như Shopee)
+model UserVoucher {
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voucherId String   @map("voucher_id") @db.Uuid
+  voucher   Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  savedAt   DateTime @default(now()) @map("saved_at")
+
+  @@id([userId, voucherId])
+  @@index([voucherId])
+  @@map("user_vouchers")
+}
+
+/// Mỗi lần voucher được dùng cho 1 đơn; xóa (và trả lượt) khi đơn bị hủy
+model VoucherUsage {
+  id        BigInt   @id @default(autoincrement())
+  voucherId String   @map("voucher_id") @db.Uuid
+  voucher   Voucher  @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId   String   @map("order_id") @db.Uuid
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Số tiền được giảm (VND)
+  discount  Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([voucherId, orderId])
+  @@index([voucherId, userId])
+  @@index([orderId])
+  @@map("voucher_usages")
 }
 
 /// Lịch sử trạng thái đơn (timeline): ai đổi, lúc nào, ghi chú
