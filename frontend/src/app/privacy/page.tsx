@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: 'Chính sách bảo mật' };
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Chính sách bảo mật" updated="02/11/2026" path="/privacy">
+    <LegalPage title="Chính sách bảo mật" updated="12/11/2026" path="/privacy">
       <p>
         Home Shopping App (“chúng tôi”) tôn trọng quyền riêng tư của bạn. Trang này mô tả dữ liệu chúng tôi thu thập, mục đích sử dụng và quyền của bạn
         đối với dữ liệu đó.

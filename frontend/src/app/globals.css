@@ -5369,3 +5369,30 @@ button.stat-tile:hover {
   transform: rotate(-45deg);
   box-shadow: 0 2px 6px rgb(0 0 0 / 35%);
 }
+
+/* ---------------- Nút Quay lại (mọi trang trừ trang chủ) ---------------- */
+.back-nav {
+  margin: 4px 0 12px;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.back-btn:hover,
+.back-btn:focus-visible {
+  color: var(--primary);
+  border-color: var(--primary);
+}

@@ -3,6 +3,7 @@ import { config } from '@fortawesome/fontawesome-svg-core';
 import type { Metadata, Viewport } from 'next';
 import { Be_Vietnam_Pro } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { BackButton } from '@/components/BackButton';
 import { Footer } from '@/components/Footer';
 import { Header } from '@/components/Header';
 import { MobileNav } from '@/components/MobileNav';
@@ -50,6 +51,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </a>
         <Header />
         <main id="main" className="container main">
+          <BackButton />
           {children}
         </main>
         <Footer />
