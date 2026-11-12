@@ -48,27 +48,22 @@ compose() {
 docker network inspect homeshop-frontend-net >/dev/null 2>&1 || fail "Network homeshop-frontend-net chưa có (production chưa chạy lần nào)"
 
 log "Deploying $TAG → https://$STAGING_HOST"
-compose pull --quiet frontend backend || fail "Cannot pull images for $TAG"
-compose up -d --wait postgres redis || fail "Staging DB/Redis failed to start"
+# --remove-orphans: xóa container của bản cũ (service tên backend/frontend bị Docker DNS trộn với production)
+compose pull --quiet staging-frontend staging-backend || fail "Cannot pull images for $TAG"
+compose up -d --wait --remove-orphans postgres redis || fail "Staging DB/Redis failed to start"
 
 log "prisma migrate deploy (staging DB)"
-compose run --rm --no-deps -T backend npx prisma migrate deploy || fail "Migration failed on staging → production NOT deployed"
+compose run --rm --no-deps -T staging-backend npx prisma migrate deploy || fail "Migration failed on staging → production NOT deployed"
 log "seed (staging DB)"
-compose run --rm --no-deps -T backend node prisma/seed.js || fail "Seed failed on staging"
+compose run --rm --no-deps -T staging-backend node prisma/seed.js || fail "Seed failed on staging"
 
-compose up -d --wait --wait-timeout 240 backend frontend || {
+compose up -d --wait --wait-timeout 240 staging-backend staging-frontend || {
   docker logs --tail 60 homeshop-staging-backend 2>&1 | sed 's/^/    /' || true
   fail "Staging containers not healthy"
 }
 
 # Nginx production đọc nginx.conf mới (có định tuyến staging) – chỉ reload khi cấu hình hợp lệ
-if docker ps --format '{{.Names}}' | grep -qx homeshop-nginx; then
-  if docker exec homeshop-nginx nginx -t >/dev/null 2>&1; then
-    docker exec homeshop-nginx nginx -s reload
-  else
-    log "WARNING: nginx -t failed → giữ cấu hình Nginx cũ"
-  fi
-fi
+bash "$APP_DIR/scripts/refresh-nginx.sh" || log "WARNING: không cập nhật được cấu hình Nginx"
 
 # Chứng chỉ HTTPS: thêm staging.<DOMAIN> vào cert "homeshop" (Let's Encrypt HTTP-01 qua webroot sẵn có)
 if docker ps --format '{{.Names}}' | grep -qx homeshop-certbot; then

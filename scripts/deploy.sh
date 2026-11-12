@@ -155,8 +155,8 @@ ensure_tls_and_edge() {
   fi
   # --no-deps: không để compose "tiện tay" recreate frontend/backend
   compose up -d --no-deps nginx certbot
-  # nginx.conf là bind-mount: compose không phát hiện thay đổi nội dung → test & reload thủ công
-  docker exec homeshop-nginx nginx -t && docker exec homeshop-nginx nginx -s reload
+  # nginx.conf: so checksum với bản trong container → tạo lại container khi đổi cách mount, còn lại test + reload
+  bash "$APP_DIR/scripts/refresh-nginx.sh"
   ensure_certificate_covers_domain || log "WARNING: không cập nhật được chứng chỉ cho tên miền mới"
 }
 

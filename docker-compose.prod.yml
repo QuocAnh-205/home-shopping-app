@@ -27,13 +27,15 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Mount cả THƯ MỤC (không mount file lẻ): rsync thay nginx.conf bằng inode mới → mount file lẻ sẽ giữ bản cũ mãi
+      - ./nginx:/etc/nginx/hs:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - certbot-www:/var/www/certbot:ro
       - letsencrypt:/etc/letsencrypt:ro
       - nginx-cache:/var/cache/nginx
     # Reload mỗi 6h để nhận certificate mới mà certbot đã gia hạn
-    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec nginx -g 'daemon off;'"]
+    # Symlink → mọi lệnh nginx -t / -s reload (deploy.sh, certbot) đọc đúng file mới nhất trong thư mục mount
+    command: ["/bin/sh", "-c", "ln -sf /etc/nginx/hs/nginx.conf /etc/nginx/nginx.conf && while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec nginx -g 'daemon off;'"]
     depends_on:
       frontend:
         condition: service_healthy
