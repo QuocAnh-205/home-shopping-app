@@ -4,7 +4,7 @@
 # ============================================================
 
 # ---------- Stage 0: base ----------
-FROM node:20-alpine AS base
+FROM node:25-alpine AS base
 # openssl: Prisma query engine cần libssl trên Alpine (musl)
 RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
