@@ -319,7 +319,7 @@ jobs:
 
       - name: Build image (load vào runner để scan trước khi push)
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.service }}
           file: ./${{ matrix.service }}/Dockerfile
