@@ -7481,3 +7481,523 @@ button.stat-tile:hover {
     align-items: center;
   }
 }
+
+/* ==========================================================================
+   Hero v2 – khối đầu trang hướng chuyển đổi (Flash Sale, voucher, bằng chứng xã hội)
+   ========================================================================== */
+.hero-v2 {
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.hero-v2 .hero {
+  min-height: 480px;
+  justify-content: center;
+  padding-bottom: 96px;
+}
+
+.hero-v2 .hero::after {
+  background:
+    linear-gradient(90deg, rgb(12 10 9 / 82%) 0%, rgb(12 10 9 / 45%) 50%, rgb(12 10 9 / 5%) 85%),
+    linear-gradient(180deg, transparent 50%, rgb(12 10 9 / 55%) 100%);
+}
+
+.eyebrow-hot {
+  background: linear-gradient(90deg, #ef4444, #f97316);
+  border-color: transparent;
+  box-shadow: 0 6px 18px -6px rgb(239 68 68 / 70%);
+  animation: pulse-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  50% {
+    box-shadow: 0 6px 26px -4px rgb(249 115 22 / 85%);
+  }
+}
+
+.hero-v2 h1 {
+  max-width: 16ch;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+
+.hero-hl {
+  background: linear-gradient(90deg, #fdba74, #fbbf24);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero-perks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 4px 0 22px;
+  padding: 0;
+}
+
+.hero-perks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 14%);
+  border: 1px solid rgb(255 255 255 / 20%);
+  backdrop-filter: blur(6px);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.hero-perks .svg-inline--fa {
+  color: #fdba74;
+}
+
+.hero-ctas .btn-lg {
+  height: 52px;
+  padding: 0 24px;
+}
+
+.hero-ctas .btn:first-child {
+  box-shadow: 0 10px 28px -8px rgb(249 115 22 / 80%);
+}
+
+.hero-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 18px 0 0;
+  font-size: 0.85rem;
+  opacity: 0.92;
+}
+
+.hero-proof strong {
+  font-weight: 800;
+}
+
+.hero-proof .svg-inline--fa {
+  color: #fbbf24;
+}
+
+/* Thẻ giá nổi gắn lên sản phẩm trong ảnh */
+.hero-tag {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  display: grid;
+  gap: 2px;
+  max-width: 280px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 92%);
+  color: #1c1917;
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 55%);
+  transition: transform 0.25s var(--ease);
+}
+
+.hero-tag:hover {
+  transform: translateY(-3px);
+}
+
+.hero-tag-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #57534e;
+}
+
+.hero-tag-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hero-tag-price strong {
+  font-size: 1.15rem;
+  color: #c2410c;
+}
+
+.hero-tag-price s {
+  font-size: 0.8rem;
+  color: #a8a29e;
+}
+
+.hero-tag-price em {
+  font-style: normal;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #dc2626;
+  color: #fff;
+}
+
+.hero-tag-go {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #c2410c;
+}
+
+/* ---------- Flash Sale ---------- */
+.flash-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--r-xl);
+  background: linear-gradient(160deg, #dc2626 0%, #ea580c 55%, #f97316 100%);
+  color: #fff;
+  box-shadow: var(--shadow-lg);
+}
+
+.flash-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.flash-title {
+  font-weight: 900;
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  font-style: italic;
+}
+
+.flash-title .svg-inline--fa {
+  color: #fde047;
+}
+
+.flash-ends {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.flash-clock {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.flash-clock-cell {
+  min-width: 26px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  background: #1c1917;
+  color: #fff;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.flash-items {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.flash-items a {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 96%);
+  color: #1c1917;
+  transition: transform 0.2s var(--ease);
+}
+
+.flash-items a:hover {
+  transform: translateX(3px);
+}
+
+.flash-thumb {
+  position: relative;
+  width: 76px;
+  height: 76px;
+}
+
+.flash-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.flash-thumb em {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #fde047;
+  color: #b91c1c;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.flash-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.flash-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flash-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.flash-price strong {
+  color: #dc2626;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.flash-price s {
+  font-size: 0.75rem;
+  color: #a8a29e;
+}
+
+/* Thanh "đã bán" kiểu sàn TMĐT */
+.flash-bar {
+  position: relative;
+  height: 18px;
+  border-radius: 999px;
+  background: #fecaca;
+  overflow: hidden;
+}
+
+.flash-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f97316, #dc2626);
+}
+
+.flash-bar small {
+  position: relative;
+  display: block;
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 18px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+}
+
+.flash-more {
+  margin-top: auto;
+  font-weight: 700;
+  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flash-more:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Voucher hôm nay ---------- */
+.hero-vouchers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-content: start;
+}
+
+.hero-vouchers-title {
+  grid-column: 1 / -1;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.hero-vouchers-title .svg-inline--fa {
+  color: var(--primary);
+}
+
+.hero-voucher {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1.5px dashed color-mix(in srgb, var(--primary) 55%, transparent);
+  background: var(--primary-soft);
+}
+
+/* Răng cưa 2 bên như vé thật */
+.hero-voucher::before,
+.hero-voucher::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg);
+  transform: translateY(-50%);
+}
+
+.hero-voucher::before {
+  left: -8px;
+}
+
+.hero-voucher::after {
+  right: -8px;
+}
+
+.hero-voucher-freeship {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.hero-voucher-value {
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: var(--primary);
+}
+
+.hero-voucher-freeship .hero-voucher-value {
+  color: var(--accent);
+}
+
+.hero-voucher-cond {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.hero-voucher-btn {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.hero-voucher-freeship .hero-voucher-btn {
+  background: var(--accent);
+  color: #042f2e;
+}
+
+.hero-voucher-btn.is-copied {
+  background: var(--ok);
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .hero-v2 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .hero-v2 .hero {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero-v2 {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .hero-v2 .hero {
+    min-height: 0;
+    padding: 22px 18px 18px;
+  }
+
+  .hero-v2 h1 {
+    font-size: 1.85rem;
+  }
+
+  .hero-perks {
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+
+  .hero-perks li {
+    padding: 5px 9px;
+    font-size: 0.74rem;
+  }
+
+  .hero-ctas .btn-lg {
+    height: 46px;
+    padding: 0 14px;
+  }
+
+  .hero-proof {
+    gap: 4px 12px;
+    font-size: 0.75rem;
+  }
+
+  /* Điện thoại: thẻ giá nằm trong luồng, không che chữ */
+  .hero-tag {
+    position: static;
+    max-width: none;
+    margin-top: 16px;
+  }
+
+  .flash-card {
+    border-radius: 20px;
+  }
+
+  .hero-voucher-value {
+    font-size: 1rem;
+  }
+}
+
+/* Hero v2 – tinh chỉnh */
+.hero-proof {
+  max-width: 60%;
+}
+
+@media (max-width: 720px) {
+  .hide-mobile {
+    display: none;
+  }
+
+  .hero-proof {
+    max-width: none;
+  }
+
+  .hero-ctas .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 12px;
+  }
+
+  /* Điện thoại: Flash Sale 2 món cho gọn */
+  .flash-items li:nth-child(3) {
+    display: none;
+  }
+}
