@@ -32,9 +32,12 @@ RUN npx prisma generate && npm cache clean --force
 # ---------- Stage 4: runtime ----------
 FROM base AS runtime
 ARG APP_VERSION=dev
+# Số lần chạy pipeline → phiên bản 1.0.<APP_BUILD> (hiện ở /api/health và footer website)
+ARG APP_BUILD=0
 ENV NODE_ENV=production \
     PORT=8080 \
     APP_VERSION=${APP_VERSION} \
+    APP_BUILD=${APP_BUILD} \
     NODE_OPTIONS="--max-old-space-size=384"
 
 LABEL org.opencontainers.image.title="home-shopping-backend" \

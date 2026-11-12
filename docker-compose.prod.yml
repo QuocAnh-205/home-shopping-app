@@ -117,6 +117,7 @@ services:
       S3_BUCKET: ${S3_BUCKET}
       AWS_REGION: ${AWS_REGION:-ap-southeast-1}
       APP_VERSION: ${IMAGE_TAG:-latest}
+      APP_ENV: production
       # Tài liệu API /api/docs: mặc định tắt ở production (giảm bề mặt tấn công), bật khi demo
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       # Link trong email + redirect URI OAuth (vd https://shop.example.com)

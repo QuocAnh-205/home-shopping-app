@@ -5,6 +5,7 @@ import { Be_Vietnam_Pro } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { BackButton } from '@/components/BackButton';
 import { CompareBar } from '@/components/CompareBar';
+import { GoogleOneTap } from '@/components/auth/GoogleOneTap';
 import { Footer } from '@/components/Footer';
 import { Header } from '@/components/Header';
 import { MobileNav } from '@/components/MobileNav';
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </main>
         <Footer />
         <CompareBar />
+        <GoogleOneTap />
         <MobileNav />
       </body>
     </html>

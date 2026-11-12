@@ -97,6 +97,49 @@ export class OAuthService {
     return { google: this.isEnabled('google'), facebook: this.isEnabled('facebook') };
   }
 
+  /** Client ID Google là thông tin công khai (nằm trong mọi trang có nút đăng nhập Google) → frontend dùng cho One Tap */
+  googleClientId(): string | null {
+    // One Tap chỉ cần client ID (token được Google ký, xác minh qua tokeninfo) – không cần client secret
+    return this.providers.google.clientId || null;
+  }
+
+  /**
+   * Google One Tap / FedCM: trình duyệt đã đăng nhập Google → Google cấp ID token (JWT) cho đúng client ID của shop.
+   * Xác minh bằng endpoint tokeninfo của Google (Google tự kiểm chữ ký RS256 + hạn dùng), rồi kiểm tra thêm:
+   * aud = client ID của shop (token cấp cho site khác không dùng được ở đây), iss = Google, email đã xác minh.
+   */
+  async verifyGoogleIdToken(credential: string, now = Date.now()): Promise<OAuthProfile> {
+    const clientId = this.googleClientId();
+    if (!clientId) throw new OAuthError('provider_disabled');
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new OAuthError('invalid_token');
+    const t = (await res.json()) as {
+      aud?: string;
+      iss?: string;
+      sub?: string;
+      exp?: string;
+      email?: string;
+      email_verified?: string | boolean;
+      name?: string;
+      picture?: string;
+    };
+    const issuers = ['accounts.google.com', 'https://accounts.google.com'];
+    if (t.aud !== clientId || !t.iss || !issuers.includes(t.iss) || !t.sub || Number(t.exp ?? 0) * 1000 < now) {
+      this.logger.warn({ event: 'oauth.one_tap_rejected', reason: t.aud !== clientId ? 'audience' : 'claims' });
+      throw new OAuthError('invalid_token');
+    }
+    return {
+      providerUserId: t.sub,
+      email: t.email?.toLowerCase() ?? null,
+      emailVerified: t.email_verified === true || t.email_verified === 'true',
+      name: t.name ?? t.email ?? 'Google user',
+      avatarUrl: t.picture ?? null,
+    };
+  }
+
   redirectUri(provider: ProviderSlug): string {
     return `${this.appUrl}/api/auth/oauth/${provider}/callback`;
   }

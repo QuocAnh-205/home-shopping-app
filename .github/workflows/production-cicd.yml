@@ -329,6 +329,7 @@ jobs:
           tags: ${{ steps.meta.outputs.image }}:${{ github.sha }}
           build-args: |
             APP_VERSION=${{ github.sha }}
+            APP_BUILD=${{ github.run_number }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

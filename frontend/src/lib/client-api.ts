@@ -101,6 +101,8 @@ export async function logout(): Promise<void> {
     /* Token hết hạn/đã thu hồi: vẫn xóa phiên phía client */
   }
   saveSession(null);
+  // Google One Tap: không tự đăng nhập lại ngay sau khi khách chủ động đăng xuất
+  (window as { google?: { accounts?: { id?: { disableAutoSelect(): void } } } }).google?.accounts?.id?.disableAutoSelect();
 }
 
 // ---------------- Giỏ hàng ----------------
@@ -217,6 +219,7 @@ const MESSAGE_VI: [RegExp, (m: RegExpMatchArray) => string][] = [
   [/^Only JPEG, PNG or WEBP images are allowed$/, () => 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP'],
   [/^File too large$/, () => 'Ảnh vượt quá dung lượng cho phép'],
   [/^File content does not match/, () => 'Tệp không phải ảnh hợp lệ'],
+  [/^Unsupported image format$/, () => 'Ảnh phải là JPEG, PNG hoặc WEBP. Ảnh HEIC (iPhone) hãy mở bằng khung cắt ảnh để tự chuyển đổi.'],
   [/^fullName must be longer than or equal to 2 characters$/, () => 'Họ tên cần ít nhất 2 ký tự'],
   [/^street must be longer than or equal to 3 characters$/, () => 'Địa chỉ cụ thể quá ngắn'],
 ];

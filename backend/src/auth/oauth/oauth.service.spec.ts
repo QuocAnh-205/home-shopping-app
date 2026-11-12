@@ -27,6 +27,40 @@ describe('OAuthService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
+  describe('Google One Tap (ID token)', () => {
+    const now = Date.parse('2026-11-12T00:00:00Z');
+    const claims = { aud: 'gid', iss: 'https://accounts.google.com', sub: 'g-123', exp: String(now / 1000 + 600), email: 'Lan@Gmail.com', email_verified: 'true', name: 'Lan' };
+    const tokeninfo = (body: object, ok = true) =>
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({ ok, json: async () => body } as Response);
+    afterEach(() => jest.restoreAllMocks());
+
+    it('accepts a token issued by Google for THIS shop and maps it to a profile', async () => {
+      tokeninfo(claims);
+      await expect(service.verifyGoogleIdToken('a.b.c', now)).resolves.toEqual({
+        providerUserId: 'g-123',
+        email: 'lan@gmail.com',
+        emailVerified: true,
+        name: 'Lan',
+        avatarUrl: null,
+      });
+      expect(service.googleClientId()).toBe('gid');
+    });
+
+    it.each([
+      ['issued for another website (aud)', { ...claims, aud: 'someone-else' }],
+      ['wrong issuer', { ...claims, iss: 'https://evil.example' }],
+      ['expired', { ...claims, exp: String(now / 1000 - 1) }],
+    ])('rejects a token %s', async (_label, body) => {
+      tokeninfo(body);
+      await expect(service.verifyGoogleIdToken('a.b.c', now)).rejects.toEqual(new OAuthError('invalid_token'));
+    });
+
+    it('rejects a token Google itself says is invalid', async () => {
+      tokeninfo({ error: 'invalid_token' }, false);
+      await expect(service.verifyGoogleIdToken('a.b.c', now)).rejects.toBeInstanceOf(OAuthError);
+    });
+  });
+
   it('reports only providers that have credentials', () => {
     expect(service.enabledProviders()).toEqual({ google: true, facebook: false });
   });

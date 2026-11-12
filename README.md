@@ -174,6 +174,43 @@ EOF
 8. **Kiểm tra:** `curl https://<ip-gạch-ngang>.sslip.io/api/health` trả về version = commit mới nhất; mở Grafana `http://<ip>:3001`.
 9. **Hủy sau khi chấm:** [mục 5](#5-hủy-hạ-tầng-tránh-phát-sinh-chi-phí-sau-khi-chấm) (`terraform destroy`).
 
+### 0.7. Bằng chứng "commit trên GitHub = commit đang chạy" (mở ra khi bảo vệ)
+
+| Ở đâu | Hiển thị gì |
+|---|---|
+| `GET /api/health` (readiness) | `status`, `version` (SHA đầy đủ), `commit` (7 ký tự), `release` (`1.0.<số lần chạy pipeline>`), `environment` (production/staging), `commitUrl` (link tới đúng commit trên GitHub), `startedAt`, `uptime`, `checks` (database/redis up/down) + `latencyMs`, `node`. Lỗi DB/Redis trả **503** để Docker, deploy.sh và cảnh báo phát hiện |
+| `GET /api/health/live` | Liveness: chỉ báo tiến trình còn sống (không truy vấn DB), dùng để phân biệt "app treo" với "DB sập" |
+| `GET /api/health/version` | Thông tin build gọn cho website |
+| Footer website (mọi trang) | `v1.0.N · build #a1b2c3d (Production)` dưới dòng bản quyền, bấm vào mở đúng commit trên GitHub. Staging hiện `(Staging)` màu vàng |
+
+Cách chứng minh: mở tab GitHub → commit mới nhất trên `main` (ví dụ `a1b2c3d`) → mở `https://<tên-miền>/api/health` → trường `commit` trùng khớp. Sửa một dòng, merge PR, chờ pipeline xanh, tải lại trang: số `v1.0.N` và `build #…` ở footer tự đổi.
+
+**Header bảo mật** (một nguồn duy nhất ở [`nginx/snippets/security-headers.conf`](nginx/snippets/security-headers.conf); header trùng từ Next.js bị ẩn):
+`Strict-Transport-Security` (2 năm), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy` (chỉ cho phép đúng các dịch vụ cần dùng, `object-src 'none'`, `frame-ancestors 'none'`), `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`.
+Kiểm tra: `curl -sI https://<tên-miền>/ | grep -iE "strict|content-security|x-frame|nosniff"` hoặc chấm điểm tại [securityheaders.com](https://securityheaders.com).
+
+**Nén:** gzip cho HTML/CSS/JS/JSON/SVG. Ảnh `.webp/.jpg/.png` và font `.woff2` **cố ý không nén lại**: đây là định dạng đã nén sẵn, gzip thêm chỉ tốn CPU và thường làm file to hơn. Bù lại chúng được cache 7 ngày ở trình duyệt và ở cache Nginx (`X-Cache-Status: HIT`).
+
+### 0.8. Chuyển sang tên miền riêng (không cần SSH)
+
+`sslip.io` là DNS miễn phí tự trỏ về IP, đủ để có HTTPS. Muốn tên đẹp hơn khi demo:
+
+1. **Lấy tên miền**:
+   - **Miễn phí, khoảng 2 phút:** vào [duckdns.org](https://www.duckdns.org), đăng nhập bằng GitHub, tạo tên ví dụ `homeshopping` (tên miền sẽ là `homeshopping.duckdns.org`), ô IP điền `13.214.14.196`. Subdomain `staging.homeshopping.duckdns.org` tự trỏ theo.
+   - **Trả phí:** mua `.vn` / `.id.vn` / `.com` ở Tenten, Mắt Bão, Namecheap. Tạo bản ghi **A** cho `@` và `staging` trỏ về `13.214.14.196`.
+2. Kiểm tra: `nslookup homeshopping.duckdns.org` phải ra `13.214.14.196`.
+3. Sửa `~/.homeshop/prod.env`: `DOMAIN=homeshopping.duckdns.org`, `APP_URL=https://homeshopping.duckdns.org`, `CORS_ORIGINS=https://homeshopping.duckdns.org`. Sau đó chạy `gh secret set PROD_ENV_FILE < ~/.homeshop/prod.env` và `gh variable set APP_URL --body https://homeshopping.duckdns.org`.
+4. Merge một PR bất kỳ (hoặc Actions → Run workflow). Bước deploy tự phát hiện chứng chỉ chưa có tên miền mới và xin Let's Encrypt cho `tên-miền` + `staging.tên-miền` (hàm `ensure_certificate_covers_domain` trong [`scripts/deploy.sh`](scripts/deploy.sh)).
+5. Nếu dùng đăng nhập Google/Facebook: thêm tên miền mới vào *Authorized JavaScript origins* và *Redirect URI* (xem mục 1).
+
+### 0.9. Đăng nhập 1 chạm bằng tài khoản Google đang đăng nhập trên Chrome (Google One Tap)
+
+Khách chưa đăng nhập shop nhưng đang đăng nhập Google trên trình duyệt sẽ thấy hộp **"Tiếp tục với tư cách <tên>"** ở góc màn hình. Bấm 1 lần là vào đúng tài khoản: tài khoản cũ cùng email được tự liên kết, chưa có thì tự tạo. Người đã từng đồng ý trước đó được **tự đăng nhập** luôn; bấm Đăng xuất thì tắt tự đăng nhập.
+
+- Backend xác minh ID token với Google: đúng `aud` = client ID của shop, đúng `iss`, còn hạn, email đã xác minh ([`oauth.service.ts`](backend/src/auth/oauth/oauth.service.ts)). Endpoint giới hạn 10 lần/phút.
+- **Bật:** tạo OAuth Client ID (Web) trong Google Cloud Console → *Authorized JavaScript origins* thêm `https://<tên-miền>` → đặt `GOOGLE_CLIENT_ID` (và `GOOGLE_CLIENT_SECRET` nếu dùng thêm nút đăng nhập Google thường) trong `prod.env` → cập nhật secret và deploy. Chưa có client ID thì One Tap tự ẩn.
+- **Facebook** không có cơ chế tương tự One Tap. Nút "Đăng nhập bằng Facebook": nếu trình duyệt đang đăng nhập Facebook và đã từng cho phép app, Facebook chuyển thẳng về shop mà không hỏi mật khẩu.
+
 ---
 
 ## Tính năng

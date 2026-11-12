@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Logger, Param, Post, Query, Req, Res, 
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
-import { OAuthExchangeDto } from '../auth.dto';
+import { GoogleOneTapDto, OAuthExchangeDto } from '../auth.dto';
 import { AuthService } from '../auth.service';
 import { AuthResponse, AuthenticatedRequest } from '../auth.types';
 import { JwtAuthGuard } from '../jwt-auth.guard';
@@ -32,6 +32,33 @@ export class OAuthController {
   @Get('providers')
   providers(): Record<'google' | 'facebook', boolean> {
     return this.oauth.enabledProviders();
+  }
+
+  /** Cấu hình Google One Tap (client ID công khai; null = chưa cấu hình Google → frontend không hiện) */
+  @Get('one-tap-config')
+  oneTapConfig(): { googleClientId: string | null } {
+    return { googleClientId: this.oauth.googleClientId() };
+  }
+
+  /**
+   * Google One Tap: khách đã đăng nhập Google trên trình duyệt bấm "Tiếp tục với tư cách …" → frontend gửi ID token.
+   * Dùng đúng quy tắc liên kết tài khoản như luồng OAuth thường (trùng email đã xác minh → vào đúng tài khoản cũ).
+   */
+  @Post('google/one-tap')
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  async googleOneTap(@Body() dto: GoogleOneTapDto): Promise<AuthResponse> {
+    try {
+      const profile = await this.oauth.verifyGoogleIdToken(dto.credential);
+      const user = await this.oauth.resolveUser('google', profile, null);
+      return this.auth.issue(await this.auth.profile(user.id));
+    } catch (err) {
+      if (err instanceof OAuthError) {
+        this.logger.warn({ event: 'oauth.one_tap_failed', code: err.code });
+        throw new UnauthorizedException(err.code === 'provider_disabled' ? 'Google sign-in is not configured' : 'Google sign-in failed');
+      }
+      throw err;
+    }
   }
 
   /** Lấy vé để liên kết thêm Google/Facebook vào tài khoản đang đăng nhập */

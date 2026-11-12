@@ -133,7 +133,7 @@ export class ProductsController {
       storage: memoryStorage(),
       limits: { fileSize: 5 * 1024 * 1024, files: 1 },
       fileFilter: (_req, file, cb) =>
-        StorageService.isAllowedMime(file.mimetype)
+        StorageService.isImageUpload(file.mimetype)
           ? cb(null, true)
           : cb(new BadRequestException('Only JPEG, PNG or WEBP images are allowed'), false),
     }),
@@ -144,10 +144,10 @@ export class ProductsController {
     @UploadedFile() file?: Express.Multer.File,
   ): Promise<ProductView> {
     if (!file) throw new BadRequestException('File is required');
-    // Content-Type do client tự khai → xác minh lại bằng magic bytes để chặn file độc đổi đuôi
-    if (!StorageService.matchesSignature(file.buffer, file.mimetype)) {
-      throw new BadRequestException('File content does not match its declared image type');
-    }
+    // Content-Type do client tự khai → xác định định dạng thật bằng magic bytes (chặn file độc đổi đuôi)
+    const mime = StorageService.detectImageMime(file.buffer);
+    if (!mime) throw new BadRequestException('Unsupported image format');
+    file.mimetype = mime;
     const product = await this.products.attachImage(id, file.buffer, file.mimetype);
     await this.audit.log({ actorId: req.user.sub, action: 'product.image', entityType: 'product', entityId: id, summary: `Đổi ảnh sản phẩm "${product.name}"` });
     return product;

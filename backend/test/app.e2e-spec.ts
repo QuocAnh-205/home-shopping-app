@@ -89,6 +89,24 @@ describe('Home Shopping API (e2e)', () => {
     expect(res.body.checks).toEqual({ database: 'up', redis: 'up' });
   });
 
+  it('health exposes build info, liveness and readiness (bằng chứng commit đang chạy)', async () => {
+    const res = await http().get('/api/health').expect(200).expect('Cache-Control', 'no-store');
+    expect(res.body).toMatchObject({ status: 'ok', version: expect.any(String), commit: expect.any(String), environment: expect.any(String) });
+    expect(res.body.latencyMs).toEqual({ database: expect.any(Number), redis: expect.any(Number) });
+    expect(res.body.uptime).toMatch(/\d+m$/);
+    expect((await http().get('/api/health/ready').expect(200)).body.status).toBe('ok');
+    expect((await http().get('/api/health/live').expect(200)).body).toMatchObject({ status: 'ok' });
+    const version = await http().get('/api/health/version').expect(200);
+    expect(Object.keys(version.body).sort()).toEqual(['commit', 'commitUrl', 'environment', 'release', 'startedAt', 'version']);
+  });
+
+  it('Google One Tap: config is public; credentials are validated and rejected when Google is not configured', async () => {
+    expect((await http().get('/api/auth/oauth/one-tap-config').expect(200)).body).toEqual({ googleClientId: null });
+    await http().post('/api/auth/oauth/google/one-tap').send({ credential: 'not-a-jwt' }).expect(400);
+    const res = await http().post('/api/auth/oauth/google/one-tap').send({ credential: 'aaa.bbb.ccc' }).expect(401);
+    expect(res.body.message).toBe('Google sign-in is not configured');
+  });
+
   it('errors carry a stable code alongside the message', async () => {
     const res = await http().post('/api/auth/register').send({ email: 'not-an-email', password: 'x', fullName: 'A' }).expect(400);
     expect(res.body).toMatchObject({ statusCode: 400, code: 'VALIDATION_ERROR' });
@@ -1196,6 +1214,18 @@ describe('Home Shopping API (e2e)', () => {
         .set(auth(aliceToken))
         .attach('file', Buffer.from('not an image at all'), { filename: 'x.png', contentType: 'image/png' })
         .expect(400);
+
+      // Lỗi thật của người dùng: ảnh WebP tải từ mạng xã hội bị đặt tên ".jpg" → trình duyệt khai image/jpeg.
+      // Server nhận diện định dạng THẬT theo nội dung và lưu đúng đuôi .webp thay vì từ chối
+      const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4, 0x10), Buffer.from('WEBPVP8 '), Buffer.alloc(32, 0)]);
+      const misnamed = await http().post('/api/account/avatar').set(auth(aliceToken)).attach('file', webp, { filename: 'anh-zalo.jpg', contentType: 'image/jpeg' }).expect(201);
+      expect(misnamed.body.avatarUrl).toMatch(/\.webp$/);
+      // Không khai loại (application/octet-stream) cũng được, miễn nội dung là ảnh thật
+      const unknown = await http().post('/api/account/avatar').set(auth(aliceToken)).attach('file', png, { filename: 'blob', contentType: 'application/octet-stream' }).expect(201);
+      expect(unknown.body.avatarUrl).toMatch(/\.png$/);
+      // File không phải ảnh (PDF đổi tên .jpg) vẫn bị chặn
+      const pdf = await http().post('/api/account/avatar').set(auth(aliceToken)).attach('file', Buffer.from('%PDF-1.7 fake document body'), { filename: 'cv.jpg', contentType: 'image/jpeg' }).expect(400);
+      expect(pdf.body.message).toBe('Unsupported image format');
       await http()
         .post('/api/account/avatar')
         .set(auth(aliceToken))

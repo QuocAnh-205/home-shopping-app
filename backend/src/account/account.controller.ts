@@ -136,17 +136,17 @@ export class AccountController {
       storage: memoryStorage(),
       limits: { fileSize: AVATAR_MAX_BYTES, files: 1 },
       fileFilter: (_req, file, cb) =>
-        StorageService.isAllowedMime(file.mimetype)
+        StorageService.isImageUpload(file.mimetype)
           ? cb(null, true)
           : cb(new BadRequestException('Only JPEG, PNG or WEBP images are allowed'), false),
     }),
   )
   uploadAvatar(@Req() req: AuthenticatedRequest, @UploadedFile() file?: Express.Multer.File): Promise<AccountProfile> {
     if (!file) throw new BadRequestException('File is required');
-    if (!StorageService.matchesSignature(file.buffer, file.mimetype)) {
-      throw new BadRequestException('File content does not match its declared image type');
-    }
-    return this.account.setAvatar(req.user.sub, file.buffer, file.mimetype);
+    // Lưu theo định dạng THẬT (ảnh WebP đặt tên .jpg vẫn hợp lệ); không phải JPEG/PNG/WEBP thì từ chối
+    const mime = StorageService.detectImageMime(file.buffer);
+    if (!mime) throw new BadRequestException('Unsupported image format');
+    return this.account.setAvatar(req.user.sub, file.buffer, mime);
   }
 
   @Get('addresses')

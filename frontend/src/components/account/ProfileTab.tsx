@@ -4,11 +4,12 @@ import { faCamera, faCircleCheck, faSpinner, faTriangleExclamation } from '@fort
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { apiFetch, updateSessionUser } from '@/lib/client-api';
+import { AvatarCropper } from './AvatarCropper';
 import { EmailChangeDialog } from './EmailChangeDialog';
 import { initials, maskEmail, maskPhone, type AccountProfile, type Gender } from '@/lib/types';
 
-const AVATAR_MAX_BYTES = 1024 * 1024;
-const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+/** Ảnh GỐC tối đa 20 MB (ảnh chụp điện thoại) – sau khi cắt, trình duyệt nén lại thành JPEG ≤ 1 MB trước khi gửi */
+const SOURCE_MAX_BYTES = 20 * 1024 * 1024;
 const GENDERS: { value: Gender; label: string }[] = [
   { value: 'MALE', label: 'Nam' },
   { value: 'FEMALE', label: 'Nữ' },
@@ -35,6 +36,7 @@ export function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSa
   const fileRef = useRef<HTMLInputElement>(null);
   const [username, setUsername] = useState(profile.username);
   const [changingEmail, setChangingEmail] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
 
   const thisYear = new Date().getFullYear();
   const years = Array.from({ length: thisYear - 10 - 1900 + 1 }, (_, i) => thisYear - 10 - i);
@@ -74,29 +76,38 @@ export function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSa
     }
   }
 
-  async function upload(e: ChangeEvent<HTMLInputElement>) {
+  /** Chọn ảnh → mở khung cắt (không kiểm tra đuôi file: ảnh WebP/AVIF bị đặt tên .jpg vẫn dùng được) */
+  function pick(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (!AVATAR_TYPES.includes(file.type)) {
-      setMsg({ ok: false, text: 'Chỉ chấp nhận ảnh định dạng .JPEG, .PNG hoặc .WEBP' });
+    if (file.type && !file.type.startsWith('image/')) {
+      setMsg({ ok: false, text: 'Vui lòng chọn một tệp ảnh (JPG, PNG, WEBP…)' });
       return;
     }
-    if (file.size > AVATAR_MAX_BYTES) {
-      setMsg({ ok: false, text: 'Dung lượng ảnh tối đa 1 MB' });
+    if (file.size > SOURCE_MAX_BYTES) {
+      setMsg({ ok: false, text: 'Ảnh gốc quá lớn (tối đa 20 MB)' });
       return;
     }
+    setMsg(null);
+    setCropFile(file);
+  }
+
+  /** Ảnh đã cắt (JPEG 512×512) → tải lên */
+  async function upload(blob: Blob) {
     setUploading(true);
     setMsg(null);
     try {
       const body = new FormData();
-      body.append('file', file);
+      body.append('file', blob, 'avatar.jpg');
       const updated = await apiFetch<AccountProfile>('/account/avatar', { method: 'POST', body });
       updateSessionUser({ avatarUrl: updated.avatarUrl });
       onSaved(updated);
       setMsg({ ok: true, text: 'Đã cập nhật ảnh đại diện' });
+      setCropFile(null);
     } catch (err) {
       setMsg({ ok: false, text: (err as Error).message });
+      setCropFile(null);
     } finally {
       setUploading(false);
     }
@@ -237,14 +248,15 @@ export function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSa
           ) : (
             <span className="avatar acc-avatar-img">{initials(profile.fullName)}</span>
           )}
-          <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" hidden onChange={upload} />
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={pick} />
+          {cropFile && <AvatarCropper file={cropFile} onCancel={() => setCropFile(null)} onDone={upload} />}
           <button type="button" className="btn btn-ghost" onClick={() => fileRef.current?.click()} disabled={uploading}>
             <FontAwesomeIcon icon={uploading ? faSpinner : faCamera} spin={uploading} /> Chọn ảnh
           </button>
           <p className="muted small">
-            Dung lượng file tối đa 1 MB
+            Ảnh JPG, PNG, WEBP… tối đa 20 MB
             <br />
-            Định dạng: .JPEG, .PNG, .WEBP
+            Cắt &amp; căn chỉnh trước khi lưu
           </p>
         </div>
       </div>
