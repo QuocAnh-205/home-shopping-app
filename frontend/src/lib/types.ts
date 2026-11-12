@@ -109,9 +109,9 @@ export interface StoreSummary {
 
 /** Khoảng giá cho mục "Mua theo mức giá" (max không bao gồm) */
 export const PRICE_RANGES = [
-  { id: 'duoi-200k', label: 'Dưới 200.000₫', hint: 'Quà nhỏ xinh', min: undefined, max: 200_000 },
-  { id: '200k-500k', label: '200.000₫ – 500.000₫', hint: 'Đồ dùng hằng ngày', min: 200_000, max: 500_000 },
-  { id: '500k-1tr', label: '500.000₫ – 1 triệu', hint: 'Nâng cấp tổ ấm', min: 500_000, max: 1_000_000 },
+  { id: 'duoi-200k', label: 'Dưới 200K', hint: 'Quà nhỏ xinh', min: undefined, max: 200_000 },
+  { id: '200k-500k', label: '200K – 500K', hint: 'Đồ dùng hằng ngày', min: 200_000, max: 500_000 },
+  { id: '500k-1tr', label: '500K – 1 triệu', hint: 'Nâng cấp tổ ấm', min: 500_000, max: 1_000_000 },
   { id: '1tr-3tr', label: '1 – 3 triệu', hint: 'Thiết bị chất lượng', min: 1_000_000, max: 3_000_000 },
   { id: 'tren-3tr', label: 'Trên 3 triệu', hint: 'Nội thất cao cấp', min: 3_000_000, max: undefined },
 ] as const;
@@ -451,7 +451,6 @@ export const CANCEL_REASONS = [
 const vnd = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Ho_Chi_Minh' });
 const dateOnly = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeZone: 'Asia/Ho_Chi_Minh' });
-const compact = new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 });
 
 export function formatPrice(value: string | number): string {
   return vnd.format(Number(value));
@@ -467,7 +466,16 @@ export function formatDay(value: string): string {
 
 /** 1240 → "1,2 N" (dùng cho "Đã bán") */
 export function formatCompact(value: number): string {
-  return compact.format(value);
+  const n = Math.abs(value);
+  const fmt = (v: number) => v.toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+  if (n >= 1_000_000) return `${fmt(Math.floor(value / 100_000) / 10)}tr`;
+  if (n >= 1_000) return `${fmt(Math.floor(value / 100) / 10)}k`;
+  return String(value);
+}
+
+/** 190000 → "190.000" (không ký hiệu tiền – thẻ sản phẩm đặt "₫" nhỏ phía trước như các sàn TMĐT) */
+export function formatAmount(value: string | number): string {
+  return Number(value).toLocaleString('vi-VN');
 }
 
 export function shortId(id: string): string {
