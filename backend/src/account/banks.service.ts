@@ -13,7 +13,7 @@ export const BANK_CATALOG = Object.entries(BANK_NAMES)
 
 export type BankAccountView = Omit<BankAccount, 'userId'> & { accountNoMasked: string };
 
-/** "0829854359" → "******4359" (hiển thị trong danh sách, giống app ngân hàng) */
+/** "0123456789" → "******6789" (hiển thị trong danh sách, giống app ngân hàng) */
 export function maskAccountNo(no: string): string {
   return no.length <= 4 ? no : `${'*'.repeat(no.length - 4)}${no.slice(-4)}`;
 }

@@ -1,9 +1,80 @@
-# 🏠 Home Shopping App: DevOps Final Project
+# 🏠 Home Shopping – Đồ án DevOps
 
-> **Sinh viên:** Nguyễn Quốc Anh · **Repo:** [QuocAnh-205/home-shopping-app](https://github.com/QuocAnh-205/home-shopping-app)
-> **Bản production đang chạy:** **https://13-214-14-196.sslip.io** (AWS EC2 Singapore, HTTPS Let's Encrypt) · **Staging:** https://staging.13-214-14-196.sslip.io
+> Website bán đồ gia dụng (giống Shopee thu nhỏ) **được đưa lên AWS hoàn toàn tự động**: sửa code → push → máy tự kiểm tra, đóng gói, cập nhật web thật.
+>
+> 🌐 **Web thật:** https://13-214-14-196.sslip.io · 🧪 **Bản thử (staging):** https://staging.13-214-14-196.sslip.io · 👥 Nhóm: Nguyễn Quốc Anh & Tâm
 
-Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn production: **IaC 100% Terraform**, **CI/CD DevSecOps** (Gitleaks · SonarCloud · Trivy · Hadolint · ShellCheck), **zero-downtime deploy + auto-rollback**, **observability đầy đủ** (Prometheus · Grafana · Loki · Alertmanager → Discord/Telegram) và **backup tự động lên S3**.
+---
+
+## 👋 Dành cho bạn cùng nhóm: đọc phần này trước (10 phút)
+
+### Dự án gồm những gì? (hiểu trong 1 phút)
+
+```
+Người dùng ──► Nginx (cổng HTTPS) ──► Frontend (giao diện, Next.js) ──► Backend (xử lý, NestJS) ──► PostgreSQL (dữ liệu) + Redis (giỏ hàng, cache)
+                                                                                     ▲
+GitHub ──(push code)──► GitHub Actions: kiểm tra → đóng gói Docker → đưa lên máy chủ AWS (EC2) ──┘
+                                                                     Prometheus + Grafana + Loki: theo dõi web, báo khi sập
+```
+
+| Thư mục | Chứa gì | Khi nào cần đụng tới |
+|---|---|---|
+| `frontend/` | Giao diện web (trang chủ, giỏ hàng, thanh toán, quản trị…) | Sửa giao diện |
+| `backend/` | API, nghiệp vụ (đặt hàng, thanh toán, voucher…), cơ sở dữ liệu (`prisma/`) | Sửa logic, thêm chức năng |
+| `.github/workflows/` | **Pipeline CI/CD** – các bước tự động chạy khi push | Trình bày DevOps |
+| `terraform/` | **Hạ tầng bằng code**: dựng máy chủ, mạng, tường lửa trên AWS | Trình bày IaC |
+| `nginx/`, `docker-compose.*.yml` | Cấu hình máy chủ web và chạy toàn bộ hệ thống bằng Docker | Trình bày Docker |
+| `monitoring/` | Giám sát: Prometheus, Grafana, Loki, cảnh báo | Trình bày giám sát |
+| `scripts/` | Script deploy, rollback, backup, khôi phục DB | Trình bày CD / backup |
+| `docs/` | Báo cáo chi tiết, câu hỏi bảo vệ, kiến trúc | Ôn bài |
+
+### Chạy thử trên máy của bạn (chỉ cần Docker Desktop)
+
+```bash
+git clone https://github.com/QuocAnh-205/home-shopping-app.git
+cd home-shopping-app
+docker compose -f docker-compose.local.yml up -d --build      # lần đầu mất ~5 phút
+```
+
+Mở **http://localhost** (cổng 80 bị chiếm thì thêm `LOCAL_HTTP_PORT=8088` trước lệnh và mở http://localhost:8088).
+Đăng nhập thử: khách `khach@homeshop.local` / `Khach12345` · quản trị `admin@homeshop.local` / `Admin12345` (**chỉ có ở máy của bạn**, không có trên web thật).
+Tắt: `docker compose -f docker-compose.local.yml down` (thêm `-v` để xóa sạch dữ liệu).
+
+### Muốn sửa code? Làm theo đúng 5 bước (nhánh `main` bị khóa, không push thẳng được)
+
+```bash
+git checkout main && git pull                       # 1. lấy code mới nhất
+git checkout -b feat/ten-viec-cua-ban                # 2. tạo nhánh riêng
+# ... sửa code, chạy thử local ...
+git add -A && git commit -m "feat: mô tả ngắn"        # 3. lưu thay đổi
+git push -u origin feat/ten-viec-cua-ban             # 4. đẩy nhánh lên GitHub
+gh pr create --fill                                  # 5. mở Pull Request (hoặc bấm "Compare & pull request" trên GitHub)
+```
+
+Mở PR xong, GitHub tự chạy kiểm tra (khoảng 10 phút). **Đủ 5 dấu ✅ mới bấm Merge được.** Merge xong, hệ thống tự deploy: bản thử staging trước, web thật sau. Không cần làm gì thêm.
+
+### 🔐 Thông tin bí mật ở đâu? (không có trong repo)
+
+Repo này **công khai** nên **không chứa** mật khẩu, khóa hay token nào. Gitleaks quét toàn bộ lịch sử commit ở mỗi lần CI chạy.
+
+| Bí mật | Nằm ở | Ai có |
+|---|---|---|
+| Mật khẩu database, JWT, khóa thanh toán, tài khoản admin web thật | GitHub → Settings → Secrets → `PROD_ENV_FILE` (bản gốc: `~/.homeshop/prod.env` trên máy trưởng nhóm) | Trưởng nhóm |
+| Khóa SSH vào máy chủ, quyền AWS | Máy trưởng nhóm + GitHub Secrets | Trưởng nhóm |
+| Mật khẩu Grafana | `prod.env` | Trưởng nhóm |
+
+Cần tài khoản admin web thật, Grafana hay quyền AWS: **nhắn trưởng nhóm, gửi riêng**. Tuyệt đối không dán vào code, README hay issue.
+Trong tài liệu, các giá trị riêng được thay bằng chỗ trống dạng `<AWS_ACCOUNT_ID>`, `<EC2_IP>`, `<DOCKERHUB_USERNAME>`. Muốn biết giá trị thật thì lấy bằng `terraform output` hoặc hỏi trưởng nhóm.
+
+### Tài liệu nên đọc tiếp
+
+1. **[Mục 0 bên dưới](#0-quy-trình-devops-đối-chiếu-tiêu-chí-chấm)**: bảng đối chiếu tiêu chí chấm, sơ đồ, **kịch bản demo 5 phút**. Phần quan trọng nhất khi bảo vệ.
+2. [docs/DEFENSE-QA.md](docs/DEFENSE-QA.md): câu hỏi thầy cô hay hỏi và cách trả lời.
+3. [docs/BAO-CAO-DEVOPS.md](docs/BAO-CAO-DEVOPS.md): báo cáo đầy đủ, giải thích từng thành phần.
+4. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): kiến trúc và cây thư mục.
+
+<details>
+<summary><b>Công nghệ sử dụng</b> (bấm để xem)</summary>
 
 | Thành phần | Công nghệ |
 |---|---|
@@ -12,15 +83,13 @@ Hệ thống e-commerce đồ gia dụng triển khai trên AWS theo chuẩn pro
 | Data | PostgreSQL 16 (pg_trgm) · Redis 7 (giỏ hàng, cache, thu hồi token, chống brute-force) · S3 (ảnh upload, backup) |
 | Edge | Nginx 1.28: Let's Encrypt TLS, HTTP→HTTPS, rate limiting, CSP, gzip, cache tĩnh |
 | Cloud/IaC | AWS VPC riêng, EC2 t3.small Ubuntu 22.04, Elastic IP, EBS gp3 mã hóa, S3, IAM role, GitHub OIDC (Terraform) |
-| CI/CD | GitHub Actions: Gitleaks, Jest (unit + e2e trên Postgres/Redis thật), ESLint, npm audit, SonarCloud, Hadolint, Trivy, Terraform validate, ShellCheck, Docker Hub, SSH deploy, rollback, notify |
+| CI/CD | GitHub Actions: Gitleaks, Jest (unit + e2e trên Postgres/Redis thật), ESLint, npm audit, SonarCloud, Hadolint, Trivy, Terraform validate, ShellCheck, Docker Hub, staging, deploy, rollback, notify |
 | Observability | Prometheus, Grafana, Node Exporter, cAdvisor, Postgres/Redis exporter, Loki, Promtail, Alertmanager |
 | Email | Nodemailer: Mailpit khi chạy local, SMTP (Amazon SES…) khi chạy production |
 
-📐 Sơ đồ kiến trúc, luồng CI/CD (Mermaid) và cây thư mục: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-🎓 Câu hỏi bảo vệ & cách trả lời: [docs/DEFENSE-QA.md](docs/DEFENSE-QA.md)
-📘 **Báo cáo DevOps toàn tập** (giải thích mọi thành phần, nhật ký triển khai, kịch bản demo, 100+ câu hỏi vấn đáp): [docs/BAO-CAO-DEVOPS.md](docs/BAO-CAO-DEVOPS.md)
+</details>
 
-**Mục lục:** [0. Quy trình DevOps](#0-quy-trình-devops-đối-chiếu-tiêu-chí-chấm) · [Tính năng](#tính-năng) · [Dữ liệu lưu ở đâu](#dữ-liệu-được-lưu-ở-đâu) · [1. Chạy local](#1-chạy-demo-local-1-lệnh) · [2. Production trên AWS](#2-triển-khai-production-lên-aws) · [3. Vận hành](#3-vận-hành) · [4. Nhật ký cập nhật](#4-nhật-ký-cập-nhật) · [5. Hủy hạ tầng](#5-hủy-hạ-tầng-tránh-phát-sinh-chi-phí-sau-khi-chấm)
+**Mục lục chi tiết:** [0. Quy trình DevOps](#0-quy-trình-devops-đối-chiếu-tiêu-chí-chấm) · [Tính năng](#tính-năng) · [Dữ liệu lưu ở đâu](#dữ-liệu-được-lưu-ở-đâu) · [1. Chạy local](#1-chạy-demo-local-1-lệnh) · [2. Production trên AWS](#2-triển-khai-production-lên-aws) · [3. Vận hành](#3-vận-hành) · [4. Nhật ký cập nhật](#4-nhật-ký-cập-nhật) · [5. Hủy hạ tầng](#5-hủy-hạ-tầng-tránh-phát-sinh-chi-phí-sau-khi-chấm)
 
 ---
 
@@ -266,7 +335,7 @@ Voucher demo: `HOMESHOP10` (−10%, đơn từ 300K), `GIAM50K` (đơn từ 500K
 |---|---|---|---|
 | Người dùng, hồ sơ, **sổ địa chỉ**, sản phẩm, đơn hàng, **đánh giá**, liên kết OAuth, token đặt lại mật khẩu, người đăng ký bản tin | **PostgreSQL**, bảng `users`, `addresses`, `products`, `categories`, `orders`, `order_items`, `reviews`, `oauth_accounts`, `password_reset_tokens`, `newsletter_subscribers` | Docker volume `homeshop-local_pgdata` | Docker volume `homeshop-pgdata` |
 | **Giỏ hàng** (`cart:<userId>`, hết hạn 7 ngày), cache sản phẩm (`cache:products:*`), token đã đăng xuất (`auth:revoked:*`), đếm đăng nhập sai (`auth:failed:*`), state OAuth | **Redis** | Trong bộ nhớ container (mất khi xóa container) | Docker volume `homeshop-redisdata` (AOF) |
-| **Ảnh đại diện** người dùng, ảnh sản phẩm admin upload | Local: thư mục `/app/uploads` · Production: **S3** prefix `avatars/`, `products/` | Docker volume `homeshop-local_uploads` | Bucket `homeshop-prod-assets-906457821730` |
+| **Ảnh đại diện** người dùng, ảnh sản phẩm admin upload | Local: thư mục `/app/uploads` · Production: **S3** prefix `avatars/`, `products/` | Docker volume `homeshop-local_uploads` | Bucket `homeshop-prod-assets-<AWS_ACCOUNT_ID>` |
 | **Backup database** (pg_dump nén, mã hóa SSE) | **S3** `backups/postgres/<năm>/<tháng>/` | – | Cron 02:00 hằng ngày, giữ 30 ngày |
 | Chứng chỉ HTTPS | Volume `homeshop-letsencrypt` | – | Certbot tự gia hạn |
 | Metrics / log / dashboard | Volume `homeshop-monitoring_prometheus-data`, `_loki-data`, `_grafana-data` | – | Prometheus, Loki, Grafana |
@@ -288,7 +357,7 @@ docker exec -it homeshop-postgres psql -U homeshop -d homeshop -c "select count(
 |---|---|
 | `~/.homeshop/prod.env` (máy cá nhân) | Biến môi trường production: mật khẩu DB/Redis, JWT secret, mật khẩu Grafana, **tài khoản admin production** (`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`) |
 | `~/.homeshop/known_hosts` | Host key của EC2 (cho secret `EC2_SSH_KNOWN_HOSTS`) |
-| `~/.ssh/homeshop_ed25519` | SSH key đăng nhập EC2 |
+| `~/.ssh/<khóa-SSH>` | SSH key đăng nhập EC2 |
 | `terraform/terraform.tfvars`, `terraform/terraform.tfstate` | Cấu hình & trạng thái hạ tầng. **Không xóa tfstate**: cần nó để `terraform destroy` |
 | `/opt/homeshop/.env` (trên EC2, chmod 600) | Bản `.env` production do pipeline/deploy ghi |
 
@@ -316,7 +385,7 @@ Backend tự chạy migration + seed: **200 sản phẩm, 7 danh mục, 5 tài k
 | Vai trò | Email | Mật khẩu | Local (`localhost:8088`) | Production (`13-214-14-196.sslip.io`) | Dùng để kiểm tra |
 |---|---|---|---|---|---|
 | **Quản trị viên (local)** | `admin@homeshop.local` | `Admin12345` | ✅ | ❌ **không có** (mật khẩu công khai trên GitHub → không bao giờ đưa lên web thật) | `/admin` ở bản local |
-| **Quản trị viên (production)** | `quanly@homeshop.vn` | `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env` (bí mật) | ❌ | ✅ | `/admin`: tổng quan, đơn hàng, sản phẩm, danh mục, người dùng, đánh giá, bản tin, nhật ký |
+| **Quản trị viên (production)** | Hỏi trưởng nhóm (gửi riêng) | Bí mật, nằm trong GitHub Secret | ❌ | ✅ | `/admin`: tổng quan, đơn hàng, sản phẩm, danh mục, người dùng, đánh giá, bản tin, nhật ký |
 | Khách hàng | `khach@homeshop.local` | `Khach12345` | ✅ | ✅ (`SEED_DEMO_CUSTOMERS=true`) | Giỏ hàng, đặt hàng, đánh giá, tài khoản |
 | Khách hàng | `lan.nguyen@homeshop.local` | `Khach12345` | ✅ | ✅ | Mỗi khách chỉ thấy **giỏ hàng / đơn hàng / đánh giá / địa chỉ của riêng mình** |
 | Khách hàng | `minh.tran@homeshop.local` | `Khach12345` | ✅ | ✅ | Thử đặt đơn ở 2 tài khoản rồi đối chiếu trang "Đơn hàng" |
@@ -405,25 +474,25 @@ E2E bao phủ: mua đồng thời món cuối (không oversell), idempotency, RB
 | Hạng mục | Giá trị |
 |---|---|
 | Website | **https://13-214-14-196.sslip.io** (tên miền miễn phí `sslip.io` trỏ về Elastic IP, chứng chỉ Let's Encrypt hết hạn 29/01/2027, tự gia hạn) |
-| EC2 | `homeshop-prod-app` · `i-0ba0bed3ce64454ef` · t3.small (2 vCPU, 2 GB RAM + swap 4 GB) · ổ 30 GB gp3 mã hóa · Ubuntu 22.04 |
+| EC2 | `homeshop-prod-app` · t3.small (2 vCPU, 2 GB RAM + swap 4 GB) · ổ 30 GB gp3 mã hóa · Ubuntu 22.04 |
 | Elastic IP | `13.214.14.196` |
-| SSH | `ssh -i ~/.ssh/homeshop_ed25519 ubuntu@13.214.14.196` (chỉ IP trong `ssh_allowed_cidrs`) |
-| S3 | `homeshop-prod-assets-906457821730` (ảnh upload + backup) |
+| SSH | `ssh -i <khóa-SSH> ubuntu@<EC2_IP>` (lấy bằng `terraform output ssh_command`) (chỉ IP trong `ssh_allowed_cidrs`) |
+| S3 | `homeshop-prod-assets-<AWS_ACCOUNT_ID>` (ảnh upload + backup) |
 | IAM | `homeshop-prod-ec2-role` (EC2 → S3, không access key) · `homeshop-prod-github-deploy` (GitHub OIDC) |
-| Grafana | http://13.214.14.196:3001 (user `admin`, mật khẩu `GRAFANA_ADMIN_PASSWORD` trong `~/.homeshop/prod.env`) |
-| Admin web | `/admin` (8 tab: Tổng quan, Đơn hàng, Sản phẩm, Danh mục, Người dùng, Đánh giá, Bản tin, Nhật ký) · đăng nhập `quanly@homeshop.vn` / mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env` (bí mật) |
+| Grafana | http://<EC2_IP>:3001 (user `admin`, mật khẩu `GRAFANA_ADMIN_PASSWORD` trong `~/.homeshop/prod.env`) |
+| Admin web | `/admin` (8 tab: Tổng quan, Đơn hàng, Sản phẩm, Danh mục, Người dùng, Đánh giá, Bản tin, Nhật ký) · đăng nhập email admin production (hỏi trưởng nhóm, lưu trong `SEED_ADMIN_EMAIL`) / mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env` (bí mật) |
 | Tài khoản khách demo | `khach@`, `lan.nguyen@`, `minh.tran@`, `huong.le@homeshop.local` / `Khach12345` (bật bằng `SEED_DEMO_CUSTOMERS=true`; **không** có admin demo trên production) |
 | Dữ liệu | 200 sản phẩm + ~900 đánh giá mẫu (người viết không đăng nhập được); chỉ 4 tài khoản **khách** demo, không có admin mật khẩu công khai |
 | Container | 6 ứng dụng (nginx, frontend, backend, postgres, redis, certbot) + 9 giám sát |
 | CI/CD | **Tự động hoàn toàn**: push `main` → test → build → quét → deploy (~6 phút). Lần chạy xanh gần nhất: [#42095022662](https://github.com/QuocAnh-205/home-shopping-app/actions/runs/42095022662) (06/11/2026, cả 7 job ✅, tự chạy khi push), production chạy commit `a07fa0c` (trang admin v2 + tài khoản khách demo) |
-| Docker Hub | 🔒 `anhquocnguyen2005/home-shopping-backend` (**private**) · `anhquocnguyen2005/home-shopping-frontend` (public) · tag = commit SHA + `latest` · gói Personal miễn phí chỉ có 1 repo private (xem mục 2.6) |
+| Docker Hub | 🔒 `<DOCKERHUB_USERNAME>/home-shopping-backend` (**private**) · `<DOCKERHUB_USERNAME>/home-shopping-frontend` (public) · tag = commit SHA + `latest` · gói Personal miễn phí chỉ có 1 repo private (xem mục 2.6) |
 | Chi phí ước tính | ~25–28 USD/tháng (EC2, EBS, IPv4 công khai, CloudWatch) |
 
-Máy `luxe-server` (dự án khác) trong cùng tài khoản **không bị ảnh hưởng**: Home Shopping chạy trong VPC riêng.
+Home Shopping chạy trong **VPC riêng**, không ảnh hưởng tài nguyên khác trong cùng tài khoản AWS.
 
 ### 2.1. Chuẩn bị
 1. AWS CLI: `aws configure set region ap-southeast-1` rồi `aws login` (khuyến nghị dùng IAM user thay vì root).
-2. SSH key: `ssh-keygen -t ed25519 -f ~/.ssh/homeshop_ed25519 -C homeshop-deployer`
+2. SSH key: `ssh-keygen -t ed25519 -f ~/.ssh/<khóa-SSH> -C homeshop-deployer`
 3. Tài khoản Docker Hub (bắt buộc cho pipeline); SonarCloud, Discord webhook, Telegram bot (tùy chọn).
 4. Domain: có thể dùng tên miền riêng, hoặc miễn phí `<ip-nối-bằng-gạch-ngang>.sslip.io`.
 
@@ -467,7 +536,7 @@ Tạo từ [.env.example](.env.example) (khuyến nghị lưu ở `~/.homeshop/p
 | Environment | `production` | (nên bật *Required reviewers*) | ✅ đã tạo |
 | Variable | `DOCKERHUB_USERNAME` | username Docker Hub | ✅ đã đặt (05/11) |
 | Secret | `DOCKERHUB_TOKEN` | Docker Hub access token (Read & Write) | ✅ đã đặt (05/11) |
-| Secret | `EC2_SSH_PRIVATE_KEY` | `gh secret set EC2_SSH_PRIVATE_KEY < ~/.ssh/homeshop_ed25519` | ✅ đã đặt (05/11) |
+| Secret | `EC2_SSH_PRIVATE_KEY` | `gh secret set EC2_SSH_PRIVATE_KEY < ~/.ssh/<khóa-SSH>` | ✅ đã đặt (05/11) |
 | Secret | `EC2_SSH_KNOWN_HOSTS` | `gh secret set EC2_SSH_KNOWN_HOSTS < ~/.homeshop/known_hosts` | ✅ đã đặt (05/11) |
 | Secret | `PROD_ENV_FILE` | `gh secret set PROD_ENV_FILE < ~/.homeshop/prod.env` | ✅ đã đặt (05/11) |
 | Secret/Variable | `SONAR_TOKEN`, `SONAR_ORGANIZATION`, `SONAR_PROJECT_KEY` | SonarCloud | tùy chọn |
@@ -516,7 +585,7 @@ ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 
 - Image **không chứa secret** (mật khẩu DB, JWT… nằm ở `.env` trên EC2, nạp qua secret `PROD_ENV_FILE`); Gitleaks + Trivy `scanners: secret` kiểm tra mỗi lần build.
 - Repo private vẫn deploy được vì job Deploy chạy `docker login --password-stdin` trên EC2 bằng `DOCKERHUB_TOKEN` trước khi `deploy.sh` pull (đã kiểm chứng ở run #42078341186).
-- Kiểm tra từ bên ngoài: `curl -s -o /dev/null -w '%{http_code}' https://hub.docker.com/v2/repositories/anhquocnguyen2005/home-shopping-backend/` → `404` (người ngoài không thấy).
+- Kiểm tra từ bên ngoài: `curl -s -o /dev/null -w '%{http_code}' https://hub.docker.com/v2/repositories/<DOCKERHUB_USERNAME>/home-shopping-backend/` → `404` (người ngoài không thấy).
 - Đổi token: tạo token mới (Read & Write) trên Docker Hub → `gh secret set DOCKERHUB_TOKEN` → chạy lại pipeline → xóa token cũ.
 
 ---
@@ -613,4 +682,4 @@ ssh ubuntu@<EIP> "cd /opt/homeshop && SKIP_PULL=1 bash scripts/deploy.sh $T"
 ```bash
 cd terraform && terraform destroy
 ```
-S3 bucket có `force_destroy = false` để bảo vệ backup: xóa object trong bucket trước (`aws s3 rm s3://homeshop-prod-assets-906457821730 --recursive`) nếu muốn destroy toàn bộ. Lệnh destroy chỉ xóa tài nguyên do Terraform tạo, **không đụng tới `luxe-server`**.
+S3 bucket có `force_destroy = false` để bảo vệ backup: xóa object trong bucket trước (`aws s3 rm s3://homeshop-prod-assets-<AWS_ACCOUNT_ID> --recursive`) nếu muốn destroy toàn bộ. Lệnh destroy chỉ xóa tài nguyên do Terraform tạo, không đụng tới tài nguyên khác.

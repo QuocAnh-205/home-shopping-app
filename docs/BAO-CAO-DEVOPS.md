@@ -148,7 +148,7 @@ Kết quả: run **#42001069726** xanh cả 7 job, `/api/health` trả `version:
 3. **Database migration expand-only** `20261106000000_admin_management`: chỉ *thêm* `users.locked_at`, `users.locked_reason`, `products.is_active` và bảng `admin_audit_logs` → bản cũ vẫn chạy được trong lúc rolling update. Kiểm tra `prisma migrate diff --exit-code` trước khi commit: *No difference detected*.
 4. **Test:** +10 unit test (quy tắc an toàn khi đổi quyền/khóa, chống CSV injection), +8 e2e trên DB thật, script API admin 22 kịch bản, bấm thử trên trình duyệt (khóa tài khoản, sửa sản phẩm, xem nhật ký).
 5. **Sự cố khi test – rate limit chặn chính script test:** chạy 2 script liên tiếp → Nginx trả **429** vì vượt 10 lần đăng nhập/phút/IP và 15 request/giây cho API. Đây là bằng chứng cơ chế chống brute-force hoạt động; xử lý bằng cách giãn nhịp script, không nới rate limit.
-6. **Sự cố khi demo – "nhập đúng tài khoản admin mà báo sai":** người dùng nhập `admin@homeshop.local` (tài khoản demo chỉ có ở local) trên production. Kiểm tra log deploy thấy seed in `admin quanly@homeshop.vn` → admin production tồn tại, chỉ là dùng nhầm tài khoản. Cách xử lý: thêm cờ `SEED_DEMO_CUSTOMERS=true` để production có sẵn **4 tài khoản khách demo**, còn **admin demo mật khẩu công khai không bao giờ lên production** (commit `a07fa0c`). Cập nhật secret `PROD_ENV_FILE` → push → pipeline tự deploy → đăng nhập thử khách demo thành công.
+6. **Sự cố khi demo – "nhập đúng tài khoản admin mà báo sai":** người dùng nhập `admin@homeshop.local` (tài khoản demo chỉ có ở local) trên production. Kiểm tra log deploy thấy seed in `admin <email admin production>` → admin production tồn tại, chỉ là dùng nhầm tài khoản. Cách xử lý: thêm cờ `SEED_DEMO_CUSTOMERS=true` để production có sẵn **4 tài khoản khách demo**, còn **admin demo mật khẩu công khai không bao giờ lên production** (commit `a07fa0c`). Cập nhật secret `PROD_ENV_FILE` → push → pipeline tự deploy → đăng nhập thử khách demo thành công.
 
 ### Bằng chứng nên mở khi báo cáo
 - GitHub → tab **Actions**: các run xanh `#42001069726`, `#42075996582` (push tự động), `#42078341186`, `#42091887978` (trang admin v2), `#42095022662` (tài khoản khách demo).
@@ -332,7 +332,7 @@ Job 4 luôn chạy (`if: always()`). Nó tổng hợp kết quả từng job th�
 | Môi trường | Admin | Khách |
 |---|---|---|
 | Local | `admin@homeshop.local` / `Admin12345` | `khach@`, `lan.nguyen@`, `minh.tran@`, `huong.le@homeshop.local` / `Khach12345` |
-| Production | `quanly@homeshop.vn`, mật khẩu bí mật trong `prod.env` → GitHub Secret `PROD_ENV_FILE` | 4 tài khoản khách như trên (`SEED_DEMO_CUSTOMERS=true`) |
+| Production | email admin production (hỏi trưởng nhóm, lưu trong `SEED_ADMIN_EMAIL`), mật khẩu bí mật trong `prod.env` → GitHub Secret `PROD_ENV_FILE` | 4 tài khoản khách như trên (`SEED_DEMO_CUSTOMERS=true`) |
 
 Admin demo **không** có trên production vì mật khẩu `Admin12345` nằm công khai trong code trên GitHub.
 
@@ -818,7 +818,7 @@ Prisma không hỗ trợ tìm theo tiền tố trên kiểu UUID, nên em dùng 
 **Một ngày trước:**
 - [ ] `curl https://13-214-14-196.sslip.io/api/health` trả `ok`, version = commit mới nhất.
 - [ ] Tab Actions: run gần nhất xanh cả 7 job.
-- [ ] Đăng nhập được admin production `quanly@homeshop.vn` (mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env`; **không** dùng `admin@homeshop.local`, tài khoản đó chỉ có ở local). Không thử sai nhiều lần vì có khóa tài khoản và rate limit.
+- [ ] Đăng nhập được admin production email admin production (hỏi trưởng nhóm, lưu trong `SEED_ADMIN_EMAIL`) (mật khẩu `SEED_ADMIN_PASSWORD` trong `~/.homeshop/prod.env`; **không** dùng `admin@homeshop.local`, tài khoản đó chỉ có ở local). Không thử sai nhiều lần vì có khóa tài khoản và rate limit.
 - [ ] Đăng nhập thử 1 tài khoản khách demo (`khach@homeshop.local` / `Khach12345`); nếu đã demo khóa tài khoản thì nhớ mở khóa lại.
 - [ ] Grafana mở được từ IP hiện tại. Đổi mạng (Wi-Fi trường) thì IP thay đổi, phải thêm IP vào `ssh_allowed_cidrs`/`grafana_allowed_cidrs` và `terraform apply` trước.
 - [ ] Chuẩn bị sẵn một thay đổi nhỏ để demo push.
