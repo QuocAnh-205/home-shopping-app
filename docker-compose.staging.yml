@@ -24,7 +24,9 @@ x-hardening: &hardening
     - ALL
 
 services:
-  frontend:
+  # Tên service KHÁC production: Docker DNS trên mạng chung homeshop-frontend-net phân giải theo tên service
+  # → nếu cũng tên "backend"/"frontend" thì Nginx/frontend production sẽ chia request sang stack staging
+  staging-frontend:
     image: ${DOCKERHUB_USERNAME:?DOCKERHUB_USERNAME is required}/home-shopping-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
     container_name: homeshop-staging-frontend
     restart: unless-stopped
@@ -32,8 +34,7 @@ services:
       NODE_ENV: production
       INTERNAL_API_URL: http://staging-backend:8080
     networks:
-      edge:
-        aliases: [staging-frontend]
+      - edge
     read_only: true
     tmpfs:
       - /tmp:size=16m
@@ -52,7 +53,7 @@ services:
           memory: 256M
     logging: *default-logging
 
-  backend:
+  staging-backend:
     image: ${DOCKERHUB_USERNAME:?DOCKERHUB_USERNAME is required}/home-shopping-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     container_name: homeshop-staging-backend
     restart: unless-stopped
@@ -77,9 +78,8 @@ services:
       PAYMENT_MOCK_ENABLED: "true"
       TRANSFER_AUTO_CONFIRM: "true"
     networks:
-      edge:
-        aliases: [staging-backend]
-      data: {}
+      - edge
+      - data
     depends_on:
       postgres:
         condition: service_healthy
