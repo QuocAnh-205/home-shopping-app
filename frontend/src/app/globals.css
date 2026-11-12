@@ -8217,3 +8217,38 @@ button.stat-tile:hover {
     flex-basis: 100%;
   }
 }
+
+/* ---------- Hero v2: sửa lỗi hiển thị ---------- */
+/* (1) dòng đánh giá / đã bán cách nút một khoảng, nằm gọn 1 dòng */
+.hero-v2 .hero-proof {
+  margin-top: 22px;
+  max-width: calc(100% - 320px);
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* (4) giá + giá gốc + % giảm trên cùng 1 dòng */
+.hero-tag-price {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* (5) bỏ "răng cưa" vé: chấm tròn lệch nền tạo vệt đen lạc chỗ */
+.hero-voucher::before,
+.hero-voucher::after {
+  display: none;
+}
+
+.hero-voucher {
+  border-style: dashed;
+  border-left-width: 4px;
+  border-left-style: solid;
+}
+
+@media (max-width: 900px) {
+  .hero-v2 .hero-proof {
+    max-width: none;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+}
