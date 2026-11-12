@@ -1,11 +1,10 @@
-import { faArrowRight, faFire, faTruck } from '@fortawesome/free-solid-svg-icons';
+import { faFire, faStar, faTruck } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { categoryIcon } from '@/lib/icons';
 import { formatCompact, type Product } from '@/lib/types';
 import { PriceTag } from './PriceTag';
 import { ProductImage } from './ProductImage';
-import { Stars } from './Stars';
 
 export function ProductCard({ product, eager = false, rank }: { product: Product; eager?: boolean; rank?: number }) {
   return (
@@ -33,22 +32,19 @@ export function ProductCard({ product, eager = false, rank }: { product: Product
           <FontAwesomeIcon icon={categoryIcon(product.category?.slug)} /> {product.category?.name}
         </span>
         <h3 className="card-title">{product.name}</h3>
-        <div className="card-meta">
-          {product.ratingCount > 0 ? (
-            <>
-              <Stars value={product.ratingAvg} />
-              <span className="muted small">({product.ratingCount})</span>
-            </>
-          ) : (
-            <span className="muted small">Chưa có đánh giá</span>
-          )}
-          {product.soldCount > 0 && <span className="muted small sold">Đã bán {formatCompact(product.soldCount)}</span>}
-        </div>
         <div className="card-foot">
           <PriceTag product={product} />
-          <span className="card-go" aria-hidden>
-            <FontAwesomeIcon icon={faArrowRight} />
-          </span>
+        </div>
+        <div className="card-meta">
+          {product.ratingCount > 0 ? (
+            <span className="card-rating" aria-label={`${product.ratingAvg.toFixed(1)} sao, ${product.ratingCount} đánh giá`}>
+              <FontAwesomeIcon icon={faStar} /> {product.ratingAvg.toFixed(1)}
+              <span className="muted"> ({product.ratingCount})</span>
+            </span>
+          ) : (
+            <span className="muted">Chưa có đánh giá</span>
+          )}
+          {product.soldCount > 0 && <span className="muted sold">Đã bán {formatCompact(product.soldCount)}</span>}
         </div>
         {product.stock > 0 && product.stock <= 5 && <span className="small warn">Chỉ còn {product.stock} sản phẩm</span>}
       </div>

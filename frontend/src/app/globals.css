@@ -8001,3 +8001,219 @@ button.stat-tile:hover {
     display: none;
   }
 }
+
+/* ==========================================================================
+   Làm gọn giao diện (thẻ sản phẩm kiểu sàn TMĐT, thanh cuộn, ô mức giá)
+   ========================================================================== */
+.card {
+  border-radius: 16px;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+}
+
+.card-media {
+  aspect-ratio: 1;
+}
+
+.card-tags {
+  top: 10px;
+  left: 10px;
+  flex-wrap: wrap;
+  right: 10px;
+}
+
+.card-body {
+  gap: 6px;
+  padding: 12px 14px 14px;
+}
+
+.card-cat {
+  font-size: 0.7rem;
+}
+
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-wrap: pretty;
+  max-width: none;
+}
+
+.card-foot {
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.card-go {
+  display: none;
+}
+
+.card .price-tag {
+  flex-wrap: nowrap;
+  min-width: 0;
+  gap: 6px;
+}
+
+.card .price {
+  font-size: 1.12rem;
+  white-space: nowrap;
+}
+
+.card .price-old {
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.card-meta {
+  font-size: 0.78rem;
+  min-height: 0;
+  gap: 8px;
+}
+
+.card-rating {
+  font-weight: 600;
+}
+
+.card-rating .svg-inline--fa {
+  color: #f59e0b;
+}
+
+/* Giá: "₫190.000" – ký hiệu nhỏ phía trước, không gạch chân như "đ" của font */
+.price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+}
+
+.price-cur {
+  font-size: 0.72em;
+  font-weight: 700;
+  text-decoration: none;
+  margin-right: 1px;
+}
+
+/* Hàng cuộn ngang: ẩn thanh cuộn xám, mờ dần ở mép phải báo hiệu còn nữa */
+.scroller {
+  scrollbar-width: none;
+  padding-bottom: 4px;
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 48px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 48px), transparent);
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.scroller {
+  grid-auto-columns: minmax(210px, 1fr);
+  gap: 14px;
+}
+
+/* Ô "Mua theo mức giá": 1 tông màu thương hiệu thay cho 5 màu lệch tông */
+.price-tile,
+.price-tile-1,
+.price-tile-2,
+.price-tile-3,
+.price-tile-4,
+.price-tile-5 {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.price-tile::after {
+  content: '';
+  position: absolute;
+  right: -30px;
+  bottom: -30px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--primary) 22%, transparent), transparent 70%);
+  pointer-events: none;
+}
+
+.price-tile:hover {
+  border-color: var(--primary);
+}
+
+.price-tile small {
+  color: var(--muted);
+}
+
+.price-tile strong {
+  color: var(--primary);
+}
+
+.price-tile .go {
+  color: var(--text-2);
+}
+
+:root[data-theme='dark'] .price-tile-1,
+:root[data-theme='dark'] .price-tile-2,
+:root[data-theme='dark'] .price-tile-3,
+:root[data-theme='dark'] .price-tile-4,
+:root[data-theme='dark'] .price-tile-5 {
+  background: var(--surface);
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .scroller {
+    grid-auto-columns: 44%;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+
+  .card-body {
+    padding: 10px 10px 12px;
+    gap: 4px;
+  }
+
+  .card-title {
+    font-size: 0.88rem;
+  }
+
+  .card .price {
+    font-size: 1rem;
+  }
+
+  .card .price-old,
+  .card-cat {
+    display: none;
+  }
+
+  .card-meta {
+    font-size: 0.72rem;
+  }
+}
+
+/* Thanh danh mục + sắp xếp trên CÙNG một hàng (danh mục cuộn ngang, ô sắp xếp cố định bên phải) */
+.toolbar {
+  flex-wrap: nowrap;
+}
+
+.toolbar .chips {
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar > :last-child {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .toolbar .chips {
+    flex-basis: 100%;
+  }
+}
