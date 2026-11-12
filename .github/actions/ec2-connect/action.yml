@@ -68,6 +68,11 @@ runs:
           StrictHostKeyChecking yes
           ServerAliveInterval 30
           ConnectTimeout 15
+          # Mọi lệnh ssh/rsync trong job dùng chung 1 kết nối TCP: EC2 bật "ufw limit 22/tcp"
+          # (chặn IP mở ≥ 6 kết nối SSH trong 30 giây) → mở từng kết nối riêng sẽ tự bị chặn giữa chừng
+          ControlMaster auto
+          ControlPath ~/.ssh/cm-%r@%h-%p
+          ControlPersist 15m
         EOF
 
     # Luật Security Group vừa thêm cần vài giây mới có hiệu lực → thử lại thay vì thất bại ngay (lỗi "Connection timed out")
