@@ -39,7 +39,7 @@ import { categoryIcon, categoryImage } from '@/lib/icons';
 import { getBestSellers, getCategories, getDeals, getFacets, getLatestReviews, getProduct, getProducts, getPublicVouchers, getStoreSummary } from '@/lib/server-api';
 import { CopyCode } from '@/components/home/CopyCode';
 import { FlashCountdown } from '@/components/home/FlashCountdown';
-import { CAPACITY_LABEL, POWER_LABEL, PRICE_RANGES, SORT_OPTIONS, formatCompact, formatDay, formatPrice, initials, type SortValue, type Voucher } from '@/lib/types';
+import { CAPACITY_LABEL, POWER_LABEL, PRICE_RANGES, SORT_OPTIONS, formatAmount, formatCompact, formatDay, initials, type SortValue, type Voucher } from '@/lib/types';
 
 /** Giá trị quy đổi để chọn voucher nổi bật (giảm % tính theo mức trần) */
 function voucherWorth(v: Voucher): number {
@@ -249,7 +249,10 @@ export default async function HomePage(props: Props) {
                   Mua sắm ngay <FontAwesomeIcon icon={faArrowRight} />
                 </Link>
                 <Link href="#deals" className="btn btn-lg btn-glass">
-                  <FontAwesomeIcon icon={faBolt} /> Săn deal<span className="hide-mobile"> hôm nay</span>
+                  <FontAwesomeIcon icon={faBolt} />
+                  <span>
+                    Săn deal<span className="hide-mobile"> hôm nay</span>
+                  </span>
                 </Link>
               </div>
               {summary && (
@@ -260,17 +263,17 @@ export default async function HomePage(props: Props) {
                   <span>
                     <strong>{roundedCount(summary.sold)}</strong> sản phẩm đã bán
                   </span>
-                  <span>
-                    <strong>{summary.products}</strong> món chính hãng
-                  </span>
                 </p>
               )}
               {heroProduct && (
                 <Link href={`/products/${heroProduct.slug}`} className="hero-tag">
                   <span className="hero-tag-name">{heroProduct.name}</span>
                   <span className="hero-tag-price">
-                    <strong>{formatPrice(heroProduct.price)}</strong>
-                    {heroProduct.compareAtPrice && <s>{formatPrice(heroProduct.compareAtPrice)}</s>}
+                    <strong>
+                      <span className="price-cur">₫</span>
+                      {formatAmount(heroProduct.price)}
+                    </strong>
+                    {heroProduct.compareAtPrice && <s>₫{formatAmount(heroProduct.compareAtPrice)}</s>}
                     {heroProduct.discountPercent > 0 && <em>-{heroProduct.discountPercent}%</em>}
                   </span>
                   <span className="hero-tag-go">
@@ -305,8 +308,11 @@ export default async function HomePage(props: Props) {
                         <span className="flash-info">
                           <span className="flash-name">{p.name}</span>
                           <span className="flash-price">
-                            <strong>{formatPrice(p.price)}</strong>
-                            {p.compareAtPrice && <s>{formatPrice(p.compareAtPrice)}</s>}
+                            <strong>
+                              <span className="price-cur">₫</span>
+                              {formatAmount(p.price)}
+                            </strong>
+                            {p.compareAtPrice && <s>₫{formatAmount(p.compareAtPrice)}</s>}
                           </span>
                           <span className="flash-bar" aria-label={`Đã bán ${soldPct}%`}>
                             <span style={{ width: `${soldPct}%` }} />
