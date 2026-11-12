@@ -1,5 +1,5 @@
 import 'server-only';
-import type { Category, LatestReview, Product, ProductDetail, ProductFacets, ProductPage, SortValue, StoreSummary } from './types';
+import type { Category, LatestReview, Product, ProductDetail, ProductFacets, ProductPage, SortValue, StoreSummary, Voucher } from './types';
 
 // SSR gọi thẳng backend qua mạng Docker nội bộ, không vòng ra Nginx/Internet
 const API_URL = process.env.INTERNAL_API_URL ?? 'http://backend:8080';
@@ -81,4 +81,9 @@ export function getLatestReviews(): Promise<LatestReview[]> {
 
 export function getStoreSummary(): Promise<StoreSummary> {
   return get<StoreSummary>('/products/summary', 300);
+}
+
+/** Kho voucher công khai (hiển thị ở banner trang chủ) */
+export function getPublicVouchers(): Promise<Voucher[]> {
+  return get<Voucher[]>('/vouchers', 300);
 }

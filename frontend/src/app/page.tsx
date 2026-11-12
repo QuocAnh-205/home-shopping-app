@@ -23,6 +23,9 @@ import {
   faWandMagicSparkles,
   faXmark,
   faFilter,
+  faMoneyBillWave,
+  faRotateLeft,
+  faTicket,
   faSliders,
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -33,8 +36,34 @@ import { SortSelect } from '@/components/SortSelect';
 import { Stars } from '@/components/Stars';
 import { TrustBar } from '@/components/TrustBar';
 import { categoryIcon, categoryImage } from '@/lib/icons';
-import { getBestSellers, getCategories, getDeals, getFacets, getLatestReviews, getProducts, getStoreSummary } from '@/lib/server-api';
-import { CAPACITY_LABEL, POWER_LABEL, PRICE_RANGES, SORT_OPTIONS, formatCompact, formatDay, initials, type SortValue } from '@/lib/types';
+import { getBestSellers, getCategories, getDeals, getFacets, getLatestReviews, getProduct, getProducts, getPublicVouchers, getStoreSummary } from '@/lib/server-api';
+import { CopyCode } from '@/components/home/CopyCode';
+import { FlashCountdown } from '@/components/home/FlashCountdown';
+import { CAPACITY_LABEL, POWER_LABEL, PRICE_RANGES, SORT_OPTIONS, formatCompact, formatDay, formatPrice, initials, type SortValue, type Voucher } from '@/lib/types';
+
+/** Giá trị quy đổi để chọn voucher nổi bật (giảm % tính theo mức trần) */
+function voucherWorth(v: Voucher): number {
+  if (v.type === 'PERCENT') return v.maxDiscount ?? v.value * 10_000;
+  return v.value === 0 ? 1_000_000 : v.value;
+}
+
+/** 150000 → "150K", 1500000 → "1,5 triệu" */
+function shortMoney(v: number): string {
+  return v >= 1_000_000 ? `${(v / 1_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} triệu` : `${Math.round(v / 1000)}K`;
+}
+
+/** 94.356 → "94.000+", 1.104 → "1.100+" (làm tròn XUỐNG, không phóng đại) */
+function roundedCount(n: number): string {
+  if (n < 100) return String(n);
+  const step = n >= 10_000 ? 1000 : 100;
+  return `${(Math.floor(n / step) * step).toLocaleString('vi-VN')}+`;
+}
+
+function voucherHeadline(v: Voucher): string {
+  if (v.type === 'PERCENT') return `Giảm ${v.value}%`;
+  if (v.type === 'FREESHIP') return v.value === 0 ? 'Freeship' : `Giảm ${shortMoney(v.value)} ship`;
+  return `Giảm ${shortMoney(v.value)}`;
+}
 import { POLICY, SITE } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
@@ -147,7 +176,7 @@ export default async function HomePage(props: Props) {
   const techCount = Object.values(tech).filter(Boolean).length;
   const landing = !q && !category && !onSale && !priceRange && page === 1 && techCount === 0;
 
-  const [deals, best, reviews, list, fresh, topRated, summary] = await Promise.all([
+  const [deals, best, reviews, list, fresh, topRated, summary, heroProduct, vouchers] = await Promise.all([
     landing ? getDeals().catch(() => []) : Promise.resolve([]),
     landing ? getBestSellers().catch(() => []) : Promise.resolve([]),
     landing ? getLatestReviews().catch(() => []) : Promise.resolve([]),
@@ -155,7 +184,15 @@ export default async function HomePage(props: Props) {
     landing ? getProducts({ page: 1, limit: 10, sort: 'newest' }).then((r) => r.items).catch(() => []) : Promise.resolve([]),
     landing ? getProducts({ page: 1, limit: 10, sort: 'top_rated' }).then((r) => r.items).catch(() => []) : Promise.resolve([]),
     landing ? getStoreSummary().catch(() => null) : Promise.resolve(null),
+    landing ? getProduct('sofa-nhung-xanh-luc-bao').catch(() => null) : Promise.resolve(null),
+    landing ? getPublicVouchers().catch(() => []) : Promise.resolve([]),
   ]);
+  // Số THẬT: mức giảm sâu nhất đang có (không làm tròn lên cho đẹp)
+  const maxDiscount = Math.max(0, ...deals.map((d) => d.discountPercent));
+  // 2 voucher hấp dẫn nhất: 1 giảm tiền (số tiền giảm tối đa lớn nhất) + 1 miễn phí vận chuyển
+  const discountVoucher = [...vouchers].filter((v) => v.type !== 'FREESHIP').sort((a, b) => voucherWorth(b) - voucherWorth(a))[0];
+  const shipVoucher = vouchers.filter((v) => v.type === 'FREESHIP').sort((a, b) => voucherWorth(b) - voucherWorth(a))[0];
+  const heroVouchers = [discountVoucher, shipVoucher].filter((v): v is Voucher => Boolean(v));
 
   const href = (params: { page?: number; category?: string | null; sale?: boolean; price?: string | null; tech?: Partial<typeof tech> | null }) => {
     const qs = new URLSearchParams();
@@ -183,41 +220,125 @@ export default async function HomePage(props: Props) {
     <>
       {landing && (
         <>
-          <section className="bento">
+          <section className="bento hero-v2">
             <div className="hero">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/site/hero.webp" alt="" width={1600} height={1000} fetchPriority="high" />
-              <span className="eyebrow">
-                <FontAwesomeIcon icon={faWandMagicSparkles} /> Bộ sưu tập 2026
+              <span className="eyebrow eyebrow-hot">
+                <FontAwesomeIcon icon={faFire} /> Siêu sale tháng {new Date().getMonth() + 1}
+                {maxDiscount > 0 && ` · Giảm đến ${maxDiscount}%`}
               </span>
-              <h1>Không gian sống đẹp bắt đầu từ những món đồ nhỏ</h1>
-              <p>
-                {summary ? `${summary.products} món` : 'Hàng trăm món'} đồ gia dụng, nội thất và thiết bị nhà bếp chính hãng — giao nhanh toàn quốc,
-                {POLICY.returns.toLowerCase()}.
-              </p>
-              <div className="row">
+              <h1>
+                Sắm đồ cho tổ ấm,
+                <br />
+                <span className="hero-hl">giá hời mỗi ngày</span>
+              </h1>
+              <ul className="hero-perks">
+                <li>
+                  <FontAwesomeIcon icon={faTruckFast} /> Freeship đơn từ {SITE.freeShipThreshold / 1000}K
+                </li>
+                <li>
+                  <FontAwesomeIcon icon={faRotateLeft} /> Trả hàng {SITE.returnDays} ngày
+                </li>
+                <li>
+                  <FontAwesomeIcon icon={faMoneyBillWave} /> Kiểm tra hàng rồi trả tiền
+                </li>
+              </ul>
+              <div className="row hero-ctas">
                 <Link href="#products" className="btn btn-lg">
                   Mua sắm ngay <FontAwesomeIcon icon={faArrowRight} />
                 </Link>
                 <Link href="#deals" className="btn btn-lg btn-glass">
-                  <FontAwesomeIcon icon={faTag} /> Xem ưu đãi
+                  <FontAwesomeIcon icon={faBolt} /> Săn deal<span className="hide-mobile"> hôm nay</span>
                 </Link>
               </div>
+              {summary && (
+                <p className="hero-proof">
+                  <span>
+                    <FontAwesomeIcon icon={faStar} /> <strong>{summary.averageRating.toFixed(1)}</strong>/5 từ {roundedCount(summary.reviews)} đánh giá
+                  </span>
+                  <span>
+                    <strong>{roundedCount(summary.sold)}</strong> sản phẩm đã bán
+                  </span>
+                  <span>
+                    <strong>{summary.products}</strong> món chính hãng
+                  </span>
+                </p>
+              )}
+              {heroProduct && (
+                <Link href={`/products/${heroProduct.slug}`} className="hero-tag">
+                  <span className="hero-tag-name">{heroProduct.name}</span>
+                  <span className="hero-tag-price">
+                    <strong>{formatPrice(heroProduct.price)}</strong>
+                    {heroProduct.compareAtPrice && <s>{formatPrice(heroProduct.compareAtPrice)}</s>}
+                    {heroProduct.discountPercent > 0 && <em>-{heroProduct.discountPercent}%</em>}
+                  </span>
+                  <span className="hero-tag-go">
+                    Xem ngay <FontAwesomeIcon icon={faArrowRight} />
+                  </span>
+                </Link>
+              )}
             </div>
-            <Link href={href({ category: 'dien-gia-dung', sale: false })} className="promo promo-a">
-              <FontAwesomeIcon icon={faBolt} className="promo-icon" />
-              <h2>Điện gia dụng thông minh cho căn bếp hiện đại</h2>
-              <span className="go">
-                Khám phá <FontAwesomeIcon icon={faArrowRight} />
-              </span>
-            </Link>
-            <Link href={href({ category: null, sale: true })} className="promo promo-b">
-              <FontAwesomeIcon icon={faPercent} className="promo-icon" />
-              <h2>{summary ? `${summary.onSale} sản phẩm đang giảm giá` : 'Hàng loạt sản phẩm đang giảm giá'}</h2>
-              <span className="go">
-                Săn deal ngay <FontAwesomeIcon icon={faArrowRight} />
-              </span>
-            </Link>
+
+            <div className="flash-card">
+              <div className="flash-head">
+                <span className="flash-title">
+                  <FontAwesomeIcon icon={faBolt} /> FLASH SALE
+                </span>
+                <span className="flash-ends">
+                  Kết thúc sau <FlashCountdown />
+                </span>
+              </div>
+              <ul className="flash-items">
+                {deals.slice(0, 3).map((p) => {
+                  const soldPct = Math.min(95, Math.round((p.soldCount / Math.max(1, p.soldCount + p.stock)) * 100));
+                  return (
+                    <li key={p.id}>
+                      <Link href={`/products/${p.slug}`}>
+                        <span className="flash-thumb">
+                          {p.imageUrl && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={p.imageUrl} alt="" width={96} height={96} loading="eager" />
+                          )}
+                          {p.discountPercent > 0 && <em>-{p.discountPercent}%</em>}
+                        </span>
+                        <span className="flash-info">
+                          <span className="flash-name">{p.name}</span>
+                          <span className="flash-price">
+                            <strong>{formatPrice(p.price)}</strong>
+                            {p.compareAtPrice && <s>{formatPrice(p.compareAtPrice)}</s>}
+                          </span>
+                          <span className="flash-bar" aria-label={`Đã bán ${soldPct}%`}>
+                            <span style={{ width: `${soldPct}%` }} />
+                            <small>
+                              <FontAwesomeIcon icon={faFire} /> Đã bán {formatCompact(p.soldCount)}
+                            </small>
+                          </span>
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+              <Link href={href({ category: null, sale: true })} className="flash-more">
+                Xem tất cả {summary ? `${summary.onSale} deal` : 'deal'} <FontAwesomeIcon icon={faArrowRight} />
+              </Link>
+            </div>
+
+            {heroVouchers.length > 0 && (
+              <div className="hero-vouchers">
+                <span className="hero-vouchers-title">
+                  <FontAwesomeIcon icon={faTicket} /> Voucher hôm nay · bấm để sao chép
+                </span>
+                {heroVouchers.map((v) => (
+                  <div key={v.code} className={`hero-voucher hero-voucher-${v.type.toLowerCase()}`}>
+                    <span className="hero-voucher-value">{voucherHeadline(v)}</span>
+                    <span className="hero-voucher-cond">{v.minOrderValue > 0 ? `Đơn từ ${shortMoney(v.minOrderValue)}` : 'Mọi đơn hàng'}</span>
+                    <CopyCode code={v.code} />
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <TrustBar />
