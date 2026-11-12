@@ -4,7 +4,7 @@
 # ============================================================
 
 # ---------- Stage 0: base ----------
-FROM node:20-alpine AS base
+FROM node:25-alpine AS base
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -22,7 +22,7 @@ COPY . .
 RUN npm run build
 
 # ---------- Stage 3: runtime ----------
-FROM node:20-alpine AS runtime
+FROM node:25-alpine AS runtime
 ARG APP_VERSION=dev
 WORKDIR /app
 ENV NODE_ENV=production \
