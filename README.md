@@ -6,6 +6,114 @@
 
 ---
 
+## 🎬 Demo quy trình tự động cho thầy (tự làm từ đầu đến cuối)
+
+Sửa 1 dòng code → GitHub tự kiểm tra → merge → **tự deploy** lên staging rồi web thật → web đổi theo → quay lại bản cũ bằng 1 nút. **Không SSH, không gõ lệnh lên máy chủ.**
+Thời gian: khoảng 25 phút (CI ~10 phút + deploy ~10 phút). Buổi review ngắn thì làm trước bước 2–4 ở nhà, lên lớp chỉ bấm Merge rồi vừa chờ vừa giải thích.
+
+### Bước 0 – Chuẩn bị (trước buổi review)
+
+1. Vào tab **Actions** của repo: lần chạy mới nhất trên `main` phải **xanh hết** (9 bước ✅). Nếu đang đỏ thì xử lý trước, không demo khi pipeline đang lỗi.
+2. Trên máy: cài Git + VS Code, đăng nhập GitHub (tài khoản có quyền ghi repo), rồi lấy code mới nhất:
+   ```bash
+   cd D:\home-shopping-app        # hoặc thư mục bạn đã clone
+   git checkout main
+   git pull
+   ```
+3. Mở sẵn 4 tab trình duyệt:
+   - Web thật: https://13-214-14-196.sslip.io
+   - Health: https://13-214-14-196.sslip.io/api/health
+   - Staging: https://staging.13-214-14-196.sslip.io
+   - GitHub repo → tab **Actions**
+
+### Bước 1 – "Trước khi sửa" (1 phút)
+
+- Web thật: kéo xuống cuối trang, chỉ vào dòng `v1.0.xx · build #abc1234 (Production)`.
+- Health: chỉ vào trường `"commit"` và `"release"`.
+- 🗣️ *"Đây là phiên bản đang chạy trên AWS, mã commit khớp với commit mới nhất trên GitHub. Lát nữa em sửa code, con số này tự đổi mà em không đụng vào máy chủ."*
+
+### Bước 2 – Tạo nhánh riêng, sửa 1 dòng (2 phút)
+
+```bash
+git checkout -b feat/demo-review
+```
+
+Mở `frontend/src/app/page.tsx`, tìm (Ctrl+F) `giá hời mỗi ngày` trong dòng `<span className="hero-hl">giá hời mỗi ngày</span>` và đổi chữ, ví dụ thành `demo CI/CD cho thầy`. Lưu file rồi:
+
+```bash
+git add -A
+git commit -m "feat(home): đổi khẩu hiệu để demo CI/CD"
+git push -u origin feat/demo-review
+```
+
+🗣️ *"Em không sửa thẳng nhánh chính mà làm trên nhánh riêng: mỗi tính năng một nhánh, commit ghi rõ nghĩa."*
+
+### Bước 3 – Chứng minh không push thẳng vào `main` được (30 giây)
+
+```bash
+git checkout main
+echo test >> README.md
+git commit -am "thu push thang"
+git push                          # GitHub từ chối: "protected branch … must be made through a pull request"
+git reset --hard origin/main      # dọn lại ngay
+git checkout feat/demo-review
+```
+
+🗣️ *"Nhánh main bị khóa: ai cũng phải qua Pull Request và qua hết kiểm tra tự động, kể cả chủ repo."*
+
+### Bước 4 – Mở Pull Request, xem CI tự chạy (~10 phút)
+
+GitHub hiện nút **Compare & pull request** → bấm → **Create pull request**. Kéo xuống phần **Checks**: 5 kiểm tra bắt buộc tự chạy, nút Merge khóa xám tới khi tất cả xanh. Bấm vào từng dòng để thầy xem log:
+
+| Kiểm tra | Giải thích |
+|---|---|
+| **1a · Security & Code Quality** | Gitleaks quét lộ mật khẩu trong toàn bộ lịch sử, ESLint, 196 unit test, npm audit (thư viện có lỗ hổng) |
+| **1b · Integration Test** | Dựng PostgreSQL + Redis thật, 73 test end-to-end (đặt hàng đồng thời, phân quyền, thanh toán), kiểm tra migration, **diễn tập backup → khôi phục → so khớp dữ liệu** |
+| **1c · IaC & Config Scan** | Kiểm tra Terraform, Dockerfile (Hadolint), shell script (ShellCheck), Prometheus, docker-compose |
+| **2 · Build (backend / frontend)** | Đóng gói Docker image + quét lỗ hổng Trivy (có lỗi nghiêm trọng là chặn) |
+
+🗣️ *"Chỉ cần một bước đỏ là không merge được, nên code lỗi không bao giờ lên được web thật."*
+
+### Bước 5 – Merge, xem tự deploy (~10 phút)
+
+Đủ ✅ thì bấm **Squash and merge** → **Confirm**. Sang tab **Actions**, bấm vào lần chạy mới nhất trên `main`:
+
+- **2 · Build, Scan & Push**: đẩy image lên Docker Hub, gắn tag mã commit + phiên bản `1.0.N`.
+- **3a · Deploy Staging + Smoke Test**: lên bản thử trước (database riêng). Lỗi thì **dừng, không đụng web thật**.
+- **3b · Deploy Production**: chạy bản mới song song bản cũ, bản mới khỏe mới tắt bản cũ (không gián đoạn). Kiểm tra sức khỏe 30 giây, lỗi thì **tự quay về bản cũ**.
+- **4 · Notification**: báo kết quả (Discord / Telegram nếu đã cấu hình).
+
+🗣️ *"Từ lúc bấm merge, em không làm gì nữa. Không SSH, không gõ lệnh lên máy chủ."*
+
+### Bước 6 – Web đã đổi (1 phút)
+
+- Staging → **Ctrl+F5**: khẩu hiệu mới xuất hiện trước tiên.
+- Web thật → **Ctrl+F5**: khẩu hiệu mới; footer thành `v1.0.(N+1) · build #<mã mới>`.
+- Health: `"commit"` trùng 7 ký tự đầu của commit vừa merge trên GitHub.
+- 🗣️ *"Mã commit trên máy chủ khớp GitHub, là bằng chứng code vừa sửa đã tự chạy trên AWS."*
+
+### Bước 7 – Quay lại bản cũ bằng 1 nút (~3 phút)
+
+GitHub → **Actions** → bên trái chọn **Rollback Production** → **Run workflow** → để trống ô tag → **Run workflow**. Xong thì tải lại web: khẩu hiệu cũ và số phiên bản cũ quay lại.
+
+🗣️ *"Bản mới có lỗi nghiệp vụ mà kiểm tra tự động không bắt được thì em bấm một nút là về bản trước, không gián đoạn."*
+
+> ⚠️ Rollback chỉ đổi web thật, code trên `main` vẫn là khẩu hiệu demo. Demo xong nhớ trả về như cũ **bằng đúng quy trình**: nhánh mới → sửa chữ lại thành `giá hời mỗi ngày` → PR → merge.
+
+### Câu hỏi thầy hay hỏi
+
+| Câu hỏi | Trả lời ngắn |
+|---|---|
+| Mật khẩu database để đâu? | Trong GitHub Secrets (mã hóa). Repo công khai không chứa bí mật nào, Gitleaks kiểm tra mỗi lần chạy |
+| Máy chủ tạo bằng tay à? | Không. Terraform (`terraform/`) dựng mạng, tường lửa, EC2, S3 bằng code |
+| Pipeline vào máy chủ kiểu gì? | Quyền AWS tạm thời qua OIDC (không lưu khóa AWS), mở cổng SSH tạm đúng IP máy chạy CI, xong đóng lại |
+| Có backup không? | Tự động 02:00 mỗi ngày lên S3, và mỗi lần CI đều diễn tập khôi phục (bước 1b) |
+| Sao biết web đang chạy bản nào? | `/api/health` và footer hiện mã commit + số phiên bản, tự cập nhật sau mỗi lần deploy |
+
+Chi tiết hơn: [mục 0 – Quy trình DevOps](#0-quy-trình-devops-đối-chiếu-tiêu-chí-chấm) · [docs/DEFENSE-QA.md](docs/DEFENSE-QA.md)
+
+---
+
 ## 👋 Dành cho bạn cùng nhóm: đọc phần này trước (10 phút)
 
 ### Dự án gồm những gì? (hiểu trong 1 phút)
