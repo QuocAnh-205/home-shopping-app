@@ -28,6 +28,7 @@ import {
   faTicket,
   faSliders,
 } from '@fortawesome/free-solid-svg-icons';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Link from 'next/link';
 import { EmptyState } from '@/components/EmptyState';
@@ -36,16 +37,9 @@ import { SortSelect } from '@/components/SortSelect';
 import { Stars } from '@/components/Stars';
 import { TrustBar } from '@/components/TrustBar';
 import { categoryIcon, categoryImage } from '@/lib/icons';
-import { getBestSellers, getCategories, getDeals, getFacets, getLatestReviews, getProduct, getProducts, getPublicVouchers, getStoreSummary } from '@/lib/server-api';
-import { CopyCode } from '@/components/home/CopyCode';
+import { getBestSellers, getCategories, getDeals, getFacets, getLatestReviews, getProduct, getProducts, getStoreSummary } from '@/lib/server-api';
 import { FlashCountdown } from '@/components/home/FlashCountdown';
-import { CAPACITY_LABEL, POWER_LABEL, PRICE_RANGES, SORT_OPTIONS, formatAmount, formatCompact, formatDay, initials, type SortValue, type Voucher } from '@/lib/types';
-
-/** Giá trị quy đổi để chọn voucher nổi bật (giảm % tính theo mức trần) */
-function voucherWorth(v: Voucher): number {
-  if (v.type === 'PERCENT') return v.maxDiscount ?? v.value * 10_000;
-  return v.value === 0 ? 1_000_000 : v.value;
-}
+import { CAPACITY_LABEL, POWER_LABEL, PRICE_RANGES, SORT_OPTIONS, formatAmount, formatCompact, formatDay, initials, type PriceRangeId, type SortValue } from '@/lib/types';
 
 /** 150000 → "150K", 1500000 → "1,5 triệu" */
 function shortMoney(v: number): string {
@@ -59,11 +53,6 @@ function roundedCount(n: number): string {
   return `${(Math.floor(n / step) * step).toLocaleString('vi-VN')}+`;
 }
 
-function voucherHeadline(v: Voucher): string {
-  if (v.type === 'PERCENT') return `Giảm ${v.value}%`;
-  if (v.type === 'FREESHIP') return v.value === 0 ? 'Freeship' : `Giảm ${shortMoney(v.value)} ship`;
-  return `Giảm ${shortMoney(v.value)}`;
-}
 import { POLICY, SITE } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
@@ -108,6 +97,27 @@ const COLLECTIONS = [
     text: 'Đèn ngủ, chăn len, tủ đầu giường cho buổi tối thư thái.',
   },
 ] as const;
+
+const HERO_PROMOS = [
+  { category: 'nha-bep', image: '/images/site/cat-nha-bep.webp', tag: 'Bếp xinh', title: 'Đồ bếp giảm sâu' },
+  { category: 'phong-ngu', image: '/images/site/cat-phong-ngu.webp', tag: 'Ngủ ngon', title: 'Phòng ngủ êm ái' },
+] as const;
+
+const PROMO_BANNERS: {
+  tone: 'orange' | 'teal' | 'rose';
+  icon: IconDefinition;
+  kicker: string;
+  title: string;
+  text: string;
+  cta: string;
+  link?: string;
+  sale?: boolean;
+  price?: PriceRangeId;
+}[] = [
+  { tone: 'orange', icon: faTicket, kicker: 'Kho voucher', title: 'Hơn 50 mã giảm giá', text: 'Giảm %, giảm tiền, freeship – áp dụng ngay khi thanh toán', cta: 'Lưu mã', link: '/account?tab=vouchers&v=all' },
+  { tone: 'teal', icon: faTruckFast, kicker: 'Miễn phí vận chuyển', title: 'Freeship từ 500K', text: 'Đơn nhỏ hơn có voucher giảm phí ship', cta: 'Mua ngay', sale: false },
+  { tone: 'rose', icon: faTag, kicker: 'Giá hời', title: 'Deal dưới 200K', text: 'Quà nhỏ xinh, đồ dùng hằng ngày giá mềm', cta: 'Săn deal', sale: false, price: 'duoi-200k' },
+];
 
 const STEPS = [
   { icon: faMagnifyingGlass, title: 'Chọn sản phẩm', text: 'Tìm theo không gian, mức giá hoặc gõ tên món đồ bạn cần.' },
@@ -176,7 +186,7 @@ export default async function HomePage(props: Props) {
   const techCount = Object.values(tech).filter(Boolean).length;
   const landing = !q && !category && !onSale && !priceRange && page === 1 && techCount === 0;
 
-  const [deals, best, reviews, list, fresh, topRated, summary, heroProduct, vouchers] = await Promise.all([
+  const [deals, best, reviews, list, fresh, topRated, summary, heroProduct] = await Promise.all([
     landing ? getDeals().catch(() => []) : Promise.resolve([]),
     landing ? getBestSellers().catch(() => []) : Promise.resolve([]),
     landing ? getLatestReviews().catch(() => []) : Promise.resolve([]),
@@ -185,14 +195,9 @@ export default async function HomePage(props: Props) {
     landing ? getProducts({ page: 1, limit: 10, sort: 'top_rated' }).then((r) => r.items).catch(() => []) : Promise.resolve([]),
     landing ? getStoreSummary().catch(() => null) : Promise.resolve(null),
     landing ? getProduct('sofa-nhung-xanh-luc-bao').catch(() => null) : Promise.resolve(null),
-    landing ? getPublicVouchers().catch(() => []) : Promise.resolve([]),
   ]);
   // Số THẬT: mức giảm sâu nhất đang có (không làm tròn lên cho đẹp)
   const maxDiscount = Math.max(0, ...deals.map((d) => d.discountPercent));
-  // 2 voucher hấp dẫn nhất: 1 giảm tiền (số tiền giảm tối đa lớn nhất) + 1 miễn phí vận chuyển
-  const discountVoucher = [...vouchers].filter((v) => v.type !== 'FREESHIP').sort((a, b) => voucherWorth(b) - voucherWorth(a))[0];
-  const shipVoucher = vouchers.filter((v) => v.type === 'FREESHIP').sort((a, b) => voucherWorth(b) - voucherWorth(a))[0];
-  const heroVouchers = [discountVoucher, shipVoucher].filter((v): v is Voucher => Boolean(v));
 
   const href = (params: { page?: number; category?: string | null; sale?: boolean; price?: string | null; tech?: Partial<typeof tech> | null }) => {
     const qs = new URLSearchParams();
@@ -255,32 +260,38 @@ export default async function HomePage(props: Props) {
                   </span>
                 </Link>
               </div>
-              {summary && (
-                <p className="hero-proof">
-                  <span>
-                    <FontAwesomeIcon icon={faStar} /> <strong>{summary.averageRating.toFixed(1)}</strong>/5 từ {roundedCount(summary.reviews)} đánh giá
-                  </span>
-                  <span>
-                    <strong>{roundedCount(summary.sold)}</strong> sản phẩm đã bán
-                  </span>
-                </p>
-              )}
-              {heroProduct && (
-                <Link href={`/products/${heroProduct.slug}`} className="hero-tag">
-                  <span className="hero-tag-name">{heroProduct.name}</span>
-                  <span className="hero-tag-price">
-                    <strong>
-                      <span className="price-cur">₫</span>
-                      {formatAmount(heroProduct.price)}
-                    </strong>
-                    {heroProduct.compareAtPrice && <s>₫{formatAmount(heroProduct.compareAtPrice)}</s>}
-                    {heroProduct.discountPercent > 0 && <em>-{heroProduct.discountPercent}%</em>}
-                  </span>
-                  <span className="hero-tag-go">
-                    Xem ngay <FontAwesomeIcon icon={faArrowRight} />
-                  </span>
-                </Link>
-              )}
+              <div className="hero-foot">
+                {summary && (
+                  <ul className="hero-stats">
+                    <li>
+                      <strong>
+                        <FontAwesomeIcon icon={faStar} /> {summary.averageRating.toFixed(1)}/5
+                      </strong>
+                      <span>{roundedCount(summary.reviews)} đánh giá</span>
+                    </li>
+                    <li>
+                      <strong>{roundedCount(summary.sold)}</strong>
+                      <span>sản phẩm đã bán</span>
+                    </li>
+                  </ul>
+                )}
+                {heroProduct && (
+                  <Link href={`/products/${heroProduct.slug}`} className="hero-tag">
+                    <span className="hero-tag-name">{heroProduct.name}</span>
+                    <span className="hero-tag-price">
+                      <strong>
+                        <span className="price-cur">₫</span>
+                        {formatAmount(heroProduct.price)}
+                      </strong>
+                      {heroProduct.compareAtPrice && <s>₫{formatAmount(heroProduct.compareAtPrice)}</s>}
+                      {heroProduct.discountPercent > 0 && <em>-{heroProduct.discountPercent}%</em>}
+                    </span>
+                    <span className="hero-tag-go">
+                      Xem ngay <FontAwesomeIcon icon={faArrowRight} />
+                    </span>
+                  </Link>
+                )}
+              </div>
             </div>
 
             <div className="flash-card">
@@ -331,23 +342,40 @@ export default async function HomePage(props: Props) {
               </Link>
             </div>
 
-            {heroVouchers.length > 0 && (
-              <div className="hero-vouchers">
-                <span className="hero-vouchers-title">
-                  <FontAwesomeIcon icon={faTicket} /> Voucher hôm nay · bấm để sao chép
-                </span>
-                {heroVouchers.map((v) => (
-                  <div key={v.code} className={`hero-voucher hero-voucher-${v.type.toLowerCase()}`}>
-                    <span className="hero-voucher-value">{voucherHeadline(v)}</span>
-                    <span className="hero-voucher-cond">{v.minOrderValue > 0 ? `Đơn từ ${shortMoney(v.minOrderValue)}` : 'Mọi đơn hàng'}</span>
-                    <CopyCode code={v.code} />
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="hero-promos">
+              {HERO_PROMOS.map((b) => (
+                <Link key={b.category} href={href({ category: b.category, sale: true, price: null })} className="hero-promo">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={b.image} alt="" width={600} height={400} loading="lazy" />
+                  <span className="hero-promo-tag">{b.tag}</span>
+                  <strong>{b.title}</strong>
+                  <span className="hero-promo-go">
+                    Mua ngay <FontAwesomeIcon icon={faArrowRight} />
+                  </span>
+                </Link>
+              ))}
+            </div>
           </section>
 
           <TrustBar />
+
+          <section className="section promo-banners" aria-label="Ưu đãi nổi bật">
+            {PROMO_BANNERS.map((b) => (
+              <Link key={b.title} href={b.link ?? href({ category: null, sale: b.sale, price: b.price ?? null })} className={`promo-banner promo-banner-${b.tone}`}>
+                <span className="promo-banner-icon" aria-hidden="true">
+                  <FontAwesomeIcon icon={b.icon} />
+                </span>
+                <span className="promo-banner-body">
+                  <span className="promo-banner-kicker">{b.kicker}</span>
+                  <strong>{b.title}</strong>
+                  <span className="promo-banner-text">{b.text}</span>
+                </span>
+                <span className="promo-banner-cta">
+                  {b.cta} <FontAwesomeIcon icon={faArrowRight} />
+                </span>
+              </Link>
+            ))}
+          </section>
 
           {categories.length > 0 && (
             <section className="section">
@@ -439,6 +467,21 @@ export default async function HomePage(props: Props) {
               </Link>
             ))}
           </section>
+
+          <Link href={href({ category: 'dien-gia-dung', sale: true, price: null })} className="section wide-banner">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/images/site/cat-dien-gia-dung.webp" alt="" width={1600} height={500} loading="lazy" />
+            <span className="wide-banner-body">
+              <span className="eyebrow eyebrow-hot">
+                <FontAwesomeIcon icon={faBolt} /> Tuần lễ điện gia dụng
+              </span>
+              <strong>Nồi chiên, robot hút bụi, máy lọc không khí giá tốt</strong>
+              <span>Bảo hành chính hãng · Đổi trả 15 ngày · Freeship đơn từ 500K</span>
+              <span className="btn btn-primary wide-banner-cta">
+                Xem ưu đãi <FontAwesomeIcon icon={faArrowRight} />
+              </span>
+            </span>
+          </Link>
 
           {best.length > 0 && (
             <section className="section">

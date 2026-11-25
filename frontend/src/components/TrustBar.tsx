@@ -5,7 +5,7 @@ import { POLICY, SITE } from '@/lib/site';
 const ITEMS = [
   { icon: faTruckFast, title: 'Giao nhanh toàn quốc', sub: POLICY.freeShipShort },
   { icon: faRotateLeft, title: POLICY.returns, sub: 'Yêu cầu ngay trong Đơn mua' },
-  { icon: faMoneyBillWave, title: 'COD & online', sub: 'Kiểm tra hàng rồi trả tiền, hoặc VNPay / MoMo' },
+  { icon: faMoneyBillWave, title: 'Thanh toán linh hoạt', sub: 'COD, VNPay, MoMo, VietQR' },
   { icon: faHeadset, title: `Hỗ trợ ${SITE.supportHoursShort}`, sub: `Hotline ${SITE.hotline}` },
 ];
 

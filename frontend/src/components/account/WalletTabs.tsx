@@ -10,8 +10,8 @@ import { formatDate, shortId, type CoinSummary, type CoinTxType, type Voucher } 
 type VoucherTab = 'wallet' | 'all';
 
 /** Kho voucher: voucher đã lưu (ví) + mọi voucher đang có, lưu bằng 1 chạm hoặc nhập mã */
-export function VoucherWalletTab() {
-  const [tab, setTab] = useState<VoucherTab>('wallet');
+export function VoucherWalletTab({ initialTab = 'wallet' }: { initialTab?: VoucherTab }) {
+  const [tab, setTab] = useState<VoucherTab>(initialTab);
   const [items, setItems] = useState<Voucher[] | null>(null);
   const [code, setCode] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);

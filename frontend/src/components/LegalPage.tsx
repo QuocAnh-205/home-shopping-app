@@ -26,3 +26,19 @@ export function LegalPage({ title, updated, path, children }: { title: string; u
     </section>
   );
 }
+
+/** Mục lục cho trang pháp lý dài: bấm để nhảy tới từng mục */
+export function LegalToc({ sections }: { sections: { id: string; title: string }[] }) {
+  return (
+    <nav className="legal-toc" aria-label="Mục lục">
+      <strong>Mục lục</strong>
+      <ol>
+        {sections.map((s) => (
+          <li key={s.id}>
+            <a href={`#${s.id}`}>{s.title}</a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
