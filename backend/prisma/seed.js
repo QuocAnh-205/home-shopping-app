@@ -20,6 +20,7 @@ const { deriveAttributes } = require('./data/product-attributes');
 const { variantBySlug } = require('./data/variants');
 const { demoAccounts } = require('./data/demo-accounts');
 const { reviewers, reviewTexts } = require('./data/reviews');
+const salesVouchers = require('./data/vouchers');
 
 const prisma = new PrismaClient();
 
@@ -320,16 +321,21 @@ async function seedLocations() {
   console.log(`  ${units.length} provinces, ${wardTotal} wards`);
 }
 
-/** Voucher mẫu (demo): chỉ tạo khi chưa có mã; voucher hết hạn được gia hạn thêm 90 ngày để demo luôn dùng được */
+/**
+ * Voucher mẫu: chỉ tạo khi chưa có mã, hạn 30 ngày, giới hạn lượt dùng.
+ * Hết hạn là hết (không tự gia hạn) – muốn chạy tiếp thì admin tạo/sửa voucher ở trang quản trị.
+ * Riêng local demo (SEED_DEMO_DATA=true) mới gia hạn lại để demo luôn có voucher dùng được.
+ */
 async function seedVouchers(categoryIds) {
   const day = 86_400_000;
   const startsAt = new Date(Date.now() - day);
-  const endsAt = new Date(Date.now() + 90 * day);
+  const endsAt = new Date(Date.now() + 30 * day);
+  const renewExpired = process.env.SEED_DEMO_DATA === 'true';
   const samples = [
     { code: 'HOMESHOP10', name: 'Giảm 10% toàn shop', type: 'PERCENT', value: 10, maxDiscount: 50_000, minOrderValue: 300_000, usageLimit: 1000, perUserLimit: 3 },
     { code: 'GIAM50K', name: 'Giảm 50K đơn từ 500K', type: 'FIXED', value: 50_000, minOrderValue: 500_000, usageLimit: 500, perUserLimit: 1 },
     { code: 'FREESHIP', name: 'Miễn phí vận chuyển', type: 'FREESHIP', value: 0, minOrderValue: 150_000, usageLimit: 2000, perUserLimit: 5 },
-    { code: 'SHIP15K', name: 'Giảm 15K phí vận chuyển', type: 'FREESHIP', value: 15_000, minOrderValue: 0, usageLimit: null, perUserLimit: 10 },
+    { code: 'SHIP15K', name: 'Giảm 15K phí vận chuyển', type: 'FREESHIP', value: 15_000, minOrderValue: 0, usageLimit: 1000, perUserLimit: 3 },
     {
       code: 'BEPXINH15',
       name: 'Nhà bếp giảm 15%',
@@ -345,9 +351,27 @@ async function seedVouchers(categoryIds) {
   for (const v of samples) {
     const existing = await prisma.voucher.findUnique({ where: { code: v.code }, select: { endsAt: true } });
     if (!existing) await prisma.voucher.create({ data: { ...v, startsAt, endsAt, isPublic: true } });
-    else if (existing.endsAt < new Date()) await prisma.voucher.update({ where: { code: v.code }, data: { endsAt } });
+    else if (renewExpired && existing.endsAt < new Date()) await prisma.voucher.update({ where: { code: v.code }, data: { endsAt } });
   }
   console.log(`  ${samples.length} demo vouchers`);
+}
+
+/** Bộ voucher bán hàng (prisma/data/vouchers.js) cho MỌI môi trường: chỉ tạo mã chưa có, không ghi đè, không gia hạn */
+async function seedSalesVouchers(categoryIds) {
+  const day = 86_400_000;
+  let created = 0;
+  for (const { category, startInDays = 0, days, isPublic = true, ...v } of salesVouchers) {
+    if (await prisma.voucher.findUnique({ where: { code: v.code }, select: { id: true } })) continue;
+    const catId = category ? categoryIds.get(category) : undefined;
+    if (category && !catId) continue;
+    // Lùi 1 phút để voucher "bắt đầu ngay" dùng được liền
+    const startsAt = new Date(Date.now() - 60_000 + startInDays * day);
+    await prisma.voucher.create({
+      data: { ...v, isPublic, startsAt, endsAt: new Date(startsAt.getTime() + days * day), categoryIds: catId ? [catId] : [] },
+    });
+    created++;
+  }
+  console.log(`  ${created} sales vouchers created (${salesVouchers.length} defined)`);
 }
 
 /** Địa chỉ mặc định cho tài khoản khách demo (để thử đặt hàng ngay), chỉ tạo khi họ chưa có địa chỉ nào */
@@ -429,6 +453,8 @@ async function main() {
     // Production demo: chỉ đánh giá mẫu từ người đánh giá KHÔNG đăng nhập được (không có tài khoản mật khẩu công khai)
     await seedReviews([]);
   }
+
+  await seedSalesVouchers(categoryIds);
 
   await clearProductCache();
   console.log('Seed completed');

@@ -4740,9 +4740,50 @@ button.acc-nav-group:hover,
   font-size: 1.15rem;
 }
 
+.legal-body h2[id] {
+  scroll-margin-top: calc(var(--header-h) + 16px);
+}
+
+.legal-body h3 {
+  margin: 18px 0 6px;
+  font-size: 1rem;
+}
+
 .legal-body ul,
 .legal-body ol {
   padding-left: 22px;
+}
+
+.legal-toc {
+  margin: 20px 0 8px;
+  padding: 16px 20px;
+  border-radius: var(--r);
+  background: var(--surface-2, var(--primary-soft));
+  border: 1px solid var(--border);
+}
+
+.legal-toc ol {
+  margin: 8px 0 0;
+  columns: 2;
+  column-gap: 32px;
+}
+
+.legal-toc li {
+  break-inside: avoid;
+}
+
+.legal-toc li + li {
+  margin-top: 2px;
+}
+
+.legal-toc a {
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .legal-toc ol {
+    columns: 1;
+  }
 }
 
 .legal-body li + li {
@@ -7565,22 +7606,8 @@ button.stat-tile:hover {
   box-shadow: 0 10px 28px -8px rgb(249 115 22 / 80%);
 }
 
-.hero-proof {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  margin: 18px 0 0;
-  font-size: 0.85rem;
-  opacity: 0.92;
-}
 
-.hero-proof strong {
-  font-weight: 800;
-}
 
-.hero-proof .svg-inline--fa {
-  color: #fbbf24;
-}
 
 /* Thẻ giá nổi gắn lên sản phẩm trong ảnh */
 .hero-tag {
@@ -7817,101 +7844,226 @@ button.stat-tile:hover {
   text-decoration: underline;
 }
 
-/* ---------- Voucher hôm nay ---------- */
-.hero-vouchers {
+/* ---------- 2 banner nhỏ dưới Flash Sale ---------- */
+.hero-promos {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  align-content: start;
+  gap: 12px;
 }
 
-.hero-vouchers-title {
-  grid-column: 1 / -1;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--text-2);
-}
-
-.hero-vouchers-title .svg-inline--fa {
-  color: var(--primary);
-}
-
-.hero-voucher {
+.hero-promo {
   position: relative;
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   gap: 4px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1.5px dashed color-mix(in srgb, var(--primary) 55%, transparent);
-  background: var(--primary-soft);
+  min-height: 150px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  text-decoration: none;
+  box-shadow: var(--shadow);
 }
 
-/* Răng cưa 2 bên như vé thật */
-.hero-voucher::before,
-.hero-voucher::after {
+.hero-promo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -2;
+  transition: transform 0.8s var(--ease);
+}
+
+.hero-promo::after {
   content: '';
   position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--bg);
-  transform: translateY(-50%);
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgb(12 10 9 / 5%) 20%, rgb(12 10 9 / 80%) 100%);
 }
 
-.hero-voucher::before {
-  left: -8px;
+.hero-promo:hover img {
+  transform: scale(1.06);
 }
 
-.hero-voucher::after {
-  right: -8px;
+.hero-promo-tag {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  font-size: 0.7rem;
+  font-weight: 800;
 }
 
-.hero-voucher-freeship {
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+.hero-promo strong {
+  font-size: 1.05rem;
+  font-weight: 800;
 }
 
-.hero-voucher-value {
-  font-size: 1.15rem;
-  font-weight: 900;
-  color: var(--primary);
-}
-
-.hero-voucher-freeship .hero-voucher-value {
-  color: var(--accent);
-}
-
-.hero-voucher-cond {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.hero-voucher-btn {
-  justify-self: start;
+.hero-promo-go {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: 0;
-  background: var(--primary);
-  color: var(--primary-contrast);
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+  opacity: 0.9;
 }
 
-.hero-voucher-freeship .hero-voucher-btn {
-  background: var(--accent);
-  color: #042f2e;
+/* ---------- Dải banner ưu đãi ---------- */
+.promo-banners {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
-.hero-voucher-btn.is-copied {
-  background: var(--ok);
+.promo-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: var(--r-xl);
   color: #fff;
+  text-decoration: none;
+  box-shadow: var(--shadow);
+  transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease);
+}
+
+.promo-banner:hover {
+  transform: translateY(-3px);
+}
+
+.promo-banner-orange {
+  background: linear-gradient(120deg, #f97316, #ef4444);
+}
+
+.promo-banner-teal {
+  background: linear-gradient(120deg, #0d9488, #0284c7);
+}
+
+.promo-banner-rose {
+  background: linear-gradient(120deg, #db2777, #9333ea);
+}
+
+.promo-banner-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 18%);
+  font-size: 1.4rem;
+}
+
+.promo-banner-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.promo-banner-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+}
+
+.promo-banner strong {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.promo-banner-text {
+  font-size: 0.8rem;
+  opacity: 0.88;
+}
+
+.promo-banner-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin-left: auto;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: #1c1917;
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* ---------- Banner rộng giữa trang ---------- */
+.wide-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 240px;
+  padding: 32px 40px;
+  border-radius: var(--r-xl);
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  text-decoration: none;
+  box-shadow: var(--shadow);
+}
+
+.wide-banner img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -2;
+  transition: transform 1s var(--ease);
+}
+
+.wide-banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgb(12 10 9 / 85%) 0%, rgb(12 10 9 / 55%) 50%, rgb(12 10 9 / 10%) 100%);
+}
+
+.wide-banner:hover img {
+  transform: scale(1.04);
+}
+
+.wide-banner-body {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  max-width: 560px;
+}
+
+.wide-banner-body strong {
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.wide-banner-body > span:not(.eyebrow, .btn) {
+  opacity: 0.88;
+}
+
+.wide-banner-cta {
+  margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .promo-banners {
+    grid-template-columns: 1fr;
+  }
+
+  .wide-banner {
+    padding: 24px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -7955,10 +8107,6 @@ button.stat-tile:hover {
     padding: 0 14px;
   }
 
-  .hero-proof {
-    gap: 4px 12px;
-    font-size: 0.75rem;
-  }
 
   /* Điện thoại: thẻ giá nằm trong luồng, không che chữ */
   .hero-tag {
@@ -7971,24 +8119,15 @@ button.stat-tile:hover {
     border-radius: 20px;
   }
 
-  .hero-voucher-value {
-    font-size: 1rem;
-  }
 }
 
 /* Hero v2 – tinh chỉnh */
-.hero-proof {
-  max-width: 60%;
-}
 
 @media (max-width: 720px) {
   .hide-mobile {
     display: none;
   }
 
-  .hero-proof {
-    max-width: none;
-  }
 
   .hero-ctas .btn {
     flex: 1 1 0;
@@ -8220,12 +8359,6 @@ button.stat-tile:hover {
 
 /* ---------- Hero v2: sửa lỗi hiển thị ---------- */
 /* (1) dòng đánh giá / đã bán cách nút một khoảng, nằm gọn 1 dòng */
-.hero-v2 .hero-proof {
-  margin-top: 22px;
-  max-width: calc(100% - 320px);
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
 
 /* (4) giá + giá gốc + % giảm trên cùng 1 dòng */
 .hero-tag-price {
@@ -8233,22 +8366,212 @@ button.stat-tile:hover {
   white-space: nowrap;
 }
 
-/* (5) bỏ "răng cưa" vé: chấm tròn lệch nền tạo vệt đen lạc chỗ */
-.hero-voucher::before,
-.hero-voucher::after {
-  display: none;
+@media (max-width: 900px) {
 }
 
-.hero-voucher {
-  border-style: dashed;
-  border-left-width: 4px;
-  border-left-style: solid;
+/* ================= Hero v3 – bố cục cân đối ================= */
+/* Nội dung chính ở giữa, hàng "đánh giá + sản phẩm nổi bật" bám đáy */
+.hero-v2 .hero {
+  justify-content: flex-start;
+  gap: 0;
+  padding-bottom: clamp(24px, 3vw, 32px);
+}
+
+.hero-v2 .hero > .eyebrow {
+  margin-top: auto;
+}
+
+.hero-v2 .hero-ctas {
+  margin-bottom: auto;
+  padding-bottom: 28px;
+}
+
+.hero-v2 .hero::after {
+  background:
+    linear-gradient(90deg, rgb(12 10 9 / 80%) 0%, rgb(12 10 9 / 45%) 48%, rgb(12 10 9 / 5%) 80%),
+    linear-gradient(180deg, transparent 55%, rgb(12 10 9 / 70%) 100%);
+}
+
+.hero-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hero-stats li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 12%);
+  border: 1px solid rgb(255 255 255 / 18%);
+  backdrop-filter: blur(10px);
+}
+
+.hero-stats strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.hero-stats strong .svg-inline--fa {
+  color: #fbbf24;
+  font-size: 0.9em;
+}
+
+.hero-stats span {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.hero-v2 .hero-tag {
+  position: static;
+  flex: none;
+}
+
+/* Flash Sale gọn hơn để 2 banner bên dưới có chỗ thở */
+.hero-v2 .flash-card {
+  gap: 8px;
+  padding: 14px;
+}
+
+.hero-v2 .flash-items {
+  gap: 6px;
+}
+
+.hero-v2 .flash-items a {
+  grid-template-columns: 64px minmax(0, 1fr);
+  padding: 7px;
+}
+
+.hero-v2 .flash-thumb {
+  width: 64px;
+  height: 64px;
+}
+
+.hero-v2 .flash-info {
+  gap: 3px;
+}
+
+/* 2 banner nhỏ: cùng tông, chữ luôn đọc rõ, thấy được ảnh */
+.hero-promos {
+  align-items: stretch;
+}
+
+.hero-promo {
+  min-height: 180px;
+  padding: 16px;
+  gap: 6px;
+}
+
+.hero-promo::after {
+  background: linear-gradient(180deg, rgb(12 10 9 / 0%) 30%, rgb(12 10 9 / 55%) 60%, rgb(12 10 9 / 88%) 100%);
+}
+
+.hero-promo-tag {
+  padding: 2px 8px;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hero-promo strong {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.hero-promo-go {
+  font-size: 0.75rem;
+  color: #fdba74;
+  opacity: 1;
+}
+
+.hero-promo:hover .hero-promo-go {
+  text-decoration: underline;
 }
 
 @media (max-width: 900px) {
-  .hero-v2 .hero-proof {
+  .hero-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-v2 .hero-tag {
     max-width: none;
-    flex-wrap: wrap;
-    white-space: normal;
+  }
+}
+
+@media (max-width: 520px) {
+  .hero-stats li {
+    flex: 1;
+  }
+}
+
+/* Điện thoại: cả banner là link → nút thu gọn thành mũi tên để chữ đủ chỗ */
+@media (max-width: 520px) {
+  .promo-banner {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .promo-banner-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    font-size: 1.15rem;
+  }
+
+  .promo-banner-cta {
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .promo-banner-cta .svg-inline--fa {
+    font-size: 0.85rem;
+  }
+}
+
+/* Điện thoại: dải cam kết chỉ giữ tiêu đề, icon nhỏ lại → mỗi ô 1–2 dòng gọn gàng */
+@media (max-width: 520px) {
+  .trust {
+    gap: 8px;
+  }
+
+  .trust-item {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .trust-item .ico {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+  }
+
+  .trust-item strong {
+    font-size: 0.82rem;
+    line-height: 1.3;
+  }
+
+  .trust-item span {
+    display: none;
   }
 }

@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { isInternalReadContext } from './common/internal-request';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { AccountModule } from './account/account.module';
@@ -69,8 +70,9 @@ import { WarrantyModule } from './warranty/warranty.module';
     }),
     ThrottlerModule.forRoot({
       throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
-      // Chỉ test e2e được tắt (env.validation chặn cờ này ở production)
-      skipIf: () => process.env.THROTTLE_DISABLED === 'true',
+      // THROTTLE_DISABLED: chỉ test e2e (env.validation chặn cờ này ở production).
+      // isInternalReadContext: GET do frontend SSR gọi từ mạng nội bộ – không đếm chung 1 IP cho mọi khách (xem common/internal-request.ts)
+      skipIf: (ctx) => process.env.THROTTLE_DISABLED === 'true' || isInternalReadContext(ctx),
     }),
     ScheduleModule.forRoot(),
     PrismaModule,

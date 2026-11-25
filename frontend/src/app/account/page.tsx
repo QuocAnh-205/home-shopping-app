@@ -226,7 +226,7 @@ function AccountContent() {
         {tab === 'privacy' && <PrivacyTab profile={profile} onSaved={(settings) => setProfile({ ...profile, settings })} />}
         {tab === 'personal' && <PersonalInfoTab profile={profile} />}
         {tab === 'linked' && <LinkedTab profile={profile} onError={setError} />}
-        {tab === 'vouchers' && <VoucherWalletTab />}
+        {tab === 'vouchers' && <VoucherWalletTab initialTab={params.get('v') === 'all' ? 'all' : 'wallet'} />}
         {tab === 'coins' && <CoinsTab />}
       </div>
     </div>

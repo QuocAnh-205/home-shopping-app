@@ -13,9 +13,15 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * revalidate > 0: dùng Data Cache của Next (danh sách, danh mục… luôn trả 200 nên tự làm mới đúng).
+ * revalidate = 0: không cache. Bắt buộc cho tài nguyên có thể bị XÓA/ẨN (chi tiết sản phẩm): Next chỉ lưu phản hồi 200,
+ * lần làm mới nhận 404 thì bị bỏ qua → bản cũ bị giữ mãi, sản phẩm đã xóa vẫn hiện giá và nút mua. Backend đã có cache Redis
+ * (xóa ngay khi admin sửa/xóa) nên không cache ở đây vẫn nhanh.
+ */
 async function get<T>(path: string, revalidate: number): Promise<T> {
   const res = await fetch(`${API_URL}/api${path}`, {
-    next: { revalidate },
+    ...(revalidate > 0 ? { next: { revalidate } } : { cache: 'no-store' as const }),
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(5000),
   });
@@ -64,7 +70,7 @@ export function getDeals(): Promise<Product[]> {
 }
 
 export function getProduct(slug: string): Promise<ProductDetail> {
-  return get<ProductDetail>(`/products/${encodeURIComponent(slug)}`, 30);
+  return get<ProductDetail>(`/products/${encodeURIComponent(slug)}`, 0);
 }
 
 export function getFacets(category?: string): Promise<ProductFacets> {
